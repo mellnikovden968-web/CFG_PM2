@@ -1,6 +1,6 @@
 return {
     {
         name = "Omega Auto Revert",
-        url = "/mellnikovden968/CFG_PM2/refs/heads/main/CFG.lua"
+        url = "/mellnikovden968-web/CFG_PM2/refs/heads/main/CFG.lua"
     }
 }
