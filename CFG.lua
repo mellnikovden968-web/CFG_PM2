@@ -41,7 +41,7 @@ if reuseUI then
     ui = previousRuntime.ui
 else
     local tabOk, tab = pcall(function()
-        return shared.CreateTab("Omega", "/mellnikovden968/CFG/refs/heads/main/icon.png")
+        return shared.CreateTab("Omega", "/mellnikovden968/CFG_PM2/refs/heads/main/icon.png")
     end)
     if not tabOk or not tab then
         warn("[Omega] shared.CreateTab failed: " .. tostring(tab))
