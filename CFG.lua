@@ -17,7 +17,6 @@ if not LocalPlayer then
     return
 end
 
--- Cleanup предыдущего инстанса
 local previousRuntime = _G.OmegaAutoRevertRuntime
 if type(previousRuntime) == "table" and type(previousRuntime.Cleanup) == "function" then
     local ok, restored = pcall(previousRuntime.Cleanup)
@@ -26,10 +25,6 @@ if type(previousRuntime) == "table" and type(previousRuntime.Cleanup) == "functi
         return
     end
 end
-
--- =========================================================================
--- UI: вкладка + секция через API odh_shared_plugins
--- =========================================================================
 
 local ui
 local reuseUI = type(previousRuntime) == "table"
@@ -41,7 +36,7 @@ if reuseUI then
     ui = previousRuntime.ui
 else
     local tabOk, tab = pcall(function()
-        return shared.CreateTab("Omega", "/mellnikovden968/CFG_PM2/refs/heads/main/icon.png")
+        return shared.CreateTab("Omega")
     end)
     if not tabOk or not tab then
         warn("[Omega] shared.CreateTab failed: " .. tostring(tab))
@@ -70,10 +65,6 @@ local values = reuseUI and previousRuntime.values or {
 
 local runtime = { alive = true, ui = ui, values = values, handlers = {} }
 _G.OmegaAutoRevertRuntime = runtime
-
--- =========================================================================
--- Константы и состояние
--- =========================================================================
 
 local SAMPLE_INTERVAL   = 0.4
 local MONITOR_INTERVAL  = 0.25
@@ -106,10 +97,6 @@ local pingSource     = "Fallback"
 local lastAttempt    = -math.huge
 local lastGoodSample = -math.huge
 
--- =========================================================================
--- Утилиты
--- =========================================================================
-
 local function WarnOnce(key, message)
     if not warnings[key] then
         warnings[key] = true
@@ -121,10 +108,6 @@ local function IsFinite(value)
     return type(value) == "number" and value == value
         and value > -math.huge and value < math.huge
 end
-
--- =========================================================================
--- Пинг
--- =========================================================================
 
 local function ReadDataPing()
     local network = Stats:FindFirstChild("Network")
@@ -198,10 +181,6 @@ end
 local function GetPing()
     return math.floor(smoothedPing + 0.5)
 end
-
--- =========================================================================
--- Таблицы конфигурации
--- =========================================================================
 
 local PingControlPoints = {
     { Ping = 20,  Sim = 48, Interval = 70, H = 154, V = 144, X = -5,  Y = -14, Z = 0 },
@@ -280,10 +259,6 @@ local function GetConfig(ping)
     end
     return cfg
 end
-
--- =========================================================================
--- Применение пресета MM2
--- =========================================================================
 
 local function CallPreset(preset, slot, value, key)
     local readable, callback = pcall(function()
@@ -435,10 +410,6 @@ local function SyncWorker()
     end)
 end
 
--- =========================================================================
--- FPS Boost
--- =========================================================================
-
 local function RestoreGraphics()
     for i = #graphicsSnapshot, 1, -1 do
         local saved = graphicsSnapshot[i]
@@ -496,10 +467,6 @@ local function SetFPSBoost(state)
     end
     return true
 end
-
--- =========================================================================
--- Монитор (ScreenGui)
--- =========================================================================
 
 local function DestroyMonitor()
     if updateConnection then
@@ -600,10 +567,6 @@ local function CreateMonitor()
     end)
 end
 
--- =========================================================================
--- Reconfigure + handlers
--- =========================================================================
-
 local function Reconfigure(invalidate)
     if invalidate then
         lastApplied = {}
@@ -640,7 +603,7 @@ end
 runtime.handlers["Upgrade Mode"] = function(v)
     upgrade = v
     SyncUpgrade(GetInternal())
-    Reconfigure(true) -- сброс кэша, значения Sim/H/V меняются
+    Reconfigure(true)
     shared.Notify("Upgrade Mode: " .. (v and "ON" or "OFF"), 2)
 end
 
@@ -668,10 +631,6 @@ runtime.Cleanup = function()
     DestroyMonitor()
     return SetFPSBoost(false)
 end
-
--- =========================================================================
--- Регистрация тоглов через секцию
--- =========================================================================
 
 ui.runtime = runtime
 
@@ -706,7 +665,6 @@ if not reuseUI then
         end
     end
 
-    -- Доп. элементы интерфейса из API
     pcall(function()
         ui.section:AddLabel("Credits: Omega Auto Revert")
     end)
@@ -734,10 +692,6 @@ if not reuseUI then
     ui.complete = true
 end
 
--- =========================================================================
--- Инициализация
--- =========================================================================
-
 SyncUpgrade(GetInternal())
 
 if values["FPS Boost"] then
@@ -746,4 +700,4 @@ end
 if values["Monitor"] then
     runtime.handlers["Monitor"](true)
 end
-Reconfigure(false)
+Reconfigure(false)2
