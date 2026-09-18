@@ -1,9 +1,6 @@
-{
-    "name": "Omega",
-    "plugins": [
-        {
-            "name": "Omega Auto Revert",
-            "url": "/mellnikovden968/CFG_PM2/refs/heads/main/CFG.lua"
-        }
-    ]
+return {
+    {
+        name = "Omega Auto Revert",
+        url = "/mellnikovden968/CFG_PM2/refs/heads/main/CFG.lua"
+    }
 }
