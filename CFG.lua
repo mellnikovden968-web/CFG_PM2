@@ -36,7 +36,7 @@ if reuseUI then
     ui = previousRuntime.ui
 else
     local tabOk, tab = pcall(function()
-        return shared.CreateTab("Omega")
+        return shared.CreateTab("Omega", "/mellnikovden968-web/CFG_PM2/refs/heads/main/icon")
     end)
     if not tabOk or not tab then
         warn("[Omega] shared.CreateTab failed: " .. tostring(tab))
@@ -700,4 +700,4 @@ end
 if values["Monitor"] then
     runtime.handlers["Monitor"](true)
 end
-Reconfigure(false)
+Reconfigure(false)2
