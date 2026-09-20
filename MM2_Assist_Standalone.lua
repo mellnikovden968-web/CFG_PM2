@@ -282,7 +282,7 @@ Plugin.UI=(function(P)
     function UI:CreateWindow()
         local tab=host.CreateTab("MM2 Assist","/mellnikovden968-web/CFG_PM2/refs/heads/main/icon")
         local about=tab:AddSection("MM2 Assist","@assistaim payload v1.07 • combat rebuilt v2")
-        about:AddParagraph("Compatibility","Shooting uses the real MM2 remote captured from the live game: ReplicatedStorage.ClientServices.WeaponService.GunFired:FireServer(Handle, origin, hit, part), with the old CreateBeam remote as automatic fallback and a game-like click mode. Silent Aim rewrites your own GunFired shots when the executor supports hookmetamethod. Behavior still depends on the game and your executor. The original BOMB function is missing; Chance was marked not working. Aim Status shows the last shot result.")
+        about:AddParagraph("Compatibility","Shooting uses the real MM2 remote captured from the live game: ReplicatedStorage.ClientServices.WeaponService.GunFired. The exact argument layout changed in a recent game build (the server now wants a weapon-name string first and a bool flag, not the gun Handle), so the script auto-discovers the accepted signature on the first shot and reuses it for both manual shooting and Silent Aim. The old CreateBeam remote and a game-like click mode are kept as automatic fallbacks. Silent Aim rewrites your own GunFired/ShootGun shots when the executor supports hookmetamethod. Behavior still depends on the game and your executor. Aim Status shows the last shot result.")
         about:AddParagraph("Saving","Controls and floating-button positions: "..P.settingsFile..". Textbox values are restored internally and displayed in Saved labels. Other plugins' globals are not overwritten. Avoid running multiple speed/ESP/farm/physics controllers together.")
         about:AddButton("Hide floating UI",function() if P.HideFloating then P.HideFloating() end end)
         about:AddButton("Show floating UI",function() if P.ShowFloating then P.ShowFloating() end end)
@@ -457,6 +457,7 @@ _G.KillAllEnabled = false
 _G.AuraRange = 10
 _G.SilentAimEnabled = false
 _G.SilentAimWallCheck = false
+_G.SilentAimRaycast = true
 _G.ShootingMethod = "New (blatant)"
 _G.PredictionMultiplier = 0.125
 _G.SafeAutoFarm = false
@@ -1030,6 +1031,17 @@ local namecallHookInstalled = false
 local shotLogging = false
 local shotLogCount = 0
 local autoShootThread = nil
+-- Remembers the exact remote layout the server accepted, so both the manual
+-- shot and the silent-aim hook rewrite the correct argument. Shape:
+--   { method = "FireServer"/"InvokeServer", hitIndex = n, partIndex = n|nil }
+local shotSignature = nil
+-- The game's own GunFired call is always correct, so we capture its argument
+-- layout (by type) the first time we see it and replay it for manual shots.
+-- Shape: { method = "FireServer", types = { "string", "Vector3", "Vector3", "Instance" } }
+local learnedShotLayout = nil
+-- True while the script itself is firing the remote, so the namecall hook does
+-- not mistake our own (possibly wrong) candidate call for the game's own shot.
+local selfFiring = false
 
 local function reportAim(text)
     lastShotResult = tostring(text)
@@ -1094,6 +1106,59 @@ local function findGunFiredRemote()
     return nil
 end
 
+-- The live server rejected the old (Handle, origin, hit, part) call with:
+--   "argument #1 expects a string, but Instance was passed"
+--   "Unable to cast Vector3 to bool"
+-- so the real signature is (weaponName:string, ..., bool, ...). We do not know
+-- the exact order for every game build, so we try a list of candidates and
+-- remember the first one the server accepts. The winning layout is also reused
+-- by the silent-aim hook so it rewrites the right argument.
+local function buildShotCandidates(remote, gun, handle, origin, targetPos, targetPart)
+    local names = {}
+    local seen = {}
+    local function addName(n)
+        if type(n) == "string" and n ~= "" and not seen[n] then seen[n] = true; names[#names + 1] = n end
+    end
+    addName("Gun")
+    addName(gun and gun.Name)
+    addName("Shoot")
+    addName("ShootGun")
+    addName("Fire")
+    local cands = {}
+    local function add(method, hitIndex, partIndex, fn)
+        cands[#cands + 1] = { method = method, hitIndex = hitIndex, partIndex = partIndex, fn = fn }
+    end
+    -- New-style signatures: a weapon-name string first, a bool (headshot flag)
+    -- somewhere in the mix, and the hit position after it. The live server told
+    -- us arg #1 must be a string and that a Vector3 was being cast to a bool, so
+    -- these are tried first, most-likely layout at the top.
+    for _, name in ipairs(names) do
+        add("FireServer", 4, nil, function() remote:FireServer(name, origin, false, targetPos) end)
+        add("FireServer", 3, nil, function() remote:FireServer(name, origin, targetPos, false) end)
+        add("FireServer", 2, nil, function() remote:FireServer(name, targetPos, false) end)
+        add("FireServer", 4, nil, function() remote:FireServer(name, origin, true, targetPos) end)
+        add("FireServer", 3, nil, function() remote:FireServer(name, origin, targetPos, true) end)
+        add("FireServer", 2, nil, function() remote:FireServer(name, targetPos, true) end)
+        add("FireServer", 3, nil, function() remote:FireServer(name, origin, targetPos) end)
+        add("FireServer", 2, nil, function() remote:FireServer(name, targetPos) end)
+        add("FireServer", 4, 5,   function() remote:FireServer(name, origin, false, targetPos, targetPart) end)
+        add("FireServer", 3, 4,   function() remote:FireServer(name, origin, targetPos, targetPart) end)
+        add("FireServer", 2, 3,   function() remote:FireServer(name, targetPos, targetPart) end)
+        add("InvokeServer", 4, nil, function() return remote:InvokeServer(name, origin, false, targetPos) end)
+        add("InvokeServer", 3, nil, function() return remote:InvokeServer(name, origin, targetPos, false) end)
+        add("InvokeServer", 2, nil, function() return remote:InvokeServer(name, targetPos, false) end)
+        add("InvokeServer", 2, nil, function() return remote:InvokeServer(name, targetPos) end)
+    end
+    -- Legacy signatures captured from the live game: (Handle, origin, hit, part).
+    add("FireServer", 3, 4, function() remote:FireServer(handle, origin, targetPos, targetPart) end)
+    add("FireServer", 3, nil, function() remote:FireServer(handle, origin, targetPos) end)
+    add("FireServer", 2, nil, function() remote:FireServer(origin, targetPos, false) end)
+    add("FireServer", 2, nil, function() remote:FireServer(origin, targetPos) end)
+    add("FireServer", 1, nil, function() remote:FireServer(targetPos) end)
+    add("InvokeServer", 2, nil, function() return remote:InvokeServer(1, targetPos, "AH2") end)
+    return cands
+end
+
 local function fireGunFired(gun, targetPart, targetPos)
     local remote = gunFiredCache
     if not remote or not remote.Parent then
@@ -1112,17 +1177,62 @@ local function fireGunFired(gun, targetPart, targetPos)
     if typeof(targetPos) ~= "Vector3" or targetPos.X ~= targetPos.X or targetPos.Y ~= targetPos.Y or targetPos.Z ~= targetPos.Z then
         return false, "target position is not a valid Vector3"
     end
-    -- Signature captured from the live game: (Handle, origin, hit, hitPart).
-    local ok, err = pcall(function() remote:FireServer(handle, origin, targetPos, targetPart) end)
-    if ok then return true end
-    local first = tostring(err)
-    -- Retry without the hit part.
-    local ok2, err2 = pcall(function() remote:FireServer(handle, origin, targetPos) end)
-    if ok2 then return true end
-    -- Retry with a weapon-name string in case the remote expects (string, ...).
-    local ok3, err3 = pcall(function() remote:FireServer(tostring(gun.Name), origin, targetPos, targetPart) end)
-    if ok3 then return true end
-    return false, first:sub(1, 140) .. " / 3-arg: " .. tostring(err2):sub(1, 80)
+    -- Fast path: reuse the signature that already worked this session.
+    if shotSignature then
+        selfFiring = true
+        local ok, err = pcall(shotSignature.fn)
+        selfFiring = false
+        if ok then return true end
+        shotSignature = nil
+    end
+    -- Best path: replay the exact layout the game itself used, substituting the
+    -- target position for the hit Vector3 and the target part for the hit part.
+    if learnedShotLayout and learnedShotLayout.method == "FireServer" then
+        local types = learnedShotLayout.types
+        local built = {}
+        local hitIndex
+        for i = #types, 1, -1 do
+            if types[i] == "Vector3" then hitIndex = i; break end
+        end
+        for i = 1, #types do
+            local t = types[i]
+            if i == hitIndex then
+                built[i] = targetPos
+            elseif t == "string" then
+                built[i] = "Gun"
+            elseif t == "Vector3" then
+                built[i] = origin
+            elseif t == "boolean" then
+                built[i] = false
+            elseif t == "Instance" then
+                built[i] = targetPart or handle
+            elseif t == "number" then
+                built[i] = 1
+            else
+                built[i] = nil
+            end
+        end
+        selfFiring = true
+        local ok = pcall(function() remote:FireServer(table.unpack(built, 1, #types)) end)
+        selfFiring = false
+        if ok then
+            shotSignature = { method = "FireServer", hitIndex = hitIndex, fn = function() remote:FireServer(table.unpack(built, 1, #types)) end }
+            return true
+        end
+    end
+    local cands = buildShotCandidates(remote, gun, handle, origin, targetPos, targetPart)
+    local firstErr
+    for _, cand in ipairs(cands) do
+        selfFiring = true
+        local ok, err = pcall(cand.fn)
+        selfFiring = false
+        if ok then
+            shotSignature = cand
+            return true
+        end
+        if not firstErr then firstErr = tostring(err) end
+    end
+    return false, (firstErr or "no candidate signature accepted"):sub(1, 160)
 end
 
 local function resolveGunRemote(gun)
@@ -1160,10 +1270,15 @@ local function resolveGunRemote(gun)
 end
 
 local function invokeShot(remote, kind, targetPos)
+    selfFiring = true
+    local ok, err
     if kind == "FireServer" then
-        return pcall(function() remote:FireServer(1, targetPos, "AH2") end)
+        ok, err = pcall(function() remote:FireServer(1, targetPos, "AH2") end)
+    else
+        ok, err = pcall(function() return remote:InvokeServer(1, targetPos, "AH2") end)
     end
-    return pcall(function() return remote:InvokeServer(1, targetPos, "AH2") end)
+    selfFiring = false
+    return ok, err
 end
 
 local function shootViaClick(gun, targetPos)
@@ -1171,13 +1286,22 @@ local function shootViaClick(gun, targetPos)
     if not cam or not targetPos then return false, "no camera or target" end
     local ok, err = pcall(function()
         local oldCF = cam.CFrame
+        -- Snap the camera onto the target so the game's own raycast lands there.
         cam.CFrame = CFrame.lookAt(oldCF.Position, targetPos)
-        pcall(function() gun:Activate() end)
+        -- Move the virtual mouse to the screen centre (where the target now is)
+        -- before activating the tool, so mouse.Hit resolves to the target.
         pcall(function()
             local vim = game:GetService("VirtualInputManager")
             local size = cam.ViewportSize
             local cx, cy = size.X / 2, size.Y / 2
             vim:SendMouseMoveEvent(cx, cy)
+        end)
+        RunService.RenderStepped:Wait()
+        pcall(function() gun:Activate() end)
+        pcall(function()
+            local vim = game:GetService("VirtualInputManager")
+            local size = cam.ViewportSize
+            local cx, cy = size.X / 2, size.Y / 2
             vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
             vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
         end)
@@ -1239,7 +1363,7 @@ local function fireGunWorker()
     if not targetPos then return finish("No murderer detected: knife not visible and no role data yet (wait a few seconds).", true) end
     local anyOk, clickOk, clickErr, remoteOk, remoteErr, mode = attemptShot(gun, root, targetPos)
     if not anyOk then
-        return finish("Shot failed [" .. mode .. "] click: " .. tostring(clickErr) .. " / remote: " .. tostring(remoteErr), true)
+        return finish("Shot failed [" .. mode .. "] click: " .. tostring(clickErr) .. " / remote: " .. tostring(remoteErr) .. ". Tip: press 'Learn shot layout', then fire the gun once so the script copies the exact remote layout.", true)
     end
     local via = {}
     if clickOk then via[#via + 1] = "click" end
@@ -1261,9 +1385,12 @@ local function isShotRemote(self)
     if gunRemoteCache.remote and self == gunRemoteCache.remote then return true end
     if gunFiredCache and self == gunFiredCache then return true end
     local ok, match = pcall(function()
-        if self.Name == "GunFired" then return true end
-        if self.Name == "ShootGun" then return true end
-        if self.Name == "RemoteFunction" and self.Parent and (self.Parent.Name == "CreateBeam" or self.Parent.Name == "KnifeLocal") then return true end
+        local name = self.Name
+        if name == "GunFired" or name == "ShootGun" or name == "Throw" or name == "GunFire" then return true end
+        if name == "RemoteFunction" and self.Parent and (self.Parent.Name == "CreateBeam" or self.Parent.Name == "KnifeLocal") then return true end
+        -- Any remote living under a WeaponService / ClientServices tree is a shot.
+        local parent = self.Parent
+        if parent and (parent.Name == "WeaponService" or parent.Name == "ClientServices") then return true end
         return false
     end)
     return ok and match == true
@@ -1274,7 +1401,7 @@ local function looksLikeShot(args)
         local v = args[i]
         if type(v) == "string" then
             local lower = v:lower()
-            if v == "AH2" or lower:find("shoot") or lower:find("beam") then return true end
+            if v == "AH2" or lower:find("shoot") or lower:find("beam") or lower:find("gun") or lower:find("fire") then return true end
         end
     end
     if args.n >= 2 and args[1] == 1 and (typeof(args[2]) == "Vector3" or typeof(args[2]) == "CFrame") then return true end
@@ -1311,9 +1438,45 @@ local function installNamecallHook()
         local original
         local handler = function(self, ...)
             local method = getnamecallmethod()
+            -- Ray-based silent aim: redirect the game's own raycast toward the
+            -- target so the shot lands even when the remote args are not rewritten.
+            if Plugin.alive and _G.SilentAimEnabled and _G.SilentAimRaycast then
+                if method == "Raycast" or method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" then
+                    local okAim, position = pcall(computeSilentTarget)
+                    if okAim and position then
+                        local args = table.pack(...)
+                        local origin
+                        if typeof(args[1]) == "Vector3" then origin = args[1]
+                        elseif typeof(args[1]) == "Ray" then origin = args[1].Origin end
+                        if origin then
+                            local dir = (position - origin)
+                            if dir.Magnitude > 0.001 then
+                                if typeof(args[1]) == "Ray" then
+                                    args[1] = Ray.new(origin, dir.Unit * 1000)
+                                else
+                                    args[2] = dir.Unit * 1000
+                                end
+                                return original(self, table.unpack(args, 1, args.n))
+                            end
+                        end
+                    end
+                end
+            end
             if Plugin.alive and (method == "InvokeServer" or method == "FireServer") then
                 local redirect = _G.SilentAimEnabled and isShotRemote(self)
                 local log = shotLogging
+                -- Learn the game's own shot layout (it is always correct) so
+                -- manual shooting can replay it exactly. This runs regardless of
+                -- whether silent aim / logging is on, because the game fires its
+                -- own GunFired call every time the local player shoots.
+                if not learnedShotLayout and not selfFiring and isShotRemote(self) then
+                    local probe = table.pack(...)
+                    if looksLikeShot(probe) then
+                        local types = {}
+                        for i = 1, probe.n do types[i] = typeof(probe[i]) end
+                        learnedShotLayout = { method = method, types = types }
+                    end
+                end
                 if redirect or log then
                     local args = table.pack(...)
                     if log and (looksLikeShot(args) or isShotRemote(self)) then
@@ -1322,15 +1485,29 @@ local function installNamecallHook()
                     if redirect then
                         local okAim, position, part = pcall(computeSilentTarget)
                         if okAim and position then
+                            -- The hit point is always the LAST Vector3 argument in
+                            -- every known MM2 layout:
+                            --   (Handle, origin, hit, part)      -> hit at 3
+                            --   (name, origin, false, hit)       -> hit at 4
+                            --   (name, hit, false)               -> hit at 2
+                            -- so we locate it by type instead of trusting a cached
+                            -- index (the manual shot may use a different layout than
+                            -- the game's own call).
                             if method == "FireServer" then
-                                -- Real MM2 signature: (Handle, origin, hit, hitPart).
-                                -- Rewrite the hit position (arg 3) and, when present,
-                                -- the hit part (arg 4). Never touch the origin (arg 2).
-                                if args.n >= 3 then args[3] = position end
-                                if args.n >= 4 and part then args[4] = part end
+                                local hitIndex
+                                for i = args.n, 1, -1 do
+                                    if typeof(args[i]) == "Vector3" then hitIndex = i; break end
+                                end
+                                if hitIndex then args[hitIndex] = position end
+                                -- If an Instance follows the hit point, it is the hit
+                                -- part; point it at the target too.
+                                if part and hitIndex and hitIndex < args.n and typeof(args[hitIndex + 1]) == "Instance" then
+                                    args[hitIndex + 1] = part
+                                end
                             else
-                                -- Legacy InvokeServer path: (1, hitPos, "AH2").
-                                args[2] = position
+                                -- InvokeServer shots (ShootGun / legacy) keep the hit
+                                -- position at argument 2.
+                                if args.n >= 2 then args[2] = position end
                             end
                         end
                     end
@@ -2089,6 +2266,30 @@ MainTab:CreateButton({
             shotLogCount = 0
             reportAim("Shot logging on: shoot once with the gun, then copy the [MM2 Assist][shot] lines from the console.")
             Plugin.Notify("Shot logging on. Shoot once with the gun and copy [MM2 Assist][shot] lines from the console.")
+        end)
+    end
+})
+MainTab:CreateButton({
+    Name = "Learn shot layout (shoot once)",
+    Callback = function()
+        Plugin.task.spawn(function()
+            if not installNamecallHook() then return end
+            learnedShotLayout = nil
+            reportAim("Learning: shoot once with the gun (aim anywhere). The script will copy the game's exact remote layout.")
+            Plugin.Notify("Shoot once with the gun now. The script will learn the exact remote layout.")
+            local waited = 0
+            while not learnedShotLayout and waited < 15 and Plugin.alive do
+                task.wait(0.1)
+                waited = waited + 0.1
+            end
+            if learnedShotLayout then
+                local n = #learnedShotLayout.types
+                reportAim("Learned shot layout: " .. learnedShotLayout.method .. " with " .. n .. " args (" .. table.concat(learnedShotLayout.types, ", ") .. "). Manual shooting will now replay it.")
+                Plugin.Notify("Shot layout learned (" .. n .. " args). Manual shooting will now replay it.")
+            else
+                reportAim("No shot detected. Make sure you are the Sheriff, equip the gun and fire once.")
+                Plugin.Notify("No shot detected. Equip the gun and fire once.")
+            end
         end)
     end
 })
