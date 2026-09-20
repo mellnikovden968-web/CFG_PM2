@@ -43,7 +43,7 @@ do
         make('UICorner',{CornerRadius=UDim.new(0,12)},panel)
         local title=text('TextLabel','MM2 ASSIST  /  STANDALONE',panel,42)
         title.BackgroundColor3=accent;title.Size=UDim2.new(1,-46,0,42)
-        local hide=text('TextButton','вЂ”',panel,42);hide.Size=UDim2.new(0,40,0,42);hide.Position=UDim2.new(1,-42,0,0)
+        local hide=text('TextButton','—',panel,42);hide.Size=UDim2.new(0,40,0,42);hide.Position=UDim2.new(1,-42,0,0)
         local open=text('TextButton','MM2',gui,40);open.Size=UDim2.new(0,60,0,40);open.Position=UDim2.new(0,8,0.5,-20);open.BackgroundColor3=accent;open.Visible=false
         connect(hide.Activated,function() panel.Visible=false;open.Visible=true end)
         connect(open.Activated,function() panel.Visible=true;open.Visible=false end)
@@ -97,9 +97,9 @@ do
             end
             function section:AddToggle(name,callback)
                 local value=false
-                local b=row('TextButton','OFF  вЂў  '..name)
+                local b=row('TextButton','OFF  •  '..name)
                 local function flip()
-                    value=not value;b.Text=(value and 'ON  вЂў  ' or 'OFF  вЂў  ')..name;b.BackgroundColor3=value and accent or bg
+                    value=not value;b.Text=(value and 'ON  •  ' or 'OFF  •  ')..name;b.BackgroundColor3=value and accent or bg
                     callback(value)
                 end
                 connect(b.Activated,flip)
@@ -108,13 +108,13 @@ do
             function section:AddTextBox(name,callback)
                 section:AddLabel(name)
                 local box=row('TextBox','')
-                box.PlaceholderText='Enter valueвЂ¦';box.ClearTextOnFocus=false
+                box.PlaceholderText='Enter value…';box.ClearTextOnFocus=false
                 connect(box.FocusLost,function() callback(box.Text) end)
                 return box
             end
             function section:AddDropdown(name,items,callback)
                 local selected
-                local b=row('TextButton',name..'  в–ѕ')
+                local b=row('TextButton',name..'  ▾')
                 local holder=make('Frame',{Size=UDim2.new(1,-8,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Visible=false},page)
                 order=order+1;holder.LayoutOrder=order
                 make('UIListLayout',{Padding=UDim.new(0,3)},holder)
@@ -155,7 +155,7 @@ local Plugin=(function()
     local realTask=task
     local realInstance=Instance
     local http=game:GetService("HttpService")
-    local file="MM2Assist_Standalone_v2_settings.json"
+    local file="MM2Assist_Standalone_settings.json"
     P.settingsFile=file
     local env={}
     if type(getgenv)=="function" then local ok,v=pcall(getgenv);if ok and type(v)=="table" then env=v end end
@@ -281,8 +281,8 @@ Plugin.UI=(function(P)
     function UI:Notify(cfg) P.Notify((cfg.Title and cfg.Title..": " or "")..tostring(cfg.Content or "")) end
     function UI:CreateWindow()
         local tab=host.CreateTab("MM2 Assist","/mellnikovden968-web/CFG_PM2/refs/heads/main/icon")
-        local about=tab:AddSection("MM2 Assist","@assistaim payload v1.07 вЂў combat rebuilt v2")
-        about:AddParagraph("Compatibility","Direct GunFired calls are disabled because the current argument schema is unverified. Tool activation requests a normal shot but does not confirm firing or a hit. Silent Aim only modifies a matching legacy CreateBeam signature; GunFired passes through unchanged. BOMB is absent in the example; Chance is marked not working.")
+        local about=tab:AddSection("MM2 Assist","@assistaim payload v1.07 • combat rebuilt v2")
+        about:AddParagraph("Compatibility","Shooting uses the real MM2 remote captured from the live game: ReplicatedStorage.ClientServices.WeaponService.GunFired:FireServer(Handle, origin, hit, part), with the old CreateBeam remote as automatic fallback and a game-like click mode. Silent Aim rewrites your own GunFired shots when the executor supports hookmetamethod. Behavior still depends on the game and your executor. The original BOMB function is missing; Chance was marked not working. Aim Status shows the last shot result.")
         about:AddParagraph("Saving","Controls and floating-button positions: "..P.settingsFile..". Textbox values are restored internally and displayed in Saved labels. Other plugins' globals are not overwritten. Avoid running multiple speed/ESP/farm/physics controllers together.")
         about:AddButton("Hide floating UI",function() if P.HideFloating then P.HideFloating() end end)
         about:AddButton("Show floating UI",function() if P.ShowFloating then P.ShowFloating() end end)
@@ -291,7 +291,7 @@ Plugin.UI=(function(P)
         function window:CreateTab(name)
             local section=tab:AddSection(name,"Murder Mystery Assist")
             local api={}
-            function api:CreateSection(title) section:AddLabel("вЂ” "..title.." вЂ”") end
+            function api:CreateSection(title) section:AddLabel("— "..title.." —") end
             function api:CreateParagraph(cfg)
                 local label=section:AddParagraph(cfg.Title or "",cfg.Content or "",true)
                 return {Set=function(_,value)
@@ -824,18 +824,42 @@ local function getDynamicPrediction(targetRoot, myRoot)
     return (pingValue + travelTime) * speedMultiplier
 end
 
+-- Forward declaration: getMurderer() is defined further below but is used by
+-- getCombatData() for role-aware target selection.
+local getMurderer
+
+-- Returns the best part to use as the shot origin. Prefers the equipped gun's
+-- Handle (this is exactly what the real MM2 GunFired signature uses), then the
+-- arm, then the root. Never hard-fails on a missing arm (R6/R15/custom rigs).
+local function getOriginPart()
+    local char = lp.Character
+    if not char then return nil end
+    local gun = char:FindFirstChild("Gun") or (lp:FindFirstChild("Backpack") and lp.Backpack:FindFirstChild("Gun"))
+    if gun then
+        local h = gun:FindFirstChild("Handle")
+        if h then return h end
+    end
+    return char:FindFirstChild("Right Arm")
+        or char:FindFirstChild("RightHand")
+        or char:FindFirstChild("HumanoidRootPart")
+end
+
 local function getCombatData()
     local char = lp.Character
     local myHRP = char and char:FindFirstChild("HumanoidRootPart")
-    local arm = char and (char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand"))
-    if not myHRP or not arm then return nil end
+    local originPart = getOriginPart()
+    if not myHRP or not originPart then return nil end
 
-    local target = nil
-    for _, p in ipairs(game.Players:GetPlayers()) do
-        if p ~= lp and p.Character then
-            if p.Character:FindFirstChild("Knife") or (p:FindFirstChild("Backpack") and p.Backpack:FindFirstChild("Knife")) then
-                target = p
-                break
+    -- Prefer the shared role-aware resolver (visible knife -> role cache), so
+    -- shooting still works when the murderer's knife is not currently visible.
+    local target = getMurderer()
+    if not target or not target.Character then
+        for _, p in ipairs(game.Players:GetPlayers()) do
+            if p ~= lp and p.Character then
+                if p.Character:FindFirstChild("Knife") or (p:FindFirstChild("Backpack") and p.Backpack:FindFirstChild("Knife")) then
+                    target = p
+                    break
+                end
             end
         end
     end
@@ -859,8 +883,8 @@ local function getCombatData()
 
         for _, part in ipairs(partsToCheck) do
             if part then
-                local direction = (part.Position - arm.Position)
-                local result = workspace:Raycast(arm.Position, direction, rayParams)
+                local direction = (part.Position - originPart.Position)
+                local result = workspace:Raycast(originPart.Position, direction, rayParams)
                 if not result then
                     visible = true
                     break
@@ -882,13 +906,15 @@ local function getCombatData()
     end
 
     local finalPredictionOffset = flatOffset + verticalOffset
-    local originPos, targetPos
+    -- Origin is ALWAYS the real shooter position (gun handle). The old
+    -- "New (blatant)" mode put the origin on top of the target, which the
+    -- server rejects, so shots never registered.
+    local originPos = originPart.Position
+    local targetPos
 
     if activeMethod == "New (blatant)" then
-        originPos = root.Position + Vector3.new(0, 0, -0.4)
         targetPos = root.Position + (root.AssemblyLinearVelocity * 0.12)
     else
-        originPos = arm.Position
         local dist = (myHRP.Position - root.Position).Magnitude
         local dropComp = Vector3.new(0, (dist / 140), 0)
         targetPos = root.Position + finalPredictionOffset + dropComp
@@ -915,7 +941,7 @@ local function TeleportToLobby()
     end
 end
 
-local function getMurderer()
+getMurderer = function()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= lp then
             local backpack = p:FindFirstChild("Backpack")
@@ -1017,9 +1043,9 @@ local function getTargetData()
     if not murderer or not murderer.Character then return nil end
     local char = lp.Character
     local myHRP = char and char:FindFirstChild("HumanoidRootPart")
-    local arm = char and (char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand"))
+    local originPart = getOriginPart()
     local targetRoot = murderer.Character:FindFirstChild("HumanoidRootPart")
-    if not myHRP or not arm or not targetRoot then return nil end
+    if not myHRP or not originPart or not targetRoot then return nil end
     local velocity = targetRoot.AssemblyLinearVelocity
     local predTime = _G.PredictionMultiplier or 0.12
     local flatOffset, verticalOffset = Vector3.zero, Vector3.zero
@@ -1029,7 +1055,7 @@ local function getTargetData()
     end
     local dist = (myHRP.Position - targetRoot.Position).Magnitude
     local dropComp = Vector3.new(0, (dist / 140), 0)
-    return targetRoot, arm.Position, targetRoot.Position + flatOffset + verticalOffset + dropComp
+    return targetRoot, originPart.Position, targetRoot.Position + flatOffset + verticalOffset + dropComp
 end
 
 local function hasLineOfSight(fromPosition, targetRoot)
@@ -1068,8 +1094,35 @@ local function findGunFiredRemote()
     return nil
 end
 
-local function fireGunFired()
-    return false, "Direct GunFired disabled: current argument schema is unverified"
+local function fireGunFired(gun, targetPart, targetPos)
+    local remote = gunFiredCache
+    if not remote or not remote.Parent then
+        remote = findGunFiredRemote()
+        gunFiredCache = remote
+    end
+    if not remote then return false, "GunFired remote not found" end
+    local handle
+    pcall(function() handle = gun:FindFirstChild("Handle") end)
+    if not handle then return false, "gun Handle not found" end
+    local origin
+    pcall(function() origin = handle.Position end)
+    if typeof(origin) ~= "Vector3" or origin.X ~= origin.X or origin.Y ~= origin.Y or origin.Z ~= origin.Z then
+        return false, "gun Handle has no usable position"
+    end
+    if typeof(targetPos) ~= "Vector3" or targetPos.X ~= targetPos.X or targetPos.Y ~= targetPos.Y or targetPos.Z ~= targetPos.Z then
+        return false, "target position is not a valid Vector3"
+    end
+    -- Signature captured from the live game: (Handle, origin, hit, hitPart).
+    local ok, err = pcall(function() remote:FireServer(handle, origin, targetPos, targetPart) end)
+    if ok then return true end
+    local first = tostring(err)
+    -- Retry without the hit part.
+    local ok2, err2 = pcall(function() remote:FireServer(handle, origin, targetPos) end)
+    if ok2 then return true end
+    -- Retry with a weapon-name string in case the remote expects (string, ...).
+    local ok3, err3 = pcall(function() remote:FireServer(tostring(gun.Name), origin, targetPos, targetPart) end)
+    if ok3 then return true end
+    return false, first:sub(1, 140) .. " / 3-arg: " .. tostring(err2):sub(1, 80)
 end
 
 local function resolveGunRemote(gun)
@@ -1115,25 +1168,49 @@ end
 
 local function shootViaClick(gun, targetPos)
     local cam = workspace.CurrentCamera
-    if not cam or typeof(targetPos) ~= "Vector3" then return false, "no camera or target" end
-    if not gun or not gun:IsA("Tool") or gun.Parent ~= lp.Character then
-        return false, "gun is not equipped"
-    end
-    local oldCF = cam.CFrame
+    if not cam or not targetPos then return false, "no camera or target" end
     local ok, err = pcall(function()
+        local oldCF = cam.CFrame
         cam.CFrame = CFrame.lookAt(oldCF.Position, targetPos)
-        gun:Activate()
+        pcall(function() gun:Activate() end)
+        pcall(function()
+            local vim = game:GetService("VirtualInputManager")
+            local size = cam.ViewportSize
+            local cx, cy = size.X / 2, size.Y / 2
+            vim:SendMouseMoveEvent(cx, cy)
+            vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+            vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+        end)
         RunService.RenderStepped:Wait()
+        cam.CFrame = oldCF
     end)
-    pcall(function() cam.CFrame = oldCF end)
-    if not ok then return false, tostring(err) end
-    -- Activation is not proof that the server accepted a shot.
+    if not ok then return false, err end
     return true
 end
 
 local function attemptShot(gun, targetPart, targetPos)
-    local ok, err = shootViaClick(gun, targetPos)
-    return ok, ok, err, false, "disabled: unknown remote schema", "Tool activation"
+    local mode = _G.ShootMode or "Auto (click + remote)"
+    local doClick = mode:find("Auto") ~= nil or mode:find("click") ~= nil
+    local doRemote = mode:find("Auto") ~= nil or mode:find("remote") ~= nil
+    local clickOk, clickErr, remoteOk, remoteErr = false, "skipped", false, "skipped"
+    if doClick then
+        clickOk, clickErr = shootViaClick(gun, targetPos)
+    end
+    if doRemote then
+        remoteOk, remoteErr = fireGunFired(gun, targetPart, targetPos)
+        if not remoteOk then
+            local legacy, kind = resolveGunRemote(gun)
+            if legacy then
+                local legacyOk, legacyErr = invokeShot(legacy, kind, targetPos)
+                if legacyOk then
+                    remoteOk, remoteErr = true, nil
+                elseif remoteErr == "skipped" then
+                    remoteErr = legacyErr
+                end
+            end
+        end
+    end
+    return clickOk or remoteOk, clickOk, clickErr, remoteOk, remoteErr, mode
 end
 
 local function fireGunWorker()
@@ -1167,7 +1244,7 @@ local function fireGunWorker()
     local via = {}
     if clickOk then via[#via + 1] = "click" end
     if remoteOk then via[#via + 1] = "remote" end
-    finish("Tool activation requested toward " .. tostring(root and root.Parent and root.Parent.Name or "target") .. " via " .. table.concat(via, "+") .. " [" .. mode .. "].", false)
+    finish("Shot fired at " .. tostring(root and root.Parent and root.Parent.Name or "target") .. " via " .. table.concat(via, "+") .. " [" .. mode .. "].", false)
 end
 
 local function fireGun()
@@ -1245,12 +1322,14 @@ local function installNamecallHook()
                     if redirect then
                         local okAim, position, part = pcall(computeSilentTarget)
                         if okAim and position then
-                            -- Rewrite only the known legacy CreateBeam shape.
-                            -- GunFired and unknown signatures pass through unchanged.
-                            if self.Name == "CreateBeam" and args.n == 3
-                                and typeof(args[1]) == "number"
-                                and typeof(args[2]) == "Vector3"
-                                and typeof(args[3]) == "string" then
+                            if method == "FireServer" then
+                                -- Real MM2 signature: (Handle, origin, hit, hitPart).
+                                -- Rewrite the hit position (arg 3) and, when present,
+                                -- the hit part (arg 4). Never touch the origin (arg 2).
+                                if args.n >= 3 then args[3] = position end
+                                if args.n >= 4 and part then args[4] = part end
+                            else
+                                -- Legacy InvokeServer path: (1, hitPos, "AH2").
                                 args[2] = position
                             end
                         end
@@ -1294,7 +1373,7 @@ local function startAutoShoot()
                             local ok = attemptShot(gun, root, targetPos)
                             if ok then
                                 nextShot = os.clock() + 0.5
-                                reportAim("Auto tool activation requested [" .. tostring(_G.ShootMode or "Tool activation") .. "].")
+                                reportAim("Auto shot fired [" .. tostring(_G.ShootMode or "Auto (click + remote)") .. "].")
                             else
                                 nextShot = os.clock() + 1
                             end
@@ -1330,7 +1409,7 @@ local function dumpAimInfo()
         add("legacy remote: " .. (remote and (remote.Name .. " (" .. kind .. ") under " .. tostring(remote.Parent and remote.Parent.Name)) or "none"))
     end
     add("hookmetamethod: " .. (type(hookmetamethod) == "function" and "yes" or "no") .. "; hook: " .. (namecallHookInstalled and "installed" or "off") .. "; shot logging: " .. (shotLogging and "on" or "off"))
-    add("shoot mode: " .. tostring(_G.ShootMode or "Tool activation"))
+    add("shoot mode: " .. tostring(_G.ShootMode or "Auto (click + remote)"))
     local root, originPos, targetPos = getTargetData()
     add("target: " .. (root and root.Parent and root.Parent.Name or "none") .. (targetPos and (" @ " .. tostring(targetPos)) or ""))
     add("last result: " .. lastShotResult)
@@ -1341,7 +1420,7 @@ local function dumpAimInfo()
 end
 
 _G.AutoShootEnabled = false
-_G.ShootMode = "Tool activation"
+_G.ShootMode = "Auto (click + remote)"
 Plugin.cleanups[#Plugin.cleanups + 1] = function()
     _G.SilentAimEnabled = false
     _G.AutoShootEnabled = false
@@ -1704,29 +1783,29 @@ local function applyPlayerESP(p)
                     if hasKnife or role == "Murderer" then
                         local mColor = Color3.fromRGB(255, 0, 0)
                         highlight.FillColor = mColor
-                        label.Text = "MURDERER\nв–ј"
+                        label.Text = "MURDERER\n▼"
                         label.TextColor3 = mColor
                     elseif hasGun then
                         local sColor = Color3.fromRGB(160, 32, 240)
                         highlight.FillColor = sColor
-                        label.Text = "SHERIFF\nв–ј"
+                        label.Text = "SHERIFF\n▼"
                         label.TextColor3 = sColor
                     elseif role == "Sheriff" or role == "Hero" then
                         if gunDropped or (activeHero and activeHero ~= p) then
                             local iColor = Color3.fromRGB(0, 255, 0)
                             highlight.FillColor = iColor
-                            label.Text = "в–ј"
+                            label.Text = "▼"
                             label.TextColor3 = iColor
                         else
                             local sColor = Color3.fromRGB(160, 32, 240)
                             highlight.FillColor = sColor
-                            label.Text = "SHERIFF\nв–ј"
+                            label.Text = "SHERIFF\n▼"
                             label.TextColor3 = sColor
                         end
                     else
                         local iColor = Color3.fromRGB(0, 255, 0)
                         highlight.FillColor = iColor
-                        label.Text = "в–ј"
+                        label.Text = "▼"
                         label.TextColor3 = iColor
                     end
                 else
@@ -1802,7 +1881,7 @@ task.spawn(function()
             label.BackgroundTransparency = 1
             label.Font = "GothamBold"
             label.TextSize = 16
-            label.Text = "GUN HERE\nв–ј"
+            label.Text = "GUN HERE\n▼"
             label.TextColor3 = Color3.fromRGB(0, 255, 0)
             label.TextStrokeTransparency = 0
             label.TextStrokeColor3 = Color3.new(0, 0, 0)
@@ -1904,7 +1983,7 @@ local function killAll()
 end
 
 local Window = Rayfield:CreateWindow({
-   Name = "ASSISTAIM HUB | Murder Mystery 2 рџ‘ѕ",
+   Name = "ASSISTAIM HUB | Murder Mystery 2 👾",
    LoadingTitle = "by @assistaim",
    Theme = "Purple",
    ConfigurationSaving = {Enabled = true, FolderName = "ExodusConfigs", FileName = "MM2_Final"}
@@ -1991,8 +2070,8 @@ MainTab:CreateToggle({
 })
 MainTab:CreateDropdown({
     Name = "Shoot Mode",
-    Options = {"Tool activation"},
-    CurrentOption = {"Tool activation"},
+    Options = {"Auto (click + remote)", "Game-like click", "Direct remote"},
+    CurrentOption = {"Auto (click + remote)"},
     MultipleOptions = false,
     Flag = "ShootMode_F",
     Callback = function(Option) _G.ShootMode = Option[1] end
