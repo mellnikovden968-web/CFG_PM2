@@ -458,12 +458,53 @@ local function SR_BootNotify()
     end
 end
 
+SR_UI.modulesLoaded = 0
+SR_UI.modulesSeen = 0
+SR_UI.moduleFailures = {}
+-- Every module runs inside its own function. A module can no longer stop the rest of
+-- the file: an error (or an early return, e.g. "only works in MM2") is reported in the
+-- console and the remaining modules keep loading.
+function SR_UI.tryModule(name, body)
+    SR_UI.modulesSeen = SR_UI.modulesSeen + 1
+    local ok, err = pcall(body)
+    if ok then
+        SR_UI.modulesLoaded = SR_UI.modulesLoaded + 1
+    else
+        SR_UI.moduleFailures[#SR_UI.moduleFailures + 1] = name .. ": " .. tostring(err)
+        SR_Log("module " .. name .. " failed: " .. tostring(err))
+    end
+    return ok
+end
+-- A section that swallows every call. Used when the host menu gives a tab we cannot
+-- use: the module keeps running with no UI instead of erroring out.
+SR_UI.stubSection = setmetatable({}, {
+    __index = function()
+        return function() return SR_UI.stubSection end
+    end,
+})
 local function SR_Tab(moduleTitle)
     local host = odh_shared_plugins
-    assert(host and type(host.CreateTab)=="function", (moduleTitle or SR_UI.title) .. ": load through the current Overdrive H plugin menu")
-    if SR_UI.separateTabs then return host.CreateTab(moduleTitle or SR_UI.title, SR_UI.icon) end
+    if not (host and type(host.CreateTab)=="function") then
+        if not SR_UI.hostWarned then
+            SR_UI.hostWarned = true
+            SR_Log((moduleTitle or SR_UI.title) .. ": load through the current Overdrive H plugin menu")
+        end
+        return nil
+    end
+    local function create(title)
+        local ok, tab = pcall(host.CreateTab, title, SR_UI.icon)
+        if not ok or type(tab) ~= "table" or type(tab.AddSection) ~= "function" then
+            if not SR_UI.hostWarned then
+                SR_UI.hostWarned = true
+                SR_Log("menu is unavailable in this game (" .. tostring(tab) .. "); modules keep running without sections")
+            end
+            return nil
+        end
+        return tab
+    end
+    if SR_UI.separateTabs then return create(moduleTitle or SR_UI.title) end
     if SR_UI.tab then return SR_UI.tab end
-    SR_UI.tab = host.CreateTab(SR_UI.title, SR_UI.icon)
+    SR_UI.tab = create(SR_UI.title)
     return SR_UI.tab
 end
 
@@ -672,9 +713,15 @@ local function CreateODHX(id, title, file, replay, external)
     end
     function X.shared.AddSection(name,subtitle)
         if not tab then tab=SR_Tab(X.title) end
+        if not tab then return SR_UI.stubSection end
 
         if (subtitle==nil or subtitle=="") and SR_UI.tagSubtitles and not SR_UI.separateTabs then subtitle=X.title end
-        local raw=tab:AddSection(name,subtitle or "")
+        local raw
+        local created=pcall(function() raw=tab:AddSection(name,subtitle or "") end)
+        if not created or type(raw) ~= "table" then
+            SR_Log("section \"" .. tostring(name) .. "\" is unavailable; the module keeps running without it")
+            return SR_UI.stubSection
+        end
         local section={Name=name,Raw=raw}
         local function register(kind,label,callback,default,min,max,items)
             local r={section=name,name=label,kind=kind,callback=callback,default=default,min=min,max=max,items=items,visual=false}
@@ -780,6 +827,7 @@ local function CreateODHX(id, title, file, replay, external)
     return X
 end
 
+SR_UI.tryModule("Aimlock", function()
 do
     local ODHX = CreateODHX("Aimlock", "MM2 Aimlock", "ODH_Aimlock_settings.json", true, false)
 
@@ -1622,7 +1670,9 @@ do
     for btnId, btn in pairs(BindableButtons.Buttons) do SR_Store.posApply("aimlock", btnId, btn) end
 
 end
+end)
 
+SR_UI.tryModule("BindableButtonsColor", function()
 do
     local ODHX = CreateODHX("BindableButtonsColor", "Bindable Buttons Color", "ODH_BindableButtonsColor_settings.json", false, false)
 
@@ -2997,7 +3047,9 @@ do
     ODHX.Finish()
 
 end
+end)
 
+SR_UI.tryModule("BJP", function()
 do
     local ODHX = CreateODHX("BJP", "Bomb Jump+", "ODH_BJP_settings.json", true, false)
     local table_insert = table.insert
@@ -3503,10 +3555,13 @@ do
     hiddenGui.Parent = GetSafeGuiRoot()
     RootMaid:GiveTask(hiddenGui)
 
-    local _game = shared.game_name
-    if not _game and (game.PlaceId == 142823291 or game.GameId == 66654135) then _game = "Murder Mystery 2" end
+    local function isMurderMysteryPlace()
+        local name = type(shared.game_name) == "string" and shared.game_name or ""
+        if name:find("Murder Mystery", 1, true) then return true end
+        return game.PlaceId == 142823291 or game.GameId == 66654135
+    end
 
-    if _game == "Murder Mystery 2" or _game == "Murder Mystery Modded" then
+    if isMurderMysteryPlace() then
 
     local aboutSection = shared.AddSection("About")
 
@@ -3999,7 +4054,9 @@ do
     for btnId, btn in pairs(BindableButtons.Buttons) do SR_Store.posApply("bjp", btnId, btn) end
 
 end
+end)
 
+SR_UI.tryModule("ButtonTransparency", function()
 do
     local ODHX = CreateODHX("ButtonTransparency", "Button Transparency", "ODH_ButtonTransparency_settings.json", false, false)
 
@@ -4992,7 +5049,9 @@ do
     ODHX.Finish()
 
 end
+end)
 
+SR_UI.tryModule("PM_VALEX", function()
 do
     local ODHX = CreateODHX("PM_VALEX", "PM VALEX", "ODH_PM_VALEX_settings.json", true, true)
 
@@ -5027,9 +5086,22 @@ do
     end
 
     local shared = ODHX.shared
-    if not shared or (shared.game_name and shared.game_name ~= "Murder Mystery 2") then
-        hostNotify(BRAND .. " " .. VERSION .. ": Only works in MM2!", 3)
+    if not shared then
+        SR_Log(BRAND .. " " .. VERSION .. ": the host menu is unavailable, the module is skipped")
         return
+    end
+    -- Murder Mystery 2 and its modded versions (MMV and others) share the same
+    -- gameplay remotes, and every lookup this module makes is optional, so it is
+    -- built everywhere instead of refusing to load. In a place that does not look
+    -- like a Murder Mystery game the menu still appears and simply finds no target.
+    local function isMurderMysteryPlace()
+        local name = type(shared.game_name) == "string" and shared.game_name or ""
+        if name:find("Murder Mystery", 1, true) then return true end
+        if game.PlaceId == 142823291 or game.GameId == 66654135 then return true end
+        return false
+    end
+    if not isMurderMysteryPlace() then
+        SR_Log(BRAND .. " " .. VERSION .. ": game is not a Murder Mystery place, the reset features may do nothing here")
     end
 
     pcall(function()
@@ -7193,7 +7265,9 @@ do
     if not reconcileOK then SR_Log("[PM VALEX] on-screen buttons were not rebuilt: " .. tostring(reconcileErr)) end
 
 end
+end)
 
+SR_UI.tryModule("Pm-Wallhop", function()
 do
     local ODHX = CreateODHX("Pm-Wallhop", "Pm-WallHop", "ODH_Pm-Wallhop_settings.json", true, false)
     local shared = ODHX.shared
@@ -7801,7 +7875,9 @@ do
     for btnId, btn in pairs(WallhopBindableButtons.Buttons) do SR_Store.posApply("wallhop", btnId, btn) end
 
 end
+end)
 
+SR_UI.tryModule("PrismFlux", function()
 do
     local ODHX = CreateODHX("PrismFlux", "PrismFlux", "ODH_PrismFlux_settings.json", false, false)
     local RunService       = SR_UI.service("RunService")
@@ -14546,7 +14622,9 @@ do
     ODHX.Finish()
 
 end
+end)
 
+SR_UI.tryModule("shiftlock_color", function()
 do
     local ODHX = CreateODHX("shiftlock_color", "Shiftlock Crosshair", "ODH_shiftlock_color_settings.json", false, false)
 
@@ -15773,7 +15851,9 @@ do
     ODHX.Finish()
 
 end
+end)
 
+SR_UI.tryModule("Omega", function()
 do
 
 local shared = odh_shared_plugins
@@ -16774,7 +16854,9 @@ ReportStorageIssue()
 if not storage.skipInitialSave then SavePreferences() end
 
 end
+end)
 
+SR_UI.tryModule("Emotes", function()
 do
 
 local shared=odh_shared_plugins
@@ -18204,7 +18286,9 @@ task.defer(function()
 end)
 
 end
+end)
 
+SR_UI.tryModule("InventoryUnlimiter", function()
 do
     local ODHX = CreateODHX("InventoryUnlimiter", "Inventory Unlimiter", "ODH_InventoryUnlimiter_settings.json", true, false)
     local shared = ODHX.shared
@@ -18487,5 +18571,8 @@ do
     Log("loaded | settings: ODH_InventoryUnlimiter_settings.json")
 
 end
+end)
 
+SR_Log("modules loaded: " .. SR_UI.modulesLoaded .. "/" .. SR_UI.modulesSeen
+    .. (#SR_UI.moduleFailures > 0 and (" | failed: " .. table.concat(SR_UI.moduleFailures, "; ")) or ""))
 pcall(SR_BootNotify)
