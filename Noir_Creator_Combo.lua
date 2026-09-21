@@ -15,7 +15,26 @@ local SR_UI = {
     icon         = "/mellnikovden968-web/CFG_PM2/refs/heads/main/icon",
     tagSubtitles = true,                                       -- tag cards with the source module name
     tab          = nil,                                        -- cache of the already-created tab
+    services     = {},                                         -- cache of engine services (see SR_UI.service)
 }
+-- game:GetService performs a name lookup and a method call every time it is used,
+-- and the plugin asks for the same services dozens of times (some from inside
+-- per-frame code). Each service is therefore fetched once and reused after that,
+-- with the same fallbacks the modules used before.
+function SR_UI.service(name)
+    local cached = SR_UI.services[name]
+    if cached then return cached end
+    local ok, service = pcall(function() return game:GetService(name) end)
+    if not ok or not service then
+        ok, service = pcall(function() return game:FindService(name) end)
+    end
+    if not service then
+        local fine, direct = pcall(function() return game[name] end)
+        if fine then service = direct end
+    end
+    if service then SR_UI.services[name] = service end
+    return service
+end
 -- Text line width inside cards (characters, not bytes).
 local SR_TEXT_WIDTH = 58
 -- The host AddParagraph draws body text with a broken width (one letter per line),
@@ -80,7 +99,7 @@ function SR_Rota.Attach(obj, maid, speed)
     SR_Rota.byObj[obj] = entry
     SR_Rota.list[#SR_Rota.list + 1] = entry
     if not SR_Rota.conn then
-        if not SR_Rota.RunService then SR_Rota.RunService = game:GetService("RunService") end
+        if not SR_Rota.RunService then SR_Rota.RunService = SR_UI.service("RunService") end
         SR_Rota.conn = SR_Rota.RunService.RenderStepped:Connect(function(dt)
             local list = SR_Rota.list
             local i = 1
@@ -364,7 +383,7 @@ SR_Store.pos = nil               -- { [module] = { [buttonId] = {xs,xo,ys,yo} } 
 SR_Store.posRetries = 0
 SR_Store.posThread = nil
 SR_Store.http = nil
-pcall(function() SR_Store.http = game:GetService("HttpService") end)
+pcall(function() SR_Store.http = SR_UI.service("HttpService") end)
 function SR_Store.posLoad()
     if SR_Store.pos then return SR_Store.pos end
     local data, source = {}, "no file yet"
@@ -531,7 +550,7 @@ local function CreateODHX(id, title, file, replay, external)
     local rd = type(readfile)=="function" and readfile or env.readfile
     local wr = type(writefile)=="function" and writefile or env.writefile
     local exists = type(isfile)=="function" and isfile or env.isfile
-    local http = game:GetService("HttpService")
+    local http = SR_UI.service("HttpService")
     local reported = {}
     local function report(message)
         if reported[message] then return end
@@ -793,7 +812,7 @@ local function CreateODHX(id, title, file, replay, external)
     end
     function X.Path(object)
         local parts={}
-        local player=game:GetService("Players").LocalPlayer
+        local player=SR_UI.service("Players").LocalPlayer
         while object and object~=game do
             table.insert(parts,1,object==player and "$LocalPlayer" or object.Name)
             object=object.Parent
@@ -806,7 +825,7 @@ local function CreateODHX(id, title, file, replay, external)
         if type(parts)~="table" then return nil end
         local object=game
         for _,name in ipairs(parts) do
-            if name=="$LocalPlayer" then object=game:GetService("Players").LocalPlayer
+            if name=="$LocalPlayer" then object=SR_UI.service("Players").LocalPlayer
             elseif type(name)=="string" and object then object=object:FindFirstChild(name)
             else return nil end
         end
@@ -859,12 +878,12 @@ do
     local shared = ODHX.shared
     local section = shared.AddSection("MM2 AIMLOCK")
 
-    local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
-    local UserInputService = game:GetService("UserInputService")
-    local TweenService = game:GetService("TweenService")
-    local Workspace = game:GetService("Workspace")
-    local CoreGui = game:GetService("CoreGui")
+    local Players = SR_UI.service("Players")
+    local RunService = SR_UI.service("RunService")
+    local UserInputService = SR_UI.service("UserInputService")
+    local TweenService = SR_UI.service("TweenService")
+    local Workspace = SR_UI.service("Workspace")
+    local CoreGui = SR_UI.service("CoreGui")
 
     local LocalPlayer = Players.LocalPlayer
 
@@ -909,13 +928,7 @@ do
     ---------------------------------------------------------------------------
     -- Bindable Buttons System
     ---------------------------------------------------------------------------
-    local function getfserv(s)
-        local ok, svc = pcall(function() return game:GetService(s) end)
-        if ok and svc then return svc end
-        ok, svc = pcall(function() return game:FindService(s) end)
-        if ok and svc then return svc end
-        return game[s]
-    end
+    local function getfserv(s) return SR_UI.service(s) end
 
     local BindableButtons = {Buttons = {}, Maids = {}, Count = 0}
 
@@ -1419,90 +1432,94 @@ do
     ---------------------------------------------------------------------------
     -- Aimlock Loop
     ---------------------------------------------------------------------------
-    local function AimLockLoop(dt)
-        if not AimEnabled then return end
+    -- The loop body and its error handler live outside the frame callback: they used
+    -- to be created as two new closures on every single frame while the aimlock ran.
+    local function AimLockBody(dt)
+        local currentTime = tick()
 
-        -- Guard the whole loop so one bad frame never kills the bind.
-        local ok, err = xpcall(function()
-            local currentTime = tick()
+        -- Periodic murderer re-search (cheap throttle)
+        if currentTime - LastSearchTime > SearchInterval then
+            LastSearchTime = currentTime
 
-            -- Periodic murderer re-search (cheap throttle)
-            if currentTime - LastSearchTime > SearchInterval then
-                LastSearchTime = currentTime
-
-                if SelectedPlayer then
-                    if not isAlive(SelectedPlayer) or not Players:FindFirstChild(SelectedPlayer.Name) then
-                        SelectedPlayer = nil
-                        TargetPlayer = findMurderer()
-                    end
-                else
+            if SelectedPlayer then
+                if not isAlive(SelectedPlayer) or not Players:FindFirstChild(SelectedPlayer.Name) then
+                    SelectedPlayer = nil
                     TargetPlayer = findMurderer()
                 end
+            else
+                TargetPlayer = findMurderer()
             end
+        end
 
-            local target = getEffectiveTarget()
-            if not target then
-                LastAimPos = nil
-                return
-            end
+        local target = getEffectiveTarget()
+        if not target then
+            LastAimPos = nil
+            return
+        end
 
-            local aimPart = resolveAimPart(target)
-            if not aimPart then
-                LastAimPos = nil
-                LastTarget = nil
-                return
-            end
+        local aimPart = resolveAimPart(target)
+        if not aimPart then
+            LastAimPos = nil
+            LastTarget = nil
+            return
+        end
 
-            -- Reset the smoothing anchor whenever the target changes so the
-            -- camera doesn't "slide" sideways from the old target's position.
-            if LastTarget ~= target then
-                LastAimPos = nil
-                LastTarget = target
-            end
+        -- Reset the smoothing anchor whenever the target changes so the
+        -- camera doesn't "slide" sideways from the old target's position.
+        if LastTarget ~= target then
+            LastAimPos = nil
+            LastTarget = target
+        end
 
-            if not isVisible(aimPart, target) then
-                LastAimPos = nil
-                return
-            end
+        if not isVisible(aimPart, target) then
+            LastAimPos = nil
+            return
+        end
 
-            -- Lead the target with velocity prediction.
-            -- Vertical prediction (Y) is kept so the lock tracks jumps/falls.
-            -- Horizontal prediction (X/Z) is OFF by default because it makes the
-            -- camera "drift" sideways when the murderer strafes. Toggle via menu.
-            local vel = aimPart.AssemblyLinearVelocity or Vector3.new()
-            local predX, predZ = 0, 0
-            if HorizontalPrediction then
-                predX, predZ = vel.X * PredictionLevel, vel.Z * PredictionLevel
-            end
-            local pred = Vector3.new(predX, vel.Y * 0.3 * PredictionLevel, predZ)
-            local aimPos = aimPart.Position + pred
+        -- Lead the target with velocity prediction.
+        -- Vertical prediction (Y) is kept so the lock tracks jumps/falls.
+        -- Horizontal prediction (X/Z) is OFF by default because it makes the
+        -- camera "drift" sideways when the murderer strafes. Toggle via menu.
+        local vel = aimPart.AssemblyLinearVelocity or Vector3.new()
+        local predX, predZ = 0, 0
+        if HorizontalPrediction then
+            predX, predZ = vel.X * PredictionLevel, vel.Z * PredictionLevel
+        end
+        local pred = Vector3.new(predX, vel.Y * 0.3 * PredictionLevel, predZ)
+        local aimPos = aimPart.Position + pred
 
-            -- FOV gate
-            if not isWithinFOV(aimPos) then
-                LastAimPos = nil
-                return
-            end
+        -- FOV gate
+        if not isWithinFOV(aimPos) then
+            LastAimPos = nil
+            return
+        end
 
-            -- Frame-rate independent smoothing.
-            -- alpha = 1 - exp(-rate * dt): converges the same speed regardless of
-            -- FPS, and never overshoots. When Smoothness == 0 we snap instantly.
-            if LastAimPos and Smoothness > 0 then
-                local alpha = 1 - math.exp(-SmoothRate * dt)
-                alpha = math.clamp(alpha, 0, 1)
-                aimPos = LastAimPos:Lerp(aimPos, alpha)
-            end
-            LastAimPos = aimPos
+        -- Frame-rate independent smoothing.
+        -- alpha = 1 - exp(-rate * dt): converges the same speed regardless of
+        -- FPS, and never overshoots. When Smoothness == 0 we snap instantly.
+        if LastAimPos and Smoothness > 0 then
+            local alpha = 1 - math.exp(-SmoothRate * dt)
+            alpha = math.clamp(alpha, 0, 1)
+            aimPos = LastAimPos:Lerp(aimPos, alpha)
+        end
+        LastAimPos = aimPos
 
-            -- Rotate the camera toward the (smoothed) aim point while keeping the
-            -- camera origin untouched. Using CFrame.lookAt with an explicit up
-            -- vector avoids roll/tilt jitter on slopes and fast turns.
-            CurrentCamera.CFrame = CFrame.lookAt(
-                CurrentCamera.CFrame.Position,
-                aimPos,
-                Vector3.new(0, 1, 0)
-            )
-        end, function(e) return debug.traceback(e) end)
+        -- Rotate the camera toward the (smoothed) aim point while keeping the
+        -- camera origin untouched. Using CFrame.lookAt with an explicit up
+        -- vector avoids roll/tilt jitter on slopes and fast turns.
+        CurrentCamera.CFrame = CFrame.lookAt(
+            CurrentCamera.CFrame.Position,
+            aimPos,
+            Vector3.new(0, 1, 0)
+        )
+    end
 
+    local function aimlockTrace(e) return debug.traceback(e) end
+
+    local function AimLockLoop(dt)
+        if not AimEnabled then return end
+        -- Guard the whole loop so one bad frame never kills the bind.
+        local ok, err = xpcall(AimLockBody, aimlockTrace, dt)
         if not ok then
             warn("[MM2 Aimlock] loop error: " .. tostring(err))
         end
@@ -1902,7 +1919,7 @@ do
         }
     end
 
-    local Players     = game:GetService("Players")
+    local Players     = SR_UI.service("Players")
     local LocalPlayer = Players.LocalPlayer
     if not LocalPlayer then
     	LocalPlayer = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -2110,7 +2127,7 @@ do
     		end
     	end
     	pcall(function()
-    		add(game:GetService("CoreGui"))
+    		add(SR_UI.service("CoreGui"))
     	end)
     	pcall(function()
     		if gethui then
@@ -2219,12 +2236,18 @@ do
     	end
     	local limit = BIG_AUTO_MAX_WIDTH
     	pcall(function()
-    		local cam = game:GetService("Workspace").CurrentCamera
+    		local cam = SR_UI.service("Workspace").CurrentCamera
     		if cam and cam.ViewportSize then
     			limit = math.max(limit, cam.ViewportSize.X * 0.18)
     		end
     	end)
     	return s.X >= limit
+    end
+
+    -- One shared helper instead of a brand new closure for every tracked instance.
+    local function isAliveInstance(inst)
+        local ok, alive = pcall(function() return inst.Parent ~= nil end)
+        return ok and alive == true
     end
 
     --========================= CACHE AND PAINTING ========================--
@@ -2674,10 +2697,7 @@ do
     	local painted = {}
     	local n = 0
     	for _, inst in ipairs(Cache.list) do
-    		local alive = false
-    		pcall(function()
-    			alive = inst.Parent ~= nil
-    		end)
+    		local alive = isAliveInstance(inst)
     		if alive then
     			table.insert(final, inst)
     			local underPainted = false
@@ -2937,7 +2957,7 @@ do
     		btn.Active = true
     		btn.ZIndex = 2147483647
     		btn.Parent = gui
-    		local parent = game:GetService("CoreGui")
+    		local parent = SR_UI.service("CoreGui")
     		if not parent then
     			parent = LocalPlayer:FindFirstChildOfClass("PlayerGui")
     		end
@@ -3257,7 +3277,6 @@ do
     	end
     end)
 
-
     ODHX.Bind("Bindable Buttons Color", "Button color (background/icon)", "Colorpicker", function() return State.BgColor end)
     ODHX.Bind("Bindable Buttons Color", "Toggle ON light color (for dark buttons)", "Colorpicker", function() return State.OnLight end)
     ODHX.Bind("Bindable Buttons Color", "Toggle ON dark color (for light buttons)", "Colorpicker", function() return State.OnDark end)
@@ -3328,15 +3347,15 @@ do
     local shared = ODHX.shared
 
     local Services = {
-        Players = game:GetService("Players"),
-        ReplicatedStorage = game:GetService("ReplicatedStorage"),
-        RunService = game:GetService("RunService"),
-        UserInputService = game:GetService("UserInputService"),
-        StarterGui = game:GetService("StarterGui"),
-        CoreGui = game:GetService("CoreGui"),
-        Workspace = game:GetService("Workspace"),
-        TweenService = game:GetService("TweenService"),
-        SoundService = game:GetService("SoundService")
+        Players = SR_UI.service("Players"),
+        ReplicatedStorage = SR_UI.service("ReplicatedStorage"),
+        RunService = SR_UI.service("RunService"),
+        UserInputService = SR_UI.service("UserInputService"),
+        StarterGui = SR_UI.service("StarterGui"),
+        CoreGui = SR_UI.service("CoreGui"),
+        Workspace = SR_UI.service("Workspace"),
+        TweenService = SR_UI.service("TweenService"),
+        SoundService = SR_UI.service("SoundService")
     }
 
     local LocalPlayer = Services.Players.LocalPlayer
@@ -3347,13 +3366,7 @@ do
     local __UD = UDim.new
     local __V2 = Vector2.new
 
-    local function getfserv(s)
-        local ok, svc = pcall(function() return game:GetService(s) end)
-        if ok and svc then return svc end
-        ok, svc = pcall(function() return game:FindService(s) end)
-        if ok and svc then return svc end
-        return game[s]
-    end
+    local function getfserv(s) return SR_UI.service(s) end
 
     local __RS   = getfserv("RunService")
     local __UIS  = getfserv("UserInputService")
@@ -4415,7 +4428,7 @@ do
         }
     end
 
-    local Players     = game:GetService("Players")
+    local Players     = SR_UI.service("Players")
     local LocalPlayer = Players.LocalPlayer
     if not LocalPlayer then
     	LocalPlayer = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -4633,7 +4646,7 @@ do
     		end
     	end
     	pcall(function()
-    		add(game:GetService("CoreGui"))
+    		add(SR_UI.service("CoreGui"))
     	end)
     	pcall(function()
     		if gethui then
@@ -4970,10 +4983,7 @@ do
     	local painted = {}
     	local n = 0
     	for _, inst in ipairs(Cache.list) do
-    		local alive = false
-    		pcall(function()
-    			alive = inst.Parent ~= nil
-    		end)
+    		local alive = isAliveInstance(inst)
     		if alive then
     			table.insert(final, inst)
     			local underPainted = false
@@ -5214,7 +5224,7 @@ do
     		btn.Active = true
     		btn.ZIndex = 2147483647
     		btn.Parent = gui
-    		local parent = game:GetService("CoreGui")
+    		local parent = SR_UI.service("CoreGui")
     		if not parent then
     			parent = LocalPlayer:FindFirstChildOfClass("PlayerGui")
     		end
@@ -5379,7 +5389,6 @@ do
     	end
     end)
 
-
     ODHX.Bind("Button Transparency", "Button opacity", "Slider", function() return State.Value end)
     ODHX.cleanup=shutdown
     ODHX.Finish()
@@ -5470,7 +5479,7 @@ do
             if pcall(odh_shared_plugins.Notify, text, dur or 3) then return end
         end
         pcall(function()
-            local sg = StarterGui or game:GetService("StarterGui")
+            local sg = StarterGui or SR_UI.service("StarterGui")
             sg:SetCore("SendNotification", {
                 Title = BRAND, Text = tostring(text), Duration = dur or 3,
             })
@@ -5548,16 +5557,16 @@ do
     local RootMaid = Maid.new()
 
     -- ====== Services ======
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local Players           = game:GetService("Players")
+    local ReplicatedStorage = SR_UI.service("ReplicatedStorage")
+    local Players           = SR_UI.service("Players")
     local LocalPlayer       = Players.LocalPlayer
-    local UserInputService  = game:GetService("UserInputService")
-    local RunService        = game:GetService("RunService")
-    local Workspace         = game:GetService("Workspace")
-    local TweenService      = game:GetService("TweenService")
-    local HttpService       = game:GetService("HttpService")
-    local CoreGui           = game:GetService("CoreGui")
-    StarterGui              = game:GetService("StarterGui")
+    local UserInputService  = SR_UI.service("UserInputService")
+    local RunService        = SR_UI.service("RunService")
+    local Workspace         = SR_UI.service("Workspace")
+    local TweenService      = SR_UI.service("TweenService")
+    local HttpService       = SR_UI.service("HttpService")
+    local CoreGui           = SR_UI.service("CoreGui")
+    StarterGui              = SR_UI.service("StarterGui")
 
     -- ====== Shortcuts (fewer global lookups per frame) ======
     local new      = Instance.new
@@ -6455,7 +6464,7 @@ do
         -- Property writes are the expensive part here, so every value is only
         -- written when it actually changed (identical result, far fewer updates).
         local eps = 1e-4
-        for _, rec in pairs(BindableButtons.recs) do
+        for _, rec in BindableButtons.recs do      -- generalised iteration: Luau fast path
             local btn, glow = rec.btn, rec.glow
             if btn and glow then
                 rec.hover = rec.hover + (rec.targetHover - rec.hover) * kHover
@@ -7707,7 +7716,6 @@ do
         rawset(g, UNLOAD_GLOBAL, ODHX.Stop)
     end)
 
-
     ODHX.Bind("⚙️ Tuning", "Notifications", "Toggle", function() return config.notifications end)
     ODHX.Bind("🔘 Binds", "SFX 🔇", "Toggle", function() return config.muteSounds end)
     ODHX.Bind("⚙️ Tuning", "Max Retries", "Slider", function() return config.maxRetries end)
@@ -7863,7 +7871,7 @@ do
 
     local function GetStorage()
         local parent = gethui and gethui()
-        if not parent or typeof(parent) ~= "Instance" then parent = game:GetService("CoreGui") end
+        if not parent or typeof(parent) ~= "Instance" then parent = SR_UI.service("CoreGui") end
         if not parent or typeof(parent) ~= "Instance" then
             parent = game.Players.LocalPlayer:WaitForChild("PlayerGui", 5)
         end
@@ -7898,13 +7906,13 @@ do
                 ripple.BackgroundTransparency = 0.5
                 ripple.Visible = true
 
-                game:GetService("TweenService"):Create(ripple, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+                SR_UI.service("TweenService"):Create(ripple, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
                     Size = UDim2.new(0, 45, 0, 45),
                     BackgroundTransparency = 1
                 }):Play()
 
                 local releaseConn
-                releaseConn = ODHX.Connect(game:GetService("UserInputService").InputEnded, function(endInput)
+                releaseConn = ODHX.Connect(SR_UI.service("UserInputService").InputEnded, function(endInput)
                     if endInput.UserInputType == input.UserInputType then
                         dragging = false
                         if not hasMoved then
@@ -7924,7 +7932,7 @@ do
             end
         end))
 
-        maid:GiveTask(ODHX.Connect(game:GetService("UserInputService").InputChanged, function(input)
+        maid:GiveTask(ODHX.Connect(SR_UI.service("UserInputService").InputChanged, function(input)
             if dragging and input == dragInput then
                 local delta = input.Position - dragStart
                 if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then hasMoved = true end
@@ -8024,7 +8032,7 @@ do
         local function onClick()
             if debounce then return end
             debounce = true
-            local fOut = game:GetService("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 1})
+            local fOut = SR_UI.service("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 1})
             fOut:Play()
             fOut.Completed:Wait()
 
@@ -8032,7 +8040,7 @@ do
             Gradient.Color = BindValue.Value and __ACTIVE_COLOR or __NORMAL_COLOR
             if BindValue.Value then safecallback(onFunc) else safecallback(offFunc) end
 
-            local fIn = game:GetService("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 0})
+            local fIn = SR_UI.service("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 0})
             fIn:Play()
             fIn.Completed:Wait()
             debounce = false
@@ -8123,10 +8131,10 @@ do
     CreateWallhopBindButton()
 
     -- --- Main logic ---
-    local Players = game:GetService("Players")
+    local Players = SR_UI.service("Players")
     local LocalPlayer = Players.LocalPlayer
-    local RunService = game:GetService("RunService")
-    local UserInputService = game:GetService("UserInputService")
+    local RunService = SR_UI.service("RunService")
+    local UserInputService = SR_UI.service("UserInputService")
 
     -- --- Variables ---
     local isFlicking = false
@@ -8420,11 +8428,11 @@ end
 -- ========================================
 do
     local ODHX = CreateODHX("PrismFlux", "PrismFlux", "ODH_PrismFlux_settings.json", false, false)
-    local RunService       = game:GetService("RunService")
-    local Players          = game:GetService("Players")
-    local Lighting         = game:GetService("Lighting")
-    local UserInputService = game:GetService("UserInputService")
-    local Debris           = game:GetService("Debris")
+    local RunService       = SR_UI.service("RunService")
+    local Players          = SR_UI.service("Players")
+    local Lighting         = SR_UI.service("Lighting")
+    local UserInputService = SR_UI.service("UserInputService")
+    local Debris           = SR_UI.service("Debris")
 
     local LocalPlayer = Players.LocalPlayer
     local Terrain     = workspace.Terrain
@@ -10031,7 +10039,6 @@ do
     PFPrim.soulFX = soulFX
     end
 
-
     local Char = { model = nil, humanoid = nil, root = nil, torso = nil, head = nil, r6 = false, limbs = {} }
     local function alive()
     	return Char.model ~= nil and Char.model.Parent ~= nil
@@ -10066,7 +10073,7 @@ do
     			else
     				Tick.wobble = 0
     			end
-    			for _, fn in pairs(Tick.users) do pcall(fn, dt, Tick.clock) end
+    			for _, fn in Tick.users do pcall(fn, dt, Tick.clock) end   -- generalised iteration: Luau fast path
     		end)
     	end
     end
@@ -13233,8 +13240,6 @@ do
     	killFX(Char.root.Position, Char.model)
     end
 
-
-
     -- 1) AURA TRAILER — a glowing energy wake that trails behind
     --    the character along the movement direction. Instead of faint lines to the root —
     --    soft tail ribbons (Beam) + glow + sparks behind.
@@ -13336,7 +13341,6 @@ do
     		end)
     	end
     end
-
 
     -- 2) FORCEFIELD — repaint the rig parts with Material.ForceField.
     --    (No parts are created — existing ones are repainted; restored on disable.)
@@ -14734,7 +14738,7 @@ do
     	Profiles.mem[slot] = blob
     	local ok, err = pcall(function()
     		if not canFiles() then error("no file API") end
-    		writefile(fileName(slot), game:GetService("HttpService"):JSONEncode(blob))
+    		writefile(fileName(slot), SR_UI.service("HttpService"):JSONEncode(blob))
     	end)
     	return true, ok and ("Saved → " .. slot .. " (file)") or ("Saved → " .. slot .. " (session only)")
     end
@@ -14742,7 +14746,7 @@ do
     	local blob = Profiles.mem[slot]
     	pcall(function()
     		if canFiles() and isfile(fileName(slot)) then
-    			blob = game:GetService("HttpService"):JSONDecode(readfile(fileName(slot)))
+    			blob = SR_UI.service("HttpService"):JSONDecode(readfile(fileName(slot)))
     		end
     	end)
     	if not blob then return false, "Slot is empty: " .. slot end
@@ -15024,7 +15028,6 @@ do
     sec:AddButton("▶ Preview on myself", function() Kill.preview() end)
     label(sec, "Triggers when any other player's Humanoid dies near you")
 
-
     -- ===== ANYA-PORT: AURA · FORCEFIELD · PARTICLE · MOTION ECHO =====
     sec = PF_UI.section("Anya-Port FX")
     sec:AddToggle("Aura trailer (energy wake)", function(v) S.AuraTrailer.Enabled = v rebuild("AuraTrailer") end)
@@ -15057,7 +15060,6 @@ do
     sec:AddSlider("Echo Lifetime x10", 1, 20, math.floor((S.MotionEcho.Lifetime or 0.45) * 10 + 0.5), function(v) S.MotionEcho.Lifetime = v / 10 end)
     sec:AddSlider("Echo Interval x100", 3, 30, math.floor((S.MotionEcho.Interval or 0.09) * 100 + 0.5), function(v) S.MotionEcho.Interval = v / 100 end)
     sec:AddSlider("Echo opacity %", 10, 90, math.floor((1 - (S.MotionEcho.Transparency or 0.45)) * 100 + 0.5), function(v) S.MotionEcho.Transparency = (100 - v) / 100 if S.MotionEcho.Enabled then MotionEcho.build() end end)
-
 
     -- ===== SCREEN FX (2D, no 3D world objects) =====
     sec = PF_UI.section("Screen FX")
@@ -15151,9 +15153,7 @@ do
     sec:AddToggle("Auto-load this slot on start", function(v) notify(Profiles.setAutoload(v), 2) end)
     label(sec, "Last-session settings are saved automatically. Manual slots remain independent.")
 
-
     SR_Log("PrismFlux Zero-Part v4 loaded")
-
 
     ODHX.Bind("Jump FX", "Enable jump FX", "Toggle", function() return S.Jump.Enabled end)
     ODHX.Bind("Jump FX", "Style", "Dropdown", function() return S.Jump.Style end)
@@ -15333,18 +15333,15 @@ do
     --   section:AddLabel / :AddToggle / :AddButton / :AddColorpicker
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-
     local shared = ODHX.shared
-    local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
-
+    local Players = SR_UI.service("Players")
+    local RunService = SR_UI.service("RunService")
 
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 🎨 COLOUR PRESET TABLE
     --   Every preset = 5 key points for a smooth cyclic gradient.
     --   Format: { name = "Displayed name", icon = "emoji", colors = { ... } }
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     local GLOW_PRESETS = {
         {
@@ -15624,7 +15621,6 @@ do
         },
     }
 
-
     -- Gradient animation speed presets
     local SPEED_PRESETS = {
         { label = "🐌 Slow",     value = 0.3 },
@@ -15632,7 +15628,6 @@ do
         { label = "🏃 Fast",     value = 2.0 },
         { label = "⚡ Ultra",    value = 5.0 },
     }
-
 
     -- Opacity/scale pulse speed presets
     local PULSE_PRESETS = {
@@ -15642,7 +15637,6 @@ do
         { label = "⚡ Pulse Ultra",  value = 8.0 },
     }
 
-
     -- 🆕 v3.5 Waveforms for the pulses
     local WAVEFORMS = {
         { label = "〰️ Sine Wave",      key = "sine" },
@@ -15650,7 +15644,6 @@ do
         { label = "📐 Triangle",       key = "triangle" },
         { label = "🟦 Pulse (hard)",   key = "pulse" },
     }
-
 
     -- 🆕 v3.5 Amplitudes for Scale Pulse
     local SCALE_AMPLITUDE_PRESETS = {
@@ -15660,7 +15653,6 @@ do
         { label = "🔶 Heavy Scale (+35%)",  value = 0.35 },
     }
 
-
     -- 🆕 v3.5 Transparency depth for Pulsate
     local TRANSPARENCY_DEPTH_PRESETS = {
         { label = "🔅 Faint Transparency (0.2)", value = 0.2 },
@@ -15668,7 +15660,6 @@ do
         { label = "🔆 Strong Transparency (0.6)", value = 0.6 },
         { label = "🌑 Deep Transparency (0.85)", value = 0.85 },
     }
-
 
     -- 🆕 v3.5 Echo copy count for Trail
     local TRAIL_COUNT_PRESETS = {
@@ -15678,20 +15669,16 @@ do
         { label = "👻 Trail x5", value = 5 },
     }
 
-
     -- Keywords for finding crosshair objects (several languages)
     -- NOTE: the Russian keyword is kept on purpose — it matches crosshair objects in Russian games
     local CROSSHAIR_KEYWORDS = { "crosshair", "прицел", "aim", "reticle", "target", "cursor" }
 
-
     -- 🆕 Settings save key
     local SETTINGS_KEY = "ShiftlockCrosshair_v3_5_Settings"
-
 
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- ⚙️ STATE
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     local state = {
         enabled = false,
@@ -15700,7 +15687,6 @@ do
         reversed = false,
         currentPreset = nil,             -- selected preset (table)
         customColors = nil,              -- custom colours from the Colorpicker
-
 
     -- 🌈 Rainbow
     rainbowMode = false,             -- RGB/rainbow (HSV cycle)
@@ -15736,11 +15722,9 @@ do
 
     }
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 🛠 HELPER FUNCTIONS
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     -- 🆕 Waveform functions — return a 0..1 value for a phase
     local WAVEFORM_FUNCS = {
@@ -15768,12 +15752,10 @@ do
         end,
     }
 
-
     local function getWaveformValue(phase, waveform)
         local fn = WAVEFORM_FUNCS[waveform] or WAVEFORM_FUNCS.sine
         return fn(phase)
     end
-
 
     -- 🆕 Save/load settings (via a _G buffer)
     local function captureSettings()
@@ -15798,7 +15780,6 @@ do
         return type(saved)=="table" and saved or nil
     end
 
-
     -- Returns the currently active colour set (custom or preset)
     local function getActiveColors()
         if state.rainbowMode then
@@ -15810,7 +15791,6 @@ do
         end
         return GLOW_PRESETS[13].colors  -- fallback (Electric Purple)
     end
-
 
     -- Builds a ColorSequence from a colour array
     local function buildColorSequence(colors)
@@ -15826,7 +15806,6 @@ do
         return ColorSequence.new(keypoints)
     end
 
-
     -- Builds a rainbow ColorSequence from the current hue
     local function buildRainbowColorSequence(hue)
         local keypoints = {}
@@ -15837,7 +15816,6 @@ do
         end
         return ColorSequence.new(keypoints)
     end
-
 
     -- Checks whether an object is part of the crosshair by name
     local function isCrosshairObject(obj)
@@ -15859,11 +15837,9 @@ do
         return false
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 🔍 FINDING CROSSHAIR OBJECTS
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     local function findCrosshairObjects()
         local objects = {}
@@ -15880,7 +15856,6 @@ do
         return objects
     end
 
-
     -- Creates/returns a UIGradient for an object
     local function ensureGradient(obj)
         local grad = obj:FindFirstChild("CrosshairGradient")
@@ -15891,7 +15866,6 @@ do
         end
         return grad
     end
-
 
     -- Saves the object's original properties (for a correct restore)
     local function saveOriginalProps(obj)
@@ -15917,7 +15891,6 @@ do
         state.propsByObj[obj] = record
     end
 
-
     -- Restores the object's original properties
     local function restoreOriginalProps(obj)
         for _, entry in ipairs(state.originalProps) do
@@ -15940,7 +15913,6 @@ do
         end)
     end
 
-
     -- Applies the current colours to all target objects
     local function applyColors()
         if state.rainbowMode then
@@ -15962,7 +15934,6 @@ do
         end
     end
 
-
     -- Refreshes the object list and colours the new ones
     local function refreshObjects()
         state.targetObjects = findCrosshairObjects()
@@ -15974,13 +15945,11 @@ do
         end
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 👻 TRAIL / ECHO — creating ghost crosshair copies
     --   Every copy is a clone of the source ImageLabel with a position offset and higher transparency,
     --   refreshed every frame (position/size/colour follow the original with a lag).
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     local function clearTrail()
         for _, copy in ipairs(state.trailCopies) do
@@ -15991,12 +15960,10 @@ do
         state.trailCopies = {}
     end
 
-
     local function buildTrail()
         -- 🛡️ Recursion guard (DescendantAdded can trigger it)
         if state.trailBuilding then return end
         state.trailBuilding = true
-
 
     clearTrail()
     if not state.trailEnabled then
@@ -16043,7 +16010,6 @@ do
     state.trailBuilding = false
 
     end
-
 
     -- Refreshes echo copy positions (called from RenderStepped)
     local function updateTrailPositions(scaleMul)
@@ -16099,11 +16065,9 @@ do
         end
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- ▶️ START / STOP ANIMATION
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     local function stopAnimation()
         if state.renderConn then
@@ -16118,7 +16082,6 @@ do
             state.removedConn:Disconnect()
             state.removedConn = nil
         end
-
 
     -- 🆕 clear the trail
     clearTrail()
@@ -16139,13 +16102,11 @@ do
 
     end
 
-
     local function startAnimation()
         if state.renderConn then
             state.renderConn:Disconnect()
             state.renderConn = nil
         end
-
 
     state.targetObjects = findCrosshairObjects()
     if #state.targetObjects == 0 then
@@ -16173,6 +16134,7 @@ do
     state.rainbowHue = 0
 
     local function updateCrosshairObjects(transparency, scaleMul)
+        local floor = math.floor
         local objects = state.targetObjects
         local props = state.propsByObj
         local rainbow, hue = state.rainbowMode, state.rainbowHue
@@ -16188,9 +16150,29 @@ do
                     entry.grad = grad
                 end
                 if grad then
-                    if rainbow then grad.Color = buildRainbowColorSequence(hue) end
-                    grad.Rotation = rotation
-                    grad.Offset = Vector2.new(offset, 0)
+                    -- Writing a property is the expensive part of this loop, so a value
+                    -- is only written when the change is actually visible: the rainbow
+                    -- sequence is rebuilt on a 1/256 hue step (instead of allocating a new
+                    -- ColorSequence every frame), the rotation on a 0.5 degree step and the
+                    -- offset on a 1/512 step. The picture stays the same, the number of
+                    -- property writes drops (and with the animation paused it reaches zero).
+                    if rainbow then
+                        local hueStep = floor(hue * 256)
+                        if entry.lastHueStep ~= hueStep then
+                            entry.lastHueStep = hueStep
+                            grad.Color = buildRainbowColorSequence(hueStep / 256)
+                        end
+                    end
+                    local rotStep = floor(rotation * 2)
+                    if entry.lastRotStep ~= rotStep then
+                        entry.lastRotStep = rotStep
+                        grad.Rotation = rotation
+                    end
+                    local offStep = floor(offset * 512)
+                    if entry.lastOffStep ~= offStep then
+                        entry.lastOffStep = offStep
+                        grad.Offset = Vector2.new(offStep / 512, 0)
+                    end
                 end
                 if pulsing and entry.lastTransparency ~= transparency then
                     entry.lastTransparency = transparency
@@ -16198,10 +16180,14 @@ do
                 end
                 if scaling then
                     local origSize = entry.size
-                    obj.Size = UDim2.new(
-                        origSize.X.Scale, origSize.X.Offset * scaleMul,
-                        origSize.Y.Scale, origSize.Y.Offset * scaleMul
-                    )
+                    -- the scale pulse is written only when it moved visibly
+                    if entry.lastScale == nil or math.abs(entry.lastScale - scaleMul) > 1e-4 then
+                        entry.lastScale = scaleMul
+                        obj.Size = UDim2.new(
+                            origSize.X.Scale, origSize.X.Offset * scaleMul,
+                            origSize.Y.Scale, origSize.Y.Offset * scaleMul
+                        )
+                    end
                 end
             end
         end
@@ -16305,19 +16291,15 @@ do
 
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 🖥 GUI
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-
     local shiftlock_section = shared.AddSection("🎯 Mobile Shiftlock Crosshair")
-
 
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     shiftlock_section:AddLabel("⚡ ULTRA GLOW+ EDITION v3.7")
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 
     -- Main switch
     shiftlock_section:AddToggle("🔓 Enable Glow", function(bool)
@@ -16333,7 +16315,6 @@ do
         end
         saveSettings()
     end)
-
 
     -- Custom colour (Colorpicker)
     shiftlock_section:AddColorpicker("🎨 Custom Color", Color3.fromRGB(157, 0, 255), function(color)
@@ -16354,7 +16335,6 @@ do
         saveSettings()
     end)
 
-
     -- 🌈 Rainbow/RGB mode
     shiftlock_section:AddToggle("🌈 Rainbow Mode (RGB)", function(bool)
         state.rainbowMode = bool
@@ -16369,7 +16349,6 @@ do
         saveSettings()
     end)
 
-
     -- Rainbow speed (buttons)
     for _, preset in ipairs(SPEED_PRESETS) do
         shiftlock_section:AddButton("🌈 Rainbow " .. preset.label, function()
@@ -16377,7 +16356,6 @@ do
             shared.Notify("🌈 Rainbow speed: " .. preset.label, 1.5)
         end)
     end
-
 
     -- 🎲 Random Preset
     shiftlock_section:AddButton("🎲 Random Preset", function()
@@ -16392,7 +16370,6 @@ do
         shared.Notify("🎲 " .. preset.icon .. " " .. preset.name, 1.5)
         saveSettings()
     end)
-
 
     -- 🎲 Random Color
     shiftlock_section:AddButton("🎲 Random Color", function()
@@ -16415,16 +16392,13 @@ do
         saveSettings()
     end)
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 💗 TRANSPARENCY PULSE v2 (improved)
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     shiftlock_section:AddLabel("💗 PULSE v2 (improved)")
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 
     -- Transparency pulse toggle
     shiftlock_section:AddToggle("💗 Pulsate Transparency", function(bool)
@@ -16440,7 +16414,6 @@ do
         saveSettings()
     end)
 
-
     -- Pulse waveform
     for _, wf in ipairs(WAVEFORMS) do
         shiftlock_section:AddButton("〰️ Wave: " .. wf.label, function()
@@ -16449,7 +16422,6 @@ do
             saveSettings()
         end)
     end
-
 
     -- Transparency depth
     for _, preset in ipairs(TRANSPARENCY_DEPTH_PRESETS) do
@@ -16460,7 +16432,6 @@ do
         end)
     end
 
-
     -- Pulse speed
     for _, preset in ipairs(PULSE_PRESETS) do
         shiftlock_section:AddButton(preset.label, function()
@@ -16470,16 +16441,13 @@ do
         end)
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 📐 SCALE PULSE v2 (improved)
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     shiftlock_section:AddLabel("📐 SCALE PULSE v2 (Breathing)")
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 
     -- Scale pulse toggle
     shiftlock_section:AddToggle("📐 Scale Pulse (Breathing)", function(bool)
@@ -16500,7 +16468,6 @@ do
         saveSettings()
     end)
 
-
     -- Scale amplitude
     for _, preset in ipairs(SCALE_AMPLITUDE_PRESETS) do
         shiftlock_section:AddButton(preset.label, function()
@@ -16510,16 +16477,13 @@ do
         end)
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 👻 TRAIL / ECHO — ghost crosshair trail
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     shiftlock_section:AddLabel("👻 TRAIL / ECHO (ghost trail)")
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 
     shiftlock_section:AddToggle("👻 Enable Trail", function(bool)
         state.trailEnabled = bool
@@ -16534,7 +16498,6 @@ do
         saveSettings()
     end)
 
-
     for _, preset in ipairs(TRAIL_COUNT_PRESETS) do
         shiftlock_section:AddButton(preset.label, function()
             state.trailCount = preset.value
@@ -16546,15 +16509,12 @@ do
         end)
     end
 
-
     -- ⚙️ SETTINGS
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     shiftlock_section:AddLabel("⚙️ SETTINGS")
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 
     -- Gradient speed
     for _, preset in ipairs(SPEED_PRESETS) do
@@ -16565,7 +16525,6 @@ do
         end)
     end
 
-
     -- Reverse direction
     shiftlock_section:AddToggle("🔄 Reverse Direction", function(bool)
         state.reversed = bool
@@ -16573,7 +16532,6 @@ do
         shared.Notify(bool and "🔄 Reversed" or "▶️ Forward", 1.5)
         saveSettings()
     end)
-
 
     -- Reset
     shiftlock_section:AddButton("🔄 Reset to Defaults", function()
@@ -16598,7 +16556,6 @@ do
         shared.Notify("↩️ Reset to defaults", 2)
     end)
 
-
     -- Refresh the crosshair list manually
     shiftlock_section:AddButton("🔍 Re-scan Crosshair", function()
         refreshObjects()
@@ -16609,16 +16566,13 @@ do
         end
     end)
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 🎨 COLOUR PRESETS
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     shiftlock_section:AddLabel("✨ COLOR PRESETS (" .. #GLOW_PRESETS .. ")")
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 
     for _, preset in ipairs(GLOW_PRESETS) do
         shiftlock_section:AddButton(preset.icon .. " " .. preset.name, function()
@@ -16633,11 +16587,9 @@ do
         end)
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 📖 INFO
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     shiftlock_section:AddLabel("📖 HOW IT WORKS:")
@@ -16649,11 +16601,9 @@ do
     shiftlock_section:AddLabel("6. 🎲 Random — just for fun!")
     shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 🔄 RESTORING SAVED SETTINGS
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     local function restoreSettings()
         local saved = loadSettings()
@@ -16679,7 +16629,6 @@ do
         state.trailEnabled = saved.trailEnabled or false
         state.trailCount = saved.trailCount or 2
 
-
     if saved.presetName then
         for _, preset in ipairs(GLOW_PRESETS) do
             if preset.name == saved.presetName then
@@ -16703,11 +16652,9 @@ do
 
     end
 
-
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
     -- 🌫 LOAD STATUS
     -- ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-
 
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("🎯 SHIFTLOCK CROSSHAIR v3.5 LOADED")
@@ -16721,7 +16668,6 @@ do
     print("💾 Settings auto-save")
     print("🔍 Auto-refresh of crosshair objects")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 
     -- Start restoring the saved settings
     restoreSettings()
@@ -16754,11 +16700,11 @@ if not shared or type(shared.CreateTab) ~= "function" then
     return
 end
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
-local Stats = game:GetService("Stats")
-local Workspace = game:GetService("Workspace")
+local Players = SR_UI.service("Players")
+local RunService = SR_UI.service("RunService")
+local Lighting = SR_UI.service("Lighting")
+local Stats = SR_UI.service("Stats")
+local Workspace = SR_UI.service("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 if not LocalPlayer then
@@ -16833,7 +16779,7 @@ end
 local fileRead = type(readfile) == "function" and readfile or environment.readfile
 local fileWrite = type(writefile) == "function" and writefile or environment.writefile
 local fileExists = type(isfile) == "function" and isfile or environment.isfile
-local serviceOK, HttpService = pcall(function() return game:GetService("HttpService") end)
+local serviceOK, HttpService = pcall(function() return SR_UI.service("HttpService") end)
 local canPersist = SR_Store.CanWrite() and serviceOK and HttpService ~= nil
 
 local function ReadPreferences()
@@ -17540,7 +17486,7 @@ local function CreateMonitor()
         pcall(function() gui.Parent = playerGui end)
     end
     if not gui.Parent then
-        pcall(function() gui.Parent = game:GetService("CoreGui") end)
+        pcall(function() gui.Parent = SR_UI.service("CoreGui") end)
     end
     if not gui.Parent then
         gui:Destroy()
@@ -17825,11 +17771,11 @@ if type(_G[KEY])=="table" and _G[KEY].alive then
     if type(shared.Notify)=="function" then pcall(shared.Notify,"Emotes is already loaded. Use its existing tab.",4) end
     return
 end
-local Players=game:GetService("Players")
+local Players=SR_UI.service("Players")
 local Player=Players.LocalPlayer
 if not Player then warn("[ODH Emotes] LocalPlayer unavailable.");return end
-local HttpService=game:GetService("HttpService")
-local RunService=game:GetService("RunService")
+local HttpService=SR_UI.service("HttpService")
+local RunService=SR_UI.service("RunService")
 local runtime={version=7,alive=true,initializing=true,generation=0,filterGeneration=0,page=1,catalog={},filtered={},resolutions={},connections={}}
 local prefs={windowTransparency=22,thumbnailSize=68,thumbnailPresetVersion=2,playbackModeVersion=2,shortcuts={},browserOnLoad=false,loop=false,walk=false,speed=1,favoritesOnly=false,query="",customId="",customKind="Catalog emote ID",favorites={}}
 local FILE="ODH_Emotes_settings.json"
@@ -19029,7 +18975,7 @@ do
             if UI.quickDrag and UI.quickDrag.record.moved then SaveSettings() end
             UI.quickDrag=nil
         end
-        local inputService=game:GetService("UserInputService")
+        local inputService=SR_UI.service("UserInputService")
         Connect(drag.InputBegan,function(input)
             if input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
             dragInput=input;dragStart=input.Position
@@ -19235,20 +19181,23 @@ if prefs.walk and type(walkToggle)=="function" then pcall(walkToggle) end
 if kind then pcall(function() kind:Select(prefs.customKind) end) end
 runtime.initializing=false
 _G[KEY]=runtime
-local cache=ReadJSON(CACHE)
-local cachedItems=NormalizeCatalog(cache)
-AdoptCatalog(cachedItems or BUILTIN,cachedItems and "saved cache" or "built-in starter list")
 Status("Ready — select an emote and press Play")
-RefreshCatalog()
 
+-- The saved catalog is a large JSON file (megabytes), and decoding it takes a
+-- noticeable slice of the first frames. It is therefore read right after the
+-- interface is up, in the same order as before (list -> refresh -> browser),
+-- so the startup stays smooth and the module behaves exactly as it did.
 task.defer(function()
+    local cache=ReadJSON(CACHE)
+    local cachedItems=NormalizeCatalog(cache)
+    if not runtime.alive then return end
+    AdoptCatalog(cachedItems or BUILTIN,cachedItems and "saved cache" or "built-in starter list")
+    RefreshCatalog()
     if not runtime.alive or (runtime.browser and runtime.browser.hidden) then return end
     if prefs.browserOnLoad then runtime.OpenBrowser() else runtime.RestoreQuickButtons() end
 end)
 
 end
-
-
 
 -- ====== All modules loaded: the single shared notification ======
 pcall(SR_BootNotify)
