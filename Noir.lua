@@ -7284,67 +7284,334 @@ end)
 
 SR_UI.tryModule("Pm-Wallhop", function()
 do
-    local ODHX = CreateODHX("Pm-Wallhop", "Pm-WallHop", "ODH_Pm-Wallhop_settings.json", true, false)
+    -- ODH 2026 adapter. Embedded in every plugin; no downloads/dependencies.
+    local ODHX = (function()
+        local X = { ready=false, silent=false, restoring=false, replay=true, records={}, byKey={}, data={version=1, controls={}}, external=false }
+        X.id, X.title, X.file = "Pm-Wallhop", "Pm-WallHop", "ODH_Pm-Wallhop_settings.json"
+        local host = odh_shared_plugins
+        assert(host and type(host.CreateTab)=="function", X.title .. ": load through the current Overdrive H plugin menu")
+        local env = {}
+        if type(getgenv)=="function" then local ok,g=pcall(getgenv); if ok and type(g)=="table" then env=g end end
+        local rd = type(readfile)=="function" and readfile or env.readfile
+        local wr = type(writefile)=="function" and writefile or env.writefile
+        local exists = type(isfile)=="function" and isfile or env.isfile
+        local http = game:GetService("HttpService")
+        local reported = {}
+        local function report(message)
+            if reported[message] then return end
+            reported[message]=true
+            warn("[" .. X.title .. "] " .. message)
+            if type(host.Notify)=="function" then pcall(host.Notify, X.title .. ": " .. message, 5) end
+        end
+        X.Report = report
+        local function finite(v) return type(v)=="number" and v==v and math.abs(v)<math.huge end
+        local function encode(v, depth)
+            depth=depth or 0
+            if depth>20 then error("settings nesting too deep") end
+            if typeof(v)=="Color3" then return {__odhColor={v.R,v.G,v.B}} end
+            local t=type(v)
+            if t=="boolean" or t=="string" then return v end
+            if t=="number" then if finite(v) then return v end; return nil end
+            if t=="table" then
+                local result={}
+                for k,item in pairs(v) do
+                    if type(k)=="string" or type(k)=="number" then result[k]=encode(item,depth+1) end
+                end
+                return result
+            end
+            return nil -- never serialize Instances, connections, functions or players
+        end
+        local function decode(v, depth)
+            depth=depth or 0
+            if depth>20 then error("settings nesting too deep") end
+            if type(v)~="table" then return v end
+            if v.__odhColor then
+                local c=v.__odhColor
+                assert(type(c)=="table" and finite(c[1]) and finite(c[2]) and finite(c[3]),"invalid color")
+                return Color3.new(math.clamp(c[1],0,1),math.clamp(c[2],0,1),math.clamp(c[3],0,1))
+            end
+            local result={}
+            for k,item in pairs(v) do result[k]=decode(item,depth+1) end
+            return result
+        end
+        X.Encode, X.Decode = encode, decode
+        if not X.external then
+            if type(rd)=="function" and type(wr)=="function" then
+                local present=true
+                if type(exists)=="function" then local ok,v=pcall(exists,X.file); if ok then present=v end end
+                if present then
+                    local ok,text=pcall(rd,X.file)
+                    if ok then
+                        local good,data=pcall(function() return decode(http:JSONDecode(text)) end)
+                        if good and type(data)=="table" and data.version==1 and type(data.controls)=="table" then X.data=data
+                        else X.badFile=true; report("Invalid settings file; defaults loaded. A manual change will replace it.") end
+                    elseif type(exists)=="function" then report("Could not read settings file: " .. tostring(text)); X.badFile=true end
+                end
+            else report("readfile/writefile unavailable; settings last only for this session.") end
+        end
+        local tab
+        X.shared=setmetatable({}, {__index=host}) -- never mutate the host API
+        X.shared.Notify=function(text,seconds)
+            if X.restoring then return end
+            if type(host.Notify)=="function" then return host.Notify(text,seconds or 3) end
+        end
+        local function key(section,name,kind) return section .. " / " .. kind .. " / " .. name end
+        local function safeValue(r,v)
+            if r.kind=="Toggle" then if type(v)=="boolean" then return v end
+            elseif r.kind=="Slider" then if finite(v) then return math.clamp(v,r.min,r.max) end
+            elseif r.kind=="Colorpicker" then if typeof(v)=="Color3" then return v end
+            elseif r.kind=="Dropdown" then
+                for _,item in ipairs(r.items) do if v==item then return v end end
+            end
+            return nil
+        end
+        local function show(r,v)
+            if v==nil or r.shown==v then return end
+            local prior=X.silent; X.silent=true
+            local ok,err=pcall(function()
+                if r.kind=="Toggle" then
+                    if r.visual~=v then assert(type(r.handle)=="function","AddToggle must return a closure"); r.handle() end
+                elseif r.kind=="Slider" then r.handle:SetValue(v)
+                elseif r.kind=="Colorpicker" then r.handle:SetRGBValue(v)
+                elseif r.kind=="Dropdown" then r.handle:Select(v) end
+            end)
+            X.silent=prior
+            if ok then r.shown=v else report("UI sync failed: " .. r.name .. ": " .. tostring(err)) end
+        end
+        function X.Bind(section,name,kind,getter)
+            local r=X.byKey[key(section,name,kind)]
+            assert(r,"Unknown binding " .. section .. " / " .. name)
+            r.get=getter
+        end
+        function X.Sync()
+            for _,r in ipairs(X.records) do
+                if r.get then
+                    local ok,v=pcall(r.get)
+                    if ok then
+                        v=safeValue(r,v)
+                        if v~=nil then
+                            r.value=v
+                            if not r.exclude then X.data.controls[r.key]=v end
+                            show(r,v)
+                        end
+                    end
+                end
+            end
+        end
+        function X.Commit()
+            if not X.ready or X.silent or X.restoring or X.stopped or X.committing then return end
+            X.committing=true
+            local ok,err=pcall(function()
+                X.Sync()
+                if X.capture then X.data.snapshot=X.capture() end
+                if X.external then
+                    if not X.backend or not X.backend(X.data) then error("native settings file could not be saved") end
+                elseif type(wr)=="function" then
+                    wr(X.file,http:JSONEncode(encode(X.data)))
+                end
+            end)
+            X.committing=false
+            if not ok then report("Settings save failed: " .. tostring(err)) end
+        end
+        function X.Restore()
+            X.restoring=true
+            -- Options before enabling modules. Actions and player selections are never replayed.
+            for _,togglePass in ipairs({false,true}) do
+                for _,r in ipairs(X.records) do
+                    if not r.exclude and ((r.kind=="Toggle")==togglePass) then
+                        local v=safeValue(r,X.data.controls[r.key])
+                        if v==nil and r.get then local ok,x=pcall(r.get); if ok then v=safeValue(r,x) end end
+                        if v==nil then v=r.default end
+                        if v~=nil then
+                            show(r,v)
+                            local ok,err=pcall(r.callback,v)
+                            if not ok then report("Restore failed: " .. r.name .. ": " .. tostring(err)) end
+                            r.value=v; X.data.controls[r.key]=v
+                        end
+                    end
+                end
+            end
+            X.restoring=false
+        end
+        function X.Finish()
+            if X.replay then X.Restore() else X.Sync() end
+            X.ready=true
+            if not X.badFile then X.Commit() end
+        end
+        function X.Set(section,name,kind,v,apply)
+            local r=X.byKey[key(section,name,kind)]
+            if not r then return end
+            v=safeValue(r,v); if v==nil then return end
+            show(r,v); r.value=v; X.data.controls[r.key]=v
+            if apply then r.callback(v) end
+        end
+        function X.ResetControls()
+            X.data.controls={}
+            for _,r in ipairs(X.records) do
+                if r.kind=="Toggle" and not r.exclude then X.Set(r.section,r.name,r.kind,false,true) end
+            end
+        end
+        function X.shared.AddSection(name,subtitle)
+            if not tab then tab=host.CreateTab(X.title,"/mellnikovden968-web/CFG_PM2/refs/heads/main/icon") end
+            local raw=tab:AddSection(name,subtitle or "")
+            local section={Name=name,Raw=raw}
+            local function register(kind,label,callback,default,min,max,items)
+                local r={section=name,name=label,kind=kind,callback=callback,default=default,min=min,max=max,items=items,visual=false}
+                r.key=key(name,label,kind)
+                r.exclude=(name=="🔑 Keys") -- key-capture toggles are actions, not enabled modes
+                X.records[#X.records+1]=r; X.byKey[r.key]=r
+                local function changed(v)
+                    if kind=="Toggle" then r.visual=(v==true) end
+                    if not X.ready or X.silent or X.restoring or X.stopped then return end
+                    v=safeValue(r,v); if v==nil then return end
+                    r.shown=v
+                    local ok,err=pcall(callback,v)
+                    if ok then
+                        r.value=v
+                        if not r.exclude then X.data.controls[r.key]=v end
+                        X.Commit()
+                    else report("Callback failed: " .. label .. ": " .. tostring(err)) end
+                end
+                if kind=="Toggle" then r.handle=raw:AddToggle(label,changed)
+                elseif kind=="Slider" then r.handle=raw:AddSlider(label,min,max,default,changed)
+                elseif kind=="Colorpicker" then r.handle=raw:AddColorpicker(label,default,changed)
+                elseif kind=="Dropdown" then r.handle=raw:AddDropdown(label,items,changed) end
+                return r.handle
+            end
+            function section:AddToggle(label,cb) return register("Toggle",label,cb,false) end
+            function section:AddSlider(label,min,max,default,cb) return register("Slider",label,cb,default,min,max) end
+            function section:AddColorpicker(label,default,cb) return register("Colorpicker",label,cb,default) end
+            function section:AddDropdown(label,items,cb) return register("Dropdown",label,cb,items[1],nil,nil,items) end
+            local function action(cb)
+                return function(...)
+                    if not X.ready or X.stopped then return end
+                    local ok,err=pcall(cb,...)
+                    if not ok then report("Action failed: " .. tostring(err)) end
+                    X.Commit()
+                end
+            end
+            function section:AddButton(label,cb) return raw:AddButton(label,action(cb)) end
+            function section:AddKeybind(label,default,cb) return raw:AddKeybind(label,default,action(cb)) end
+            function section:AddPlayerDropdown(label,cb) return raw:AddPlayerDropdown(label,action(cb)) end
+            function section:AddTextBox(label,cb) return raw:AddTextBox(label,action(cb)) end
+            function section:AddLabel(...) return raw:AddLabel(...) end
+            function section:AddParagraph(...) return raw:AddParagraph(...) end
+            return section
+        end
+        -- Stable GUI paths, never serialized Instances. Player name is session-independent.
+        function X.Path(object)
+            local parts={}
+            local player=game:GetService("Players").LocalPlayer
+            while object and object~=game do
+                table.insert(parts,1,object==player and "$LocalPlayer" or object.Name)
+                object=object.Parent
+                if #parts>32 then return nil end
+            end
+            if object~=game then return nil end
+            return parts
+        end
+        function X.Resolve(parts)
+            if type(parts)~="table" then return nil end
+            local object=game
+            for _,name in ipairs(parts) do
+                if name=="$LocalPlayer" then object=game:GetService("Players").LocalPlayer
+                elseif type(name)=="string" and object then object=object:FindFirstChild(name)
+                else return nil end
+            end
+            return object
+        end
+        X.connections={}
+        function X.Connect(signal,callback)
+            local c=signal:Connect(function(...) if not X.stopped then return callback(...) end end)
+            X.connections[#X.connections+1]=c
+            return c
+        end
+        function X.Stop()
+            if X.stopped then return end
+            X.Commit()
+            X.stopped=true
+            for _,c in ipairs(X.connections) do pcall(function() c:Disconnect() end) end
+            if X.cleanup then pcall(X.cleanup) end
+        end
+        local registry=rawget(_G,"ODH_2026_PluginRuntimes")
+        if type(registry)~="table" then registry={}; rawset(_G,"ODH_2026_PluginRuntimes",registry) end
+        local previous=registry[X.id]
+        if previous and type(previous.Stop)=="function" then pcall(previous.Stop) end
+        registry[X.id]=X
+        return X
+    end)()
+    -- END ODH 2026 ADAPTER
+
     local shared = ODHX.shared
     local UpdateWallhopButtonState, performVideoFlick, performWallhop
     local wallhopButtonSize = 0.11
 
+    -- Создаем секцию для нашего плагина
     local wallhop_section = shared.AddSection("Pm-WallHop")
 
-    wallhop_section:AddLabel("Pm-WallHop Script by Noir_Creator (Improved)")
-    SR_Paragraph(wallhop_section, "Pm-WallHop", "Fling on jump next to a wall seam")
+    -- Добавляем информацию
+    wallhop_section:AddLabel("Pm-WallHop Script by @Phemtom (Improved)")
+    wallhop_section:AddParagraph("Pm-WallHop", "Флинг при прыжке возле стыка стен")
 
+    -- Основной переключатель (ТОГГЛ)
     local isWallHopEnabled = false
     wallhop_section:AddToggle("Enable WallHop", function(bool)
         isWallHopEnabled = bool
         if bool then
-            shared.Notify("Pm-WallHop enabled", 2)
+            shared.Notify("Pm-WallHop включен", 2)
         else
-            shared.Notify("Pm-WallHop disabled", 2)
+            shared.Notify("Pm-WallHop выключен", 2)
         end
         UpdateWallhopButtonState()
     end)
 
-    wallhop_section:AddButton("Toggle WallHop", function()
+    -- Кнопка ВКЛ/ВЫКЛ (дополнительная)
+    wallhop_section:AddButton("Вкл/Выкл WallHop", function()
         isWallHopEnabled = not isWallHopEnabled
-        shared.Notify(isWallHopEnabled and "Pm-WallHop enabled" or "Pm-WallHop disabled", 2)
+        shared.Notify(isWallHopEnabled and "Pm-WallHop включен" or "Pm-WallHop выключен", 2)
         UpdateWallhopButtonState()
     end)
 
+    -- Настройка чувствительности (дистанция обнаружения стены)
     local detectionDistance = 3
     wallhop_section:AddSlider("Detection distance", 1, 6, 3, function(int)
         detectionDistance = int
-        shared.Notify("Distance: " .. int, 2)
+        shared.Notify("Дистанция: " .. int, 2)
     end)
 
+    -- Настройка силы флинга
     local flickPower = 50
     wallhop_section:AddSlider("Fling power", 20, 100, 50, function(int)
         flickPower = int
-        shared.Notify("Power: " .. int, 2)
+        shared.Notify("Сила: " .. int, 2)
     end)
 
-    wallhop_section:AddButton("Test fling", function()
+    -- Кнопка для ручного флинга (тест)
+    wallhop_section:AddButton("Тестовый флинг", function()
         if isWallHopEnabled then
             performVideoFlick()
         else
-            shared.Notify("Enable WallHop first!", 2)
+            shared.Notify("Сначала включите WallHop!", 2)
         end
     end)
 
+    -- Клавиша для быстрого включения/выключения
     wallhop_section:AddKeybind("Toggle Keybind", "F", function()
         isWallHopEnabled = not isWallHopEnabled
-        shared.Notify(isWallHopEnabled and "Pm-WallHop enabled" or "Pm-WallHop disabled", 2)
+        shared.Notify(isWallHopEnabled and "Pm-WallHop включен" or "Pm-WallHop выключен", 2)
         UpdateWallhopButtonState()
     end)
 
+    -- Клавиша для ручного WallHop
     wallhop_section:AddKeybind("WallHop Jump Key", "J", function()
         if isWallHopEnabled then
             performWallhop()
         else
-            shared.Notify("WallHop is off! Press F or use the menu button", 2)
+            shared.Notify("WallHop выключен! Нажмите F или кнопку в меню", 2)
         end
     end)
 
+    -- === Плавающая кнопка (как в Aimlock) ===
     local WallhopBindableButtons = {Buttons = {}, Maids = {}, Count = 0}
 
     local __SHAPES = {
@@ -7375,7 +7642,7 @@ do
 
     local function GetStorage()
         local parent = gethui and gethui()
-        if not parent or typeof(parent) ~= "Instance" then parent = SR_UI.service("CoreGui") end
+        if not parent or typeof(parent) ~= "Instance" then parent = game:GetService("CoreGui") end
         if not parent or typeof(parent) ~= "Instance" then
             parent = game.Players.LocalPlayer:WaitForChild("PlayerGui", 5)
         end
@@ -7410,19 +7677,17 @@ do
                 ripple.BackgroundTransparency = 0.5
                 ripple.Visible = true
 
-                SR_UI.service("TweenService"):Create(ripple, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+                game:GetService("TweenService"):Create(ripple, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
                     Size = UDim2.new(0, 45, 0, 45),
                     BackgroundTransparency = 1
                 }):Play()
 
                 local releaseConn
-                releaseConn = ODHX.Connect(SR_UI.service("UserInputService").InputEnded, function(endInput)
+                releaseConn = ODHX.Connect(game:GetService("UserInputService").InputEnded, function(endInput)
                     if endInput.UserInputType == input.UserInputType then
                         dragging = false
                         if not hasMoved then
                             clickFunc()
-                        else
-                            SR_Store.posSave("wallhop", gui.Name, gui.Position)
                         end
                         releaseConn:Disconnect()
                     end
@@ -7436,7 +7701,7 @@ do
             end
         end))
 
-        maid:GiveTask(ODHX.Connect(SR_UI.service("UserInputService").InputChanged, function(input)
+        maid:GiveTask(ODHX.Connect(game:GetService("UserInputService").InputChanged, function(input)
             if dragging and input == dragInput then
                 local delta = input.Position - dragStart
                 if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then hasMoved = true end
@@ -7477,10 +7742,6 @@ do
         ImageButton.Name = id
         ImageButton.Size = UDim2.new(widthScale, 0, buttonSizeY, 0)
         ImageButton.Position = UDim2.new(xPos, 0, yPos, 0)
-        local savedPos = SR_Store.posGet("wallhop", id)
-        if savedPos then
-            ImageButton.Position = UDim2.new(savedPos.xs, savedPos.xo, savedPos.ys, savedPos.yo)
-        end
         ImageButton.AnchorPoint = Vector2.new(0.5, 0.5)
         ImageButton.Image = __SHAPES[0]
         ImageButton.BackgroundTransparency = 1
@@ -7536,7 +7797,7 @@ do
         local function onClick()
             if debounce then return end
             debounce = true
-            local fOut = SR_UI.service("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 1})
+            local fOut = game:GetService("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 1})
             fOut:Play()
             fOut.Completed:Wait()
 
@@ -7544,14 +7805,16 @@ do
             Gradient.Color = BindValue.Value and __ACTIVE_COLOR or __NORMAL_COLOR
             if BindValue.Value then safecallback(onFunc) else safecallback(offFunc) end
 
-            local fIn = SR_UI.service("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 0})
+            local fIn = game:GetService("TweenService"):Create(ImageButton, tInfo, {ImageTransparency = 0})
             fIn:Play()
             fIn.Completed:Wait()
             debounce = false
         end
 
         MakeDraggable(ImageButton, buttonMaid, ripple, sound, onClick)
-        buttonMaid:GiveTask(SR_Rota.Attach(Gradient, nil, 60))
+        buttonMaid:GiveTask(ODHX.Connect(game:GetService("RunService").RenderStepped, function()
+            Gradient.Rotation = (Gradient.Rotation + 1) % 360
+        end))
 
         WallhopBindableButtons.Buttons[id] = ImageButton
         WallhopBindableButtons.Maids[id] = buttonMaid
@@ -7570,6 +7833,7 @@ do
         end
     end
 
+    -- Обновление состояния кнопки
     UpdateWallhopButtonState = function()
         ODHX.Commit()
         local btn = WallhopBindableButtons.Buttons["wallhop_toggle"]
@@ -7586,6 +7850,7 @@ do
         end
     end
 
+    -- Переключение видимости кнопки
     local showWallhopButton = true
 
     local function ToggleWallhopButtonVisibility()
@@ -7595,16 +7860,17 @@ do
         end
     end
 
+    -- Создание кнопки
     local function CreateWallhopBindButton()
         if WallhopBindableButtons.Buttons["wallhop_toggle"] then return end
 
         WallhopBindableButtons.AddBButton("wallhop_toggle", "WH", function()
             isWallHopEnabled = true
-            shared.Notify("Pm-WallHop enabled", 2)
+            shared.Notify("Pm-WallHop включен", 2)
             UpdateWallhopButtonState()
         end, function()
             isWallHopEnabled = false
-            shared.Notify("Pm-WallHop disabled", 2)
+            shared.Notify("Pm-WallHop выключен", 2)
             UpdateWallhopButtonState()
         end)
 
@@ -7612,6 +7878,7 @@ do
         ToggleWallhopButtonVisibility()
     end
 
+    -- Добавляем настройки для кнопки
     wallhop_section:AddToggle("📱 Show on-screen button", function(b)
         showWallhopButton = b
         ToggleWallhopButtonVisibility()
@@ -7627,22 +7894,31 @@ do
         end
     end)
 
+    -- Создаем кнопку
     CreateWallhopBindButton()
 
-    local Players = SR_UI.service("Players")
+    -- --- Основная логика ---
+    local Players = game:GetService("Players")
     local LocalPlayer = Players.LocalPlayer
-    local RunService = SR_UI.service("RunService")
-    local UserInputService = SR_UI.service("UserInputService")
+    local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
 
+    -- --- Переменные ---
     local isFlicking = false
     local lastFlickTime = 0
     local isJumpKeyPressed = false
     local Camera = workspace.CurrentCamera
     local wallDetectionCooldown = 0
 
+    -- === ИСПРАВЛЕНИЕ: Флаг для предотвращения бесконечного прыжка ===
+    local canPerformWallhop = true
+    local wallhopCooldown = 0.3
+
+    -- --- Raycast параметры для WallHop ---
     local wallRaycastParams = RaycastParams.new()
     wallRaycastParams.FilterType = Enum.RaycastFilterType.Blacklist
 
+    -- --- Функция проверки, является ли объект игроком ---
     local function isPlayerCharacter(instance)
         if not instance then return false end
         local current = instance
@@ -7660,13 +7936,16 @@ do
         return false
     end
 
+    -- --- Функция проверки, является ли объект стеной ---
     local function isWall(instance)
         if not instance or not instance.IsA then return false end
 
+        -- Игнорируем игроков
         if instance:IsA("Part") and instance.Parent and instance.Parent:IsA("Model") and instance.Parent:FindFirstChild("Humanoid") then
             return false
         end
 
+        -- Проверяем все родительские объекты на принадлежность игроку
         local current = instance
         while current do
             if isPlayerCharacter(current) then
@@ -7675,10 +7954,12 @@ do
             current = current.Parent
         end
 
+        -- Проверяем, что это часть с коллизией
         if not instance:IsA("BasePart") and not instance:IsA("Terrain") then
             return false
         end
 
+        -- Проверяем CanCollide
         if instance:IsA("BasePart") and not instance.CanCollide then
             return false
         end
@@ -7686,12 +7967,14 @@ do
         return true
     end
 
+    -- --- Функция получения результата Raycast для стены ---
     local function getWallRaycastResult()
         local character = LocalPlayer.Character
         if not character then return nil end
         local hrp = character:FindFirstChild("HumanoidRootPart")
         if not hrp then return nil end
 
+        -- Добавляем в черный список персонажи других игроков
         local players = Players:GetPlayers()
         local blacklist = {character}
         for _, player in ipairs(players) do
@@ -7718,6 +8001,7 @@ do
         return closestHit
     end
 
+    -- --- Video Flick ---
     performVideoFlick = function()
         if not isWallHopEnabled then return end
         if isFlicking then return end
@@ -7730,13 +8014,17 @@ do
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hum or not hrp then isFlicking = false return end
 
+        -- Check if player is alive
         if hum.Health <= 0 then isFlicking = false return end
 
+        -- Save current state
         local currentVel = hrp.Velocity
 
+        -- Perform flick
         hum:ChangeState(Enum.HumanoidStateType.Jumping)
         hrp.Velocity = Vector3.new(currentVel.X, flickPower, currentVel.Z)
 
+        -- Rotate camera
         local startCFrame = Camera.CFrame
         Camera.CFrame = startCFrame * CFrame.Angles(0, math.rad(180), 0)
 
@@ -7746,17 +8034,29 @@ do
         isFlicking = false
     end
 
+    -- --- Wallhop (Fixed version) ---
     performWallhop = function()
         if not isWallHopEnabled then return end
+
+        -- === FIX: Check cooldown ===
+        if not canPerformWallhop then return end
+        canPerformWallhop = false
 
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if not (humanoid and rootPart and humanoid:GetState() ~= Enum.HumanoidStateType.Dead) then return end
+        if not (humanoid and rootPart and humanoid:GetState() ~= Enum.HumanoidStateType.Dead) then 
+            canPerformWallhop = true
+            return 
+        end
 
         local wall = getWallRaycastResult()
-        if not wall then return end
+        if not wall then 
+            canPerformWallhop = true
+            return 
+        end
 
+        -- Rotate player to wall
         rootPart.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + wall.Normal)
         RunService.Heartbeat:Wait()
 
@@ -7764,59 +8064,45 @@ do
             humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
             task.wait(0.1)
         end
+
+        -- === FIX: Set cooldown ===
+        task.wait(wallhopCooldown)
+        canPerformWallhop = true
     end
 
+    -- --- Detect wall seams (Video Flick) ---
     local lastHitInstance = nil
     local currentHitInstance = nil
-
-    local wallhopChar, wallhopHrp, wallhopHum = nil, nil, nil
-    local wallhopRayParams = nil
-    local wallhopFilter = {}
 
     ODHX.Connect(RunService.Heartbeat, function()
         if not isWallHopEnabled or isFlicking then return end
 
         local char = LocalPlayer.Character
-        if not char then
+        if not char then 
             lastHitInstance = nil
-            return
+            return 
         end
 
-        if char ~= wallhopChar then
-            wallhopChar, wallhopHrp, wallhopHum = char, nil, nil
-        end
-
-        local hrp = wallhopHrp
-        if not hrp or hrp.Parent ~= char then
-            hrp = char:FindFirstChild("HumanoidRootPart")
-            wallhopHrp = hrp
-        end
-        local hum = wallhopHum
-        if not hum or hum.Parent ~= char then
-            hum = char:FindFirstChild("Humanoid")
-            wallhopHum = hum
-        end
-
-        if not hrp or not hum or hum.Health <= 0 then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChild("Humanoid")
+        if not hrp or not hum or hum.Health <= 0 then 
             lastHitInstance = nil
-            return
+            return 
         end
 
-        if not isJumpKeyPressed then
+        -- Проверяем, зажат ли пробел
+        if not isJumpKeyPressed then 
             lastHitInstance = nil
-            return
+            return 
         end
 
-        local raycastParams = wallhopRayParams
-        if not raycastParams then
-            raycastParams = RaycastParams.new()
-            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-            raycastParams.IgnoreWater = true
-            wallhopRayParams = raycastParams
-        end
-        wallhopFilter[1] = char
-        raycastParams.FilterDescendantsInstances = wallhopFilter
+        -- Create Raycast with improved filtering
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {char}
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        raycastParams.IgnoreWater = true
 
+        -- Cast ray in camera direction
         local direction = Camera.CFrame.LookVector * detectionDistance
         local result = workspace:Raycast(hrp.Position, direction, raycastParams)
 
@@ -7825,9 +8111,11 @@ do
         if result then
             local hitInstance = result.Instance
 
+            -- Check if object is wall
             if isWall(hitInstance) then
                 currentHitInstance = hitInstance
 
+                -- Check for wall change (seam)
                 if lastHitInstance and lastHitInstance ~= currentHitInstance then
                     local currentTime = os.clock()
                     if currentTime - lastFlickTime > 0.1 then
@@ -7841,12 +8129,14 @@ do
         lastHitInstance = currentHitInstance
     end)
 
+    -- --- Automatic Wallhop on jump (if enabled) ---
     ODHX.Connect(UserInputService.JumpRequest, function()
         if isWallHopEnabled then
             performWallhop()
         end
     end)
 
+    -- --- Track jump key press ---
     ODHX.Connect(UserInputService.InputBegan, function(input, gameProcessed)
         if gameProcessed then return end
 
@@ -7860,19 +8150,22 @@ do
 
         if input.KeyCode == Enum.KeyCode.Space then
             isJumpKeyPressed = false
-
+            -- Reset detection on space release
             lastHitInstance = nil
         end
     end)
 
+    -- --- Reset state on respawn ---
     ODHX.Connect(LocalPlayer.CharacterAdded, function(character)
         lastHitInstance = nil
         currentHitInstance = nil
         isFlicking = false
+        canPerformWallhop = true -- === FIX: Reset flag on respawn ===
     end)
 
+    -- --- Additional: reset on focus lost ---
     ODHX.Connect(UserInputService.WindowFocused, function()
-
+        -- If window lost focus, reset jump state
         isJumpKeyPressed = false
         lastHitInstance = nil
     end)
@@ -7886,8 +8179,6 @@ do
         for id in pairs(WallhopBindableButtons.Buttons) do WallhopBindableButtons.DeleteBButton(id) end
     end
     ODHX.Finish()
-
-    for btnId, btn in pairs(WallhopBindableButtons.Buttons) do SR_Store.posApply("wallhop", btnId, btn) end
 
 end
 end)
