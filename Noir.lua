@@ -18,7 +18,7 @@ function SR_UI.service(name)
         local fine, direct = pcall(function() return game[name] end)
         if fine then service = direct end
     end
-    if service then SR_UI.services[name] = service end
+    SR_UI.services[name] = service or false
     return service
 end
 
@@ -27,10 +27,13 @@ local SR_TEXT_WIDTH = 58
 local function SR_Paragraph(sec, title, text)
     if type(title) ~= "string" or type(text) ~= "string" then return end
     sec:AddLabel(title)
+    local LINE_LEN_CACHE = {}
     local function lineLen(s)
+        if LINE_LEN_CACHE[s] then return LINE_LEN_CACHE[s] end
         local ok, n = pcall(utf8.len, s)
-        if ok and n then return n end
-        return #s
+        local result = (ok and n) or #s
+        LINE_LEN_CACHE[s] = result
+        return result
     end
     local line = ""
     for word in tostring(text):gmatch("%S+") do
@@ -61,9 +64,16 @@ function SR_Rota.Attach(obj, maid, speed)
         entry.alive = false
         SR_Rota.byObj[obj] = nil
         local list = SR_Rota.list
-        for i = #list, 1, -1 do
-            if list[i] == entry then table.remove(list, i) end
+        entry.markedForRemoval = true
+        local list = SR_Rota.list
+        local writeIdx = 1
+        for j = 1, #list do
+            if not list[j].markedForRemoval then
+                list[writeIdx] = list[j]
+                writeIdx = writeIdx + 1
+            end
         end
+        for j = writeIdx, #list do list[j] = nil end
 
         if #list == 0 and SR_Rota.conn then
             SR_Rota.conn:Disconnect()
@@ -76,7 +86,12 @@ function SR_Rota.Attach(obj, maid, speed)
     SR_Rota.list[#SR_Rota.list + 1] = entry
     if not SR_Rota.conn then
         if not SR_Rota.RunService then SR_Rota.RunService = SR_UI.service("RunService") end
+        local frameSkip = 2
+        local frameCount = 0
         SR_Rota.conn = SR_Rota.RunService.RenderStepped:Connect(function(dt)
+            frameCount = frameCount + 1
+            if frameCount < frameSkip then return end
+            frameCount = 0
             local list = SR_Rota.list
             local i = 1
             while i <= #list do
@@ -104,7 +119,7 @@ function SR_Rota.Attach(obj, maid, speed)
     return handle
 end
 
-local SR_Store = { W = {}, R = {}, D = {}, F = {}, A = {}, WNames = {}, RNames = {}, DNames = {}, FNames = {}, ANames = {}, env = nil, mem = nil, scans = 0, logLeft = 60 }
+local SR_Store = { W = {}, R = {}, D = {}, F = {}, A = {}, WNames = {}, RNames = {}, DNames = {}, FNames = {}, ANames = {}, env = nil, mem = nil, scans = 0, logLeft = 30 }
 function SR_Store.logLine(msg)
     if (SR_Store.logLeft or 0) <= 0 then return end
     SR_Store.logLeft = SR_Store.logLeft - 1
@@ -183,7 +198,7 @@ end
 SR_Store.scanAliases()
 SR_Store.logLine("[store] file functions: writers " .. SR_Store.names(SR_Store.WNames) .. " | readers " .. SR_Store.names(SR_Store.RNames))
 function SR_Store.ensureAliases()
-    if (SR_Store.scans or 0) >= 5 then return end
+    if (SR_Store.scans or 0) >= 3 then return end
     SR_Store.scans = (SR_Store.scans or 0) + 1
     local beforeW, beforeR = #SR_Store.W, #SR_Store.R
     SR_Store.scanAliases()
