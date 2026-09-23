@@ -5066,2221 +5066,1972 @@ do
 end
 end)
 
-SR_UI.tryModule("PM_VALEX", function()
+SR_UI.tryModule("ULTIMATE_FLING", function()
 do
-    local ODHX = CreateODHX("PM_VALEX", "PM VALEX", "ODH_PM_VALEX_settings.json", true, true)
+    local ODHX = CreateODHX("FLING", "ULTIMATE FLING", "ODH_FLING_settings.json", true, true)
+--[[
+    ⚡ ULTIMATE FLING • FLING   —   V1.0
+    Ultimate Fling GUI · Overdrive Hub plugin
+    Author: K1LAS1K (original), adapted to ODH 2026
+    =========================================================================
+    Плагин мульти-таргет флинга: выбор игроков, непрерывный флинг,
+    сохранение позиции, FPDH trick, бинды, хоткеи, HUD, настройка силы/длительности.
 
-    local AUTHOR            = "Noir_Creator"
-    local BRAND             = "PM VALEX"
-    local PLUGIN_ID         = "pm_valex"
-    local PLUGIN_NAME       = BRAND .. " • VOID RESET"
-    local VERSION           = "V1.1"
-    local VERSION_TAG       = "pmvalex"
-    local MARKER_PREFIX     = "@pmvalex_"
-    local CONFIG_PATH       = PLUGIN_ID .. ".json"
-    local STORAGE_NAME      = "@" .. PLUGIN_ID
-    local UNLOAD_GLOBAL     = "__PM_VALEX_UNLOAD"
+    ── ВОЗМОЖНОСТИ ────────────────────────────────────────────────────────────
+      • Ручной флинг: Selected, Everyone, Nearest, Cancel
+        и выбор конкретного игрока из списка.
+      • Авто-режимы: Loop (по списку), Aura (по радиусу), Click (флинг кликом).
+      • Плавающие бинды-кружки: перетаскивание с запоминанием позиции, размер,
+        подсветка активности, общий звук клика.
+      • Хоткеи на все действия: захват клавиши тумблером.
+      • HUD-статус: пульс, имя текущей цели, перетаскивание с сохранением позиции.
+      • Списки: выбор цели, список для Loop, вайтлист.
+      • Сохранение настроек (readfile/writefile + JSON): длительность, сила,
+        размеры и позиции кнопок/HUD, хоткеи, вайтлист.
 
-    local LEGACY_STORAGES   = { "@bindstorage_v6", "@bindstorage_v5" }
+    ── АРХИТЕКТУРА ────────────────────────────────────────────────────────────
+      • Один RenderStepped-диспетчер, общие обработчики ввода.
+      • Мультитач-совместимый драг, FPDH restore, cleanup + watchdog.
+]]
 
-    local CLEAN_LEGACY_MENU = true
+-- ── Идентичность плагина ─────────────────────────
+local AUTHOR            = "K1LAS1K"
+local BRAND             = "ULTIMATE FLING"
+local PLUGIN_ID         = "fling"
+local PLUGIN_NAME       = BRAND .. " • FLING"
+local VERSION           = "V1.0"
+local VERSION_TAG       = "fling"
+local MARKER_PREFIX     = "@fling_"
+local CONFIG_PATH       = PLUGIN_ID .. ".json"
+local STORAGE_NAME      = "@" .. PLUGIN_ID
+local UNLOAD_GLOBAL     = "__FLING_UNLOAD"
+local LEGACY_STORAGES   = { "@bindstorage_v6", "@bindstorage_v5", "@flingstorage_v1" }
+local CLEAN_LEGACY_MENU = true
 
-    local StarterGui = nil
+-- ====== Хост-уведомления ======
+local StarterGui = nil
 
-    local function hostNotify(text, dur)
-        if not SR_Gate(text) then return end
-        if odh_shared_plugins and type(odh_shared_plugins.Notify) == "function" then
-            if pcall(odh_shared_plugins.Notify, text, dur or 3) then return end
+local function hostNotify(text, dur)
+    if odh_shared_plugins and type(odh_shared_plugins.Notify) == "function" then
+        if pcall(odh_shared_plugins.Notify, text, dur or 3) then return end
+    end
+    pcall(function()
+        local sg = StarterGui or game:GetService("StarterGui")
+        sg:SetCore("SendNotification", {
+            Title = BRAND, Text = tostring(text), Duration = dur or 3,
+        })
+    end)
+end
+
+local shared = ODHX.shared
+if not shared then
+    hostNotify(BRAND .. " " .. VERSION .. ": Load through Overdrive H plugin menu", 3)
+    return
+end
+
+-- ====== Повторная загрузка ======
+pcall(function()
+    if type(getgenv) ~= "function" then return end
+    local g = getgenv()
+    if type(g) ~= "table" then return end
+    local prev = rawget(g, UNLOAD_GLOBAL)
+    rawset(g, UNLOAD_GLOBAL, nil)
+    if type(prev) == "function" then pcall(prev) end
+end)
+
+-- ====== Maid ======
+local Maid = {}
+Maid.__index = Maid
+
+function Maid._cleanup(item)
+    local t = typeof(item)
+    if t == "RBXScriptConnection" then
+        pcall(function() item:Disconnect() end)
+    elseif t == "Instance" then
+        pcall(function() item:Destroy() end)
+    elseif t == "function" then
+        local ok, err = pcall(item)
+        if not ok then warn("[" .. BRAND .. "][maid] " .. tostring(err)) end
+    elseif t == "thread" then
+        pcall(task.cancel, item)
+    elseif t == "table" and type(item.Destroy) == "function" then
+        pcall(item.Destroy, item)
+    end
+end
+
+function Maid.new()
+    return setmetatable({ _tasks = {}, _destroyed = false }, Maid)
+end
+
+function Maid:GiveTask(item)
+    if item == nil then return nil end
+    if self._destroyed then
+        Maid._cleanup(item)
+        return nil
+    end
+    local tasks = self._tasks
+    tasks[#tasks + 1] = item
+    return item
+end
+
+function Maid:DoCleaning()
+    if self._destroyed then return end
+    self._destroyed = true
+    local tasks = self._tasks
+    self._tasks = {}
+    for i = #tasks, 1, -1 do
+        Maid._cleanup(tasks[i])
+        tasks[i] = nil
+    end
+end
+
+function Maid:Destroy()
+    self:DoCleaning()
+end
+
+local RootMaid = Maid.new()
+
+-- ====== Сервисы ======
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players           = game:GetService("Players")
+local LocalPlayer       = Players.LocalPlayer
+local UserInputService  = game:GetService("UserInputService")
+local RunService        = game:GetService("RunService")
+local Workspace         = game:GetService("Workspace")
+local TweenService      = game:GetService("TweenService")
+local HttpService       = game:GetService("HttpService")
+local CoreGui           = game:GetService("CoreGui")
+StarterGui              = game:GetService("StarterGui")
+
+-- ====== Шорткаты ======
+local new      = Instance.new
+local clamp    = math.clamp
+local sin, cos, floor = math.sin, math.cos, math.floor
+local now      = os.clock
+local insert   = table.insert
+local ud2      = UDim2.new
+local ud       = UDim.new
+local v2       = Vector2.new
+local v3       = Vector3.new
+local cfr      = CFrame.new
+local rgb      = Color3.fromRGB
+local pclr     = Color3.new
+local cs       = ColorSequence.new
+local csk      = ColorSequenceKeypoint.new
+local tinfo    = TweenInfo.new
+local V3_ZERO  = Vector3.zero
+local UIT      = Enum.UserInputType
+local MOUSE1   = UIT.MouseButton1
+local TOUCH    = UIT.Touch
+local MOUSEMOV = UIT.MouseMovement
+local EASING   = Enum.EasingStyle
+local EDIR     = Enum.EasingDirection
+local FALLBACK_VIEWPORT = v2(1920, 1080)
+
+local function clearTable(t)
+    if table.clear then table.clear(t) else for k in pairs(t) do t[k] = nil end end
+end
+
+-- ====== Конфигурация ======
+local state_whitelist_ref = nil
+local loadedWhitelist = {}
+local persistDisabled = false
+
+local DEFAULTS = {
+    flingDuration     = 2,
+    flingPower        = 1,
+    autoReturn        = true,
+    loopInterval      = 0.4,
+    auraInterval      = 0.4,
+    auraStuds         = 15,
+    bindButtonSize    = 0.11,
+    targetCooldown    = 0.8,
+    autoSheriffDelay  = 0.25,
+    autoMurdererDelay = 0.35,
+    roleCacheTTL      = 0.8,
+    muteSounds        = false,
+    notifications     = true,
+    keybinds          = {},
+    bindPositions     = {},
+    hudPos            = { x = 0.5, y = 6 },
+    pluginUI          = {},
+    whitelist         = {},
+}
+
+local config = {}
+for key, value in pairs(DEFAULTS) do
+    if type(value) == "table" then
+        local copy = {}
+        for kk, vv in pairs(value) do copy[kk] = vv end
+        config[key] = copy
+    else
+        config[key] = value
+    end
+end
+
+local canPersist = (type(writefile) == "function" and type(readfile) == "function")
+local jsonBroken = false
+
+local function jsonEncode(tbl)
+    if jsonBroken then return nil end
+    local ok, res = pcall(function() return HttpService:JSONEncode(tbl) end)
+    if ok and type(res) == "string" then return res end
+    jsonBroken = true
+    return nil
+end
+
+local function jsonDecode(str)
+    if jsonBroken then return nil end
+    local ok, res = pcall(function() return HttpService:JSONDecode(str) end)
+    if ok and type(res) == "table" then return res end
+    return nil
+end
+
+local function packWhitelist(map)
+    local out = {}
+    for id, name in pairs(map) do
+        insert(out, { id = id, name = tostring(name) })
+    end
+    return out
+end
+
+local function unpackWhitelist(list)
+    local map = {}
+    if type(list) == "table" then
+        for _, row in ipairs(list) do
+            if type(row) == "table" and type(row.id) == "number" then
+                map[row.id] = tostring(row.name or row.id)
+            end
         end
-        pcall(function()
-            local sg = StarterGui or SR_UI.service("StarterGui")
-            sg:SetCore("SendNotification", {
-                Title = BRAND, Text = tostring(text), Duration = dur or 3,
-            })
-        end)
     end
+    return map
+end
 
-    local shared = ODHX.shared
-    if not shared then
-        SR_Log(BRAND .. " " .. VERSION .. ": the host menu is unavailable, the module is skipped")
-        return
+local function serializeConfig()
+    return {
+        flingDuration = config.flingDuration, flingPower = config.flingPower,
+        autoReturn = config.autoReturn,
+        loopInterval = config.loopInterval, auraInterval = config.auraInterval,
+        auraStuds = config.auraStuds, bindButtonSize = config.bindButtonSize,
+        targetCooldown = config.targetCooldown,
+        autoSheriffDelay = config.autoSheriffDelay, autoMurdererDelay = config.autoMurdererDelay,
+        roleCacheTTL = config.roleCacheTTL,
+        muteSounds = config.muteSounds,
+        notifications = config.notifications, pluginUI = config.pluginUI,
+        keybinds = config.keybinds, bindPositions = config.bindPositions,
+        hudPos = config.hudPos, whitelist = packWhitelist(state_whitelist_ref or {}),
+    }
+end
+
+local function applyLoaded(data)
+    if type(data) ~= "table" then return false end
+    local scalars = {
+        "flingDuration", "flingPower", "autoReturn",
+        "loopInterval", "auraInterval", "auraStuds",
+        "bindButtonSize", "targetCooldown",
+        "autoSheriffDelay", "autoMurdererDelay", "roleCacheTTL",
+        "muteSounds", "notifications",
+    }
+    for _, key in ipairs(scalars) do
+        local v = data[key]
+        if v ~= nil and type(v) == type(DEFAULTS[key]) then config[key] = v end
     end
-    -- Murder Mystery 2 and its modded versions (MMV and others) share the same
-    -- gameplay remotes, and every lookup this module makes is optional, so it is
-    -- built everywhere instead of refusing to load. In a place that does not look
-    -- like a Murder Mystery game the menu still appears and simply finds no target.
-    local function isMurderMysteryPlace()
-        local name = type(shared.game_name) == "string" and shared.game_name or ""
-        if name:find("Murder Mystery", 1, true) then return true end
-        if game.PlaceId == 142823291 or game.GameId == 66654135 then return true end
-        return false
+    -- clamp after load
+    if type(config.flingDuration)=="number" then config.flingDuration=math.clamp(math.floor(config.flingDuration+0.5),1,5) end
+    if type(config.flingPower)=="number" then config.flingPower=math.clamp(math.floor(config.flingPower+0.5),1,3) end
+    if type(data.keybinds) == "table" then config.keybinds = data.keybinds end
+    if type(data.bindPositions) == "table" then config.bindPositions = data.bindPositions end
+    if type(data.hudPos) == "table" and type(data.hudPos.x) == "number" and type(data.hudPos.y) == "number" then
+        config.hudPos = { x = data.hudPos.x, y = data.hudPos.y }
     end
-    if not isMurderMysteryPlace() then
-        SR_Log(BRAND .. " " .. VERSION .. ": game is not a Murder Mystery place, the reset features may do nothing here")
+    if type(data.pluginUI)=="table" then config.pluginUI=data.pluginUI end
+    loadedWhitelist = unpackWhitelist(data.whitelist)
+    return true
+end
+
+local function loadConfig()
+    if not canPersist or type(isfile) ~= "function" then return false end
+    local applied = false
+    pcall(function()
+        if not isfile(CONFIG_PATH) then return end
+        applied = applyLoaded(jsonDecode(readfile(CONFIG_PATH))) and true or false
+    end)
+    return applied
+end
+
+local saveQueued, saveThread = false, nil
+
+local function saveConfig(force)
+    if not canPersist or persistDisabled then return false end
+    if force then
+        if saveThread then pcall(task.cancel,saveThread) end
+        saveThread,saveQueued=nil,false
+        local ok,err=pcall(function()
+            local payload=jsonEncode(serializeConfig())
+            assert(payload,"JSON encode failed")
+            writefile(CONFIG_PATH,payload)
+        end)
+        if not ok then ODHX.Report("Could not save " .. CONFIG_PATH .. ": " .. tostring(err)) end
+        return ok
     end
+    if saveQueued and not force then return true end
+    saveQueued = true
+    if saveThread then pcall(task.cancel, saveThread) end
+    saveThread = task.delay(force and 0 or 0.35, function()
+        saveQueued = false
+        saveThread = nil
+        pcall(function()
+            local payload = jsonEncode(serializeConfig())
+            if payload then writefile(CONFIG_PATH, payload) end
+        end)
+    end)
+    return true
+end
+
+local configLoaded = loadConfig()
+ODHX.data.controls=config.pluginUI or {}
+ODHX.backend=function(data)
+    config.pluginUI=data.controls
+    return saveConfig(true)
+end
+
+-- ====== Состояние ======
+local state = {
+    whitelist       = loadedWhitelist,
+    selectedPlayers = {},
+    selectedSet     = {},
+    resetSelPlr     = nil,
+    lastResetAt     = {},
+}
+state_whitelist_ref = state.whitelist
+
+local maids = {
+    loopPlr = nil, clickFling = nil, aura = nil,
+    autoSheriff = nil, autoMurderer = nil,
+}
+
+-- ====== Уведомления ======
+local lastNotify = { text = nil, at = 0 }
+local function Notify(title, msg, dur)
+    if not config.notifications then return end
+    local text = msg and (title .. ": " .. msg) or title
+    local t = now()
+    if lastNotify.text == text and (t - lastNotify.at) < 0.35 then return end
+    lastNotify.text, lastNotify.at = text, t
+    hostNotify(text, dur or 3)
+end
+
+-- ====== Единый тикер ======
+local Ticker = { _fns = {}, _conn = nil }
+
+function Ticker._start()
+    if Ticker._conn then return end
+    Ticker._conn = RunService.RenderStepped:Connect(function(dt)
+        local fns = Ticker._fns
+        local i = 1
+        while i <= #fns do
+            local fn = fns[i]
+            if fn then
+                local ok, err = xpcall(fn, debug.traceback, dt)
+                if not ok then
+                    warn("[" .. BRAND .. "][ticker] " .. tostring(err))
+                    table.remove(fns, i)
+                    i = i - 1
+                end
+            end
+            i = i + 1
+        end
+        if #fns == 0 and Ticker._conn then
+            Ticker._conn:Disconnect()
+            Ticker._conn = nil
+        end
+    end)
+end
+
+function Ticker.add(fn)
+    if type(fn) ~= "function" then return function() end end
+    local fns = Ticker._fns
+    fns[#fns + 1] = fn
+    Ticker._start()
+    local removed = false
+    return function()
+        if removed then return end
+        removed = true
+        for i = 1, #fns do
+            if fns[i] == fn then
+                table.remove(fns, i)
+                break
+            end
+        end
+    end
+end
+
+RootMaid:GiveTask(function()
+    if Ticker._conn then Ticker._conn:Disconnect(); Ticker._conn = nil end
+    clearTable(Ticker._fns)
+end)
+
+-- ====== Заголовки секций ======
+local LEGACY_TITLES = {
+    ["⚡ Quick Actions"] = true,
+    ["🤖 Automation"] = true,
+    ["📋 Lists Management"] = true,
+    ["⚙️ Reset Settings"] = true,
+    ["⚙ Reset Settings"] = true,
+    ["🔄 Bind Buttons (circles)"] = true,
+    ["📊 Status"] = true,
+    ["ℹ️ Info"] = true,
+    ["⚡ Reset"] = true,
+    ["🤖 Auto"] = true,
+    ["📋 Lists"] = true,
+    ["⚙️ Tuning"] = true,
+    ["⚙ Tuning"] = true,
+    ["🔘 Binds"] = true,
+    ["ℹ️"] = true,
+    ["Ultimate Fling V1"] = true,
+    ["Ultimate Fling"] = true,
+}
+local EXTRA_LEGACY_TITLES = {}
+for _title in pairs(EXTRA_LEGACY_TITLES) do LEGACY_TITLES[_title] = true end
+local CUR_TITLES = {
+    ["💀 " .. BRAND] = true,
+    ["⚡ Fling"] = true,
+    ["🤖 Auto"] = true,
+    ["📋 Lists"] = true,
+    ["⚙️ Tuning"] = true,
+    ["⚙ Tuning"] = true,
+    ["🔘 Binds"] = true,
+    ["🔑 Keys"] = true,
+    ["💾 Config"] = true,
+    ["ℹ️"] = true,
+}
+local HOST_WORDS = {
+    "Looking for a feature", "Plugins", "Overdrive", "Logged in as", "gg/overdrivehub",
+}
+local MAX_CARD_HEIGHT = 520
+
+local RUN_ID = MARKER_PREFIX .. tostring(floor(now() * 1000) % 100000000)
+    .. "_" .. tostring(math.random(1000, 9999))
+
+-- ====== Хранилище GUI ======
+local storageGui = nil
+local function getStorage()
+    if storageGui and storageGui.Parent then return storageGui end
+
+    local parent
+    local ok, res = pcall(function()
+        if gethui then return gethui() end
+        if getcore then return getcore() end
+        return nil
+    end)
+    if ok and typeof(res) == "Instance" then parent = res else parent = CoreGui end
+    if typeof(parent) ~= "Instance" then parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") end
+    if typeof(parent) ~= "Instance" then parent = LocalPlayer:WaitForChild("PlayerGui", 5) end
+    if typeof(parent) ~= "Instance" then parent = CoreGui end
 
     pcall(function()
-        if type(getgenv) ~= "function" then return end
-        local g = getgenv()
-        if type(g) ~= "table" then return end
-        local prev = rawget(g, UNLOAD_GLOBAL)
-        rawset(g, UNLOAD_GLOBAL, nil)
-        if type(prev) == "function" then pcall(prev) end
+        for _, legacyName in ipairs(LEGACY_STORAGES) do
+            local legacy = parent:FindFirstChild(legacyName)
+            if legacy then legacy:Destroy() end
+        end
     end)
 
-    local Maid = {}
-    Maid.__index = Maid
-
-    function Maid._cleanup(item)
-        local t = typeof(item)
-        if t == "RBXScriptConnection" then
-            pcall(function() item:Disconnect() end)
-        elseif t == "Instance" then
-            pcall(function() item:Destroy() end)
-        elseif t == "function" then
-            local ok, err = pcall(item)
-            if not ok then warn("[" .. BRAND .. "][maid] " .. tostring(err)) end
-        elseif t == "thread" then
-            pcall(task.cancel, item)
-        elseif t == "table" and type(item.Destroy) == "function" then
-            pcall(item.Destroy, item)
-        end
+    local sg = parent:FindFirstChild(STORAGE_NAME)
+    if not sg then
+        sg = new("ScreenGui")
+        sg.Name = STORAGE_NAME
+        sg.ResetOnSpawn = false
+        sg.IgnoreGuiInset = true
+        pcall(function() sg.ScreenInsets = Enum.ScreenInsets.None end)
+        if syn and syn.protect_gui then pcall(syn.protect_gui, sg) end
+        sg.Parent = parent
     end
+    storageGui = sg
+    return sg
+end
 
-    function Maid.new()
-        return setmetatable({ _tasks = {}, _destroyed = false }, Maid)
-    end
+-- ====== Реестр своих секций ======
+local mySections = {}
+local headlessMode = false
 
-    function Maid:GiveTask(item)
-        if item == nil then return nil end
-        if self._destroyed then
-            Maid._cleanup(item)
-            return nil
-        end
-        local tasks = self._tasks
-        tasks[#tasks + 1] = item
-        return item
-    end
+local function stubSection()
+    return setmetatable({}, { __index = function() return function() end end })
+end
 
-    function Maid:DoCleaning()
-        if self._destroyed then return end
-        self._destroyed = true
-        local tasks = self._tasks
-        self._tasks = {}
-        for i = #tasks, 1, -1 do
-            Maid._cleanup(tasks[i])
-            tasks[i] = nil
-        end
-    end
-
-    function Maid:Destroy()
-        self:DoCleaning()
-    end
-
-    local RootMaid = Maid.new()
-
-    local ReplicatedStorage = SR_UI.service("ReplicatedStorage")
-    local Players           = SR_UI.service("Players")
-    local LocalPlayer       = Players.LocalPlayer
-    local UserInputService  = SR_UI.service("UserInputService")
-    local RunService        = SR_UI.service("RunService")
-    local Workspace         = SR_UI.service("Workspace")
-    local TweenService      = SR_UI.service("TweenService")
-    local HttpService       = SR_UI.service("HttpService")
-    local CoreGui           = SR_UI.service("CoreGui")
-    StarterGui              = SR_UI.service("StarterGui")
-
-    local new      = Instance.new
-    local clamp    = math.clamp
-    local sin, cos, floor = math.sin, math.cos, math.floor
-    local now      = os.clock
-    local insert   = table.insert
-    local ud2      = UDim2.new
-    local ud       = UDim.new
-    local v2       = Vector2.new
-    local v3       = Vector3.new
-    local cfr      = CFrame.new
-    local rgb      = Color3.fromRGB
-    local pclr     = Color3.new
-    local cs       = ColorSequence.new
-    local csk      = ColorSequenceKeypoint.new
-    local tinfo    = TweenInfo.new
-    local V3_ZERO  = Vector3.zero
-    local UIT      = Enum.UserInputType
-    local MOUSE1   = UIT.MouseButton1
-    local TOUCH    = UIT.Touch
-    local MOUSEMOV = UIT.MouseMovement
-    local EASING   = Enum.EasingStyle
-    local EDIR     = Enum.EasingDirection
-    local FALLBACK_VIEWPORT = v2(1920, 1080)
-
-    local function clearTable(t)
-        if table.clear then table.clear(t) else for k in pairs(t) do t[k] = nil end end
-    end
-
-    local state_whitelist_ref = nil
-    local loadedWhitelist = {}
-    local persistDisabled = false
-
-    local DEFAULTS = {
-        maxRetries        = 3,
-        retryDelay        = 0.18,
-        auraStuds         = 15,
-        resetDuration     = 0.55,
-        autoSheriffDelay  = 0.25,
-        autoMurdererDelay = 0.35,
-        loopInterval      = 0.4,
-        auraInterval      = 0.4,
-        bindButtonSize    = 0.11,
-        targetCooldown    = 0.8,
-        roleCacheTTL      = 0.8,
-        muteSounds        = false,
-        notifications     = true,
-        keybinds          = {},
-        bindPositions     = {},
-        binds             = {},
-        hudPos            = { x = 0.5, y = 6 },
-        pluginUI          = {},
-        whitelist         = {},
-    }
-
-    local config = {}
-    for key, value in pairs(DEFAULTS) do
-        if type(value) == "table" then
-            local copy = {}
-            for kk, vv in pairs(value) do copy[kk] = vv end
-            config[key] = copy
-        else
-            config[key] = value
-        end
-    end
-
-    local canPersist = (SR_Store.CanWrite() or SR_Store.CanRead() or SR_Store.mem ~= nil)
-    local jsonBroken = false
-
-    local function jsonEncode(tbl)
-        if jsonBroken then return nil end
-        local ok, res = pcall(function() return HttpService:JSONEncode(tbl) end)
-        if ok and type(res) == "string" then return res end
-        jsonBroken = true
-        return nil
-    end
-
-    local function jsonDecode(str)
-        if jsonBroken then return nil end
-        local ok, res = pcall(function() return HttpService:JSONDecode(str) end)
-        if ok and type(res) == "table" then return res end
-        return nil
-    end
-
-    local function packWhitelist(map)
-        local out = {}
-        for id, name in pairs(map) do
-            insert(out, { id = id, name = tostring(name) })
-        end
-        return out
-    end
-
-    local function unpackWhitelist(list)
-        local map = {}
-        if type(list) == "table" then
-            for _, row in ipairs(list) do
-                if type(row) == "table" and type(row.id) == "number" then
-                    map[row.id] = tostring(row.name or row.id)
-                end
-            end
-        end
-        return map
-    end
-
-    local function serializeConfig()
-        return {
-            maxRetries = config.maxRetries, retryDelay = config.retryDelay,
-            auraStuds = config.auraStuds, resetDuration = config.resetDuration,
-            autoSheriffDelay = config.autoSheriffDelay, autoMurdererDelay = config.autoMurdererDelay,
-            loopInterval = config.loopInterval, auraInterval = config.auraInterval,
-            bindButtonSize = config.bindButtonSize, targetCooldown = config.targetCooldown,
-            roleCacheTTL = config.roleCacheTTL, muteSounds = config.muteSounds,
-            notifications = config.notifications, pluginUI = config.pluginUI,
-            keybinds = config.keybinds, bindPositions = config.bindPositions, binds = config.binds,
-            hudPos = config.hudPos, whitelist = packWhitelist(state_whitelist_ref or {}),
-        }
-    end
-
-    local function applyLoaded(data)
-        if type(data) ~= "table" then return false end
-        local scalars = {
-            "maxRetries", "retryDelay", "auraStuds", "resetDuration", "autoSheriffDelay",
-            "autoMurdererDelay", "loopInterval", "auraInterval", "bindButtonSize",
-            "targetCooldown", "roleCacheTTL", "muteSounds", "notifications",
-        }
-        for _, key in ipairs(scalars) do
-            local v = data[key]
-            if v ~= nil and type(v) == type(DEFAULTS[key]) then config[key] = v end
-        end
-        if type(data.keybinds) == "table" then config.keybinds = data.keybinds end
-        if type(data.bindPositions) == "table" then config.bindPositions = data.bindPositions end
-        if type(data.binds) == "table" then config.binds = data.binds end
-        if type(data.hudPos) == "table" and type(data.hudPos.x) == "number" and type(data.hudPos.y) == "number" then
-            config.hudPos = { x = data.hudPos.x, y = data.hudPos.y }
-        end
-        if type(data.pluginUI)=="table" then config.pluginUI=data.pluginUI end
-        loadedWhitelist = unpackWhitelist(data.whitelist)
-        return true
-    end
-
-    local function loadConfig()
-        if not canPersist then return false end
-        local applied = false
-        pcall(function()
-            local text = SR_Store.read(CONFIG_PATH)
-            if text then
-                local okMain = pcall(function() applied = applyLoaded(jsonDecode(text)) and true or false end)
-                if not okMain then applied = false end
-            end
-            if not applied then
-                local bakText = SR_Store.read(CONFIG_PATH .. ".bak")
-                if bakText then
-                    local okBak = pcall(function() applied = applyLoaded(jsonDecode(bakText)) and true or false end)
-                    if okBak and applied then
-                        ODHX.Report("Config was corrupted; loaded from " .. CONFIG_PATH .. ".bak")
+local function protectSection(sec)
+    if typeof(sec) ~= "table" then return stubSection() end
+    local proxy = { _raw = sec }
+    return setmetatable(proxy, {
+        __index = function(p, key)
+            local raw = p._raw
+            local value = raw[key]
+            if type(value) == "function" then
+                return function(first, ...)
+                    local ok, err
+                    if first == p then
+                        ok, err = pcall(value, raw, ...)
+                    else
+                        ok, err = pcall(value, raw, first, ...)
                     end
+                    if not ok then warn("[" .. BRAND .. "][menu] " .. tostring(key) .. ": " .. tostring(err)) end
+                    return ok and err or nil
                 end
             end
-        end)
-        return applied
+            return value
+        end,
+    })
+end
+
+local function AddSection(name)
+    local ok, sec = pcall(function() return shared.AddSection(name) end)
+    local obj
+    if ok and sec then
+        obj = protectSection(sec)
+    else
+        headlessMode = true
+        obj = stubSection()
     end
+    insert(mySections, { name = name, obj = obj })
+    return obj
+end
 
-    local saveQueued, saveThread = false, nil
-    local saveRetries = 0
-
-    local function scheduleSaveRetry()
-        if saveRetries >= 3 then return end
-        saveRetries = saveRetries + 1
-        if type(task) == "table" and type(task.delay) == "function" then
-            task.delay(saveRetries * 2, function()
-                if not persistDisabled then saveConfig() end
-            end)
+-- ====== Сканер GUI ======
+local function guiRoots()
+    local roots, seen = {}, {}
+    local function add(r)
+        if typeof(r) == "Instance" and not seen[r] then
+            seen[r] = true
+            roots[#roots + 1] = r
         end
     end
+    pcall(function() add(gethui and gethui()) end)
+    pcall(function() add(getcore and getcore()) end)
+    add(CoreGui)
+    pcall(function() add(LocalPlayer:FindFirstChildOfClass("PlayerGui")) end)
+    return roots
+end
 
-    local function saveConfig(force)
-        if not canPersist or persistDisabled then return false end
-        if force then
-            if saveThread then pcall(task.cancel,saveThread) end
-            saveThread,saveQueued=nil,false
-            local ok,err=pcall(function()
-                local payload=jsonEncode(serializeConfig())
-                assert(payload,"JSON encode failed")
-                local saved,why=SR_Store.write(CONFIG_PATH,payload)
-                if not saved then error(why or "write failed") end
-            end)
-            if not ok then
-                ODHX.Report("Could not save " .. CONFIG_PATH .. ": " .. tostring(err))
-                scheduleSaveRetry()
-            else
-                saveRetries = 0
-            end
-            return ok
-        end
-        if saveQueued and not force then return true end
-        saveQueued = true
-        if saveThread then pcall(task.cancel, saveThread) end
-        saveThread = task.delay(0.35, function()
-            saveQueued = false
-            saveThread = nil
-            local ok, err = pcall(function()
-                local payload = jsonEncode(serializeConfig())
-                assert(payload, "JSON encode failed")
-                local saved, why = SR_Store.write(CONFIG_PATH, payload)
-                if not saved then error(why or "write failed") end
-            end)
-            if not ok then
-                ODHX.Report("Could not save " .. CONFIG_PATH .. ": " .. tostring(err))
-                scheduleSaveRetry()
-            else
-                saveRetries = 0
-            end
-        end)
-        return true
-    end
-
-    local POS_PATH = PLUGIN_ID .. "_positions.json"
-    local posRetries, posRetryThread = 0, nil
-
-    local function savePositions()
-        if not canPersist or persistDisabled then return false end
-        local payload = jsonEncode({ version = 1, bindPositions = config.bindPositions, hudPos = config.hudPos })
-        if type(payload) ~= "string" then return false end
-        if SR_Store.write(POS_PATH, payload) then
-            posRetries = 0
-            return true
-        end
-        if posRetries < 4 and type(task) == "table" and type(task.delay) == "function" then
-            posRetries = posRetries + 1
-            if posRetryThread then pcall(task.cancel, posRetryThread) end
-            posRetryThread = task.delay(posRetries * 1.5, function()
-                posRetryThread = nil
-                savePositions()
-            end)
-        end
-        return false
-    end
-
-    local function loadPositions()
-        local text = SR_Store.read(POS_PATH)
-        if not text then return false end
-        local applied = false
-        pcall(function()
-            local data = jsonDecode(text)
-            if type(data) ~= "table" or data.version ~= 1 then return end
-            if type(data.bindPositions) == "table" then config.bindPositions = data.bindPositions end
-            if type(data.hudPos) == "table" and type(data.hudPos.x) == "number" and type(data.hudPos.y) == "number" then
-                config.hudPos = { x = data.hudPos.x, y = data.hudPos.y }
-            end
-            applied = true
-        end)
-        return applied
-    end
-
-    local configLoaded = loadConfig()
-    local positionsLoaded = loadPositions()
-    ODHX.data.controls=config.pluginUI or {}
-    ODHX.backend=function(data)
-        config.pluginUI=data.controls
-        return saveConfig()
-    end
-
-    local state = {
-        whitelist       = loadedWhitelist,
-        selectedPlayers = {},
-        selectedSet     = {},
-        resetSelPlr     = nil,
-        lastResetAt     = {},
-    }
-    state_whitelist_ref = state.whitelist
-
-    local maids = {
-        loopPlr = nil, clickReset = nil, resetAura = nil,
-        autoSheriff = nil, autoMurderer = nil,
-    }
-
-    local lastNotify = { text = nil, at = 0 }
-    local function Notify(title, msg, dur)
-        if not config.notifications then return end
-        local text = msg and (title .. ": " .. msg) or title
-        local t = now()
-        if lastNotify.text == text and (t - lastNotify.at) < 0.35 then return end
-        lastNotify.text, lastNotify.at = text, t
-        hostNotify(text, dur or 3)
-    end
-
-    local Ticker = { _fns = {}, _conn = nil }
-
-    function Ticker._start()
-        if Ticker._conn then return end
-        Ticker._conn = RunService.RenderStepped:Connect(function(dt)
-            local fns = Ticker._fns
-            local i = 1
-            while i <= #fns do
-                local fn = fns[i]
-                if fn then
-                    local ok, err = xpcall(fn, debug.traceback, dt)
-                    if not ok then
-                        warn("[" .. BRAND .. "][ticker] " .. tostring(err))
-                        table.remove(fns, i)
-                        i = i - 1
-                    end
-                end
-                i = i + 1
-            end
-            if #fns == 0 and Ticker._conn then
-                Ticker._conn:Disconnect()
-                Ticker._conn = nil
-            end
-        end)
-    end
-
-    function Ticker.add(fn)
-        if type(fn) ~= "function" then return function() end end
-        local fns = Ticker._fns
-        fns[#fns + 1] = fn
-        Ticker._start()
-        local removed = false
-        return function()
-            if removed then return end
-            removed = true
-            for i = 1, #fns do
-                if fns[i] == fn then
-                    table.remove(fns, i)
+local function hasHostWords(node, memo)
+    local cached = memo[node]
+    if cached ~= nil then return cached end
+    local res = false
+    local descendants = node:GetDescendants()
+    for i = 1, #descendants do
+        local d = descendants[i]
+        if d:IsA("TextLabel") then
+            local txt = d.Text
+            for w = 1, #HOST_WORDS do
+                if txt:find(HOST_WORDS[w], 1, true) then
+                    res = true
                     break
                 end
             end
+            if res then break end
         end
     end
+    memo[node] = res
+    return res
+end
 
-    RootMaid:GiveTask(function()
-        if Ticker._conn then Ticker._conn:Disconnect(); Ticker._conn = nil end
-        clearTable(Ticker._fns)
+local function findCard(node, memo)
+    for _ = 1, 7 do
+        if not node or typeof(node) ~= "Instance" or node == game then return nil end
+        if node:IsA("Frame") or node:IsA("ScrollingFrame") then
+            local framed = node:FindFirstChildOfClass("UIStroke") or node:FindFirstChildOfClass("UICorner")
+            if framed then
+                local sz = node.AbsoluteSize
+                if sz.Y > 0 and sz.Y < MAX_CARD_HEIGHT and not hasHostWords(node, memo) then
+                    return node
+                end
+            end
+        end
+        node = node.Parent
+    end
+    return nil
+end
+
+local function markerOf(card)
+    if not card then return nil end
+    local descendants = card:GetDescendants()
+    for i = 1, #descendants do
+        local d = descendants[i]
+        if d.Name:sub(1, #MARKER_PREFIX) == MARKER_PREFIX then return d.Name end
+    end
+    return nil
+end
+
+local function attachMarker(card)
+    if not card or markerOf(card) then return false end
+    local ok = pcall(function()
+        local sv = new("StringValue")
+        sv.Name = RUN_ID
+        sv.Value = VERSION
+        sv.Parent = card
     end)
+    return ok
+end
 
-    local LEGACY_TITLES = {
-        ["⚡ Quick Actions"] = true,
-        ["🤖 Automation"] = true,
-        ["📋 Lists Management"] = true,
-        ["⚙️ Reset Settings"] = true,
-        ["⚙ Reset Settings"] = true,
-        ["🔄 Bind Buttons (circles)"] = true,
-        ["📊 Status"] = true,
-        ["ℹ️ Info"] = true,
-        ["⚡ Reset"] = true,
-        ["🤖 Auto"] = true,
-        ["📋 Lists"] = true,
-        ["⚙️ Tuning"] = true,
-        ["⚙ Tuning"] = true,
-        ["🔘 Binds"] = true,
-        ["ℹ️"] = true,
-    }
+local lastPurge = 0
+local PURGE_COOLDOWN = 0.5
 
-    local EXTRA_LEGACY_TITLES = {}
-    for _title in pairs(EXTRA_LEGACY_TITLES) do LEGACY_TITLES[_title] = true end
-    local CUR_TITLES = {
-        ["💀 " .. BRAND] = true,
-        ["⚡ Reset"] = true,
-        ["🤖 Auto"] = true,
-        ["📋 Lists"] = true,
-        ["⚙️ Tuning"] = true,
-        ["⚙ Tuning"] = true,
-        ["🔘 Binds"] = true,
-        ["🔑 Keys"] = true,
-        ["💾 Config"] = true,
-        ["ℹ️"] = true,
-    }
-
-    local HOST_WORDS = {
-        "Looking for a feature", "Plugins", "Overdrive", "Logged in as", "gg/overdrivehub",
-    }
-    local MAX_CARD_HEIGHT = 520
-
-    local RUN_ID = MARKER_PREFIX .. tostring(floor(now() * 1000) % 100000000)
-        .. "_" .. tostring(math.random(1000, 9999))
-
-    local storageGui = nil
-    local function getStorage()
-        if storageGui and storageGui.Parent then return storageGui end
-
-        local parent
-        local ok, res = pcall(function()
-            if gethui then return gethui() end
-            if getcore then return getcore() end
-            return nil
-        end)
-        if ok and typeof(res) == "Instance" then parent = res else parent = CoreGui end
-        if typeof(parent) ~= "Instance" then parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") end
-        if typeof(parent) ~= "Instance" then parent = LocalPlayer:WaitForChild("PlayerGui", 5) end
-        if typeof(parent) ~= "Instance" then parent = CoreGui end
-
-        pcall(function()
-            for _, legacyName in ipairs(LEGACY_STORAGES) do
-                local legacy = parent:FindFirstChild(legacyName)
-                if legacy then legacy:Destroy() end
-            end
-        end)
-
-        local sg = parent:FindFirstChild(STORAGE_NAME)
-        if not sg then
-            sg = new("ScreenGui")
-            sg.Name = STORAGE_NAME
-            sg.ResetOnSpawn = false
-            sg.IgnoreGuiInset = true
-            pcall(function() sg.ScreenInsets = Enum.ScreenInsets.None end)
-            if syn and syn.protect_gui then pcall(syn.protect_gui, sg) end
-            sg.Parent = parent
-        end
-        storageGui = sg
-        return sg
+local function cardIsOurs(card)
+    if markerOf(card) == RUN_ID then return true end
+    local descendants = card:GetDescendants()
+    for i = 1, #descendants do
+        local d = descendants[i]
+        if d:IsA("TextLabel") and d.Text:find(VERSION_TAG, 1, true) then return true end
     end
+    return false
+end
 
-    local mySections = {}
-    local headlessMode = false
-
-    local function stubSection()
-        return setmetatable({}, { __index = function() return function() end end })
-    end
-
-    local pmReady = false
-    local PM_CONTROL_METHODS = {
-        AddToggle = true, AddSlider = true, AddDropdown = true,
-        AddColorpicker = true, AddKeybind = true,
-    }
-    local function protectSection(sec)
-        if typeof(sec) ~= "table" then return stubSection() end
-        local proxy = { _raw = sec }
-        return setmetatable(proxy, {
-            __index = function(p, key)
-                local raw = p._raw
-                local value = raw[key]
-                if type(value) == "function" then
-                    return function(first, ...)
-
-                        local args = table.pack(...)
-                        if first == p then
-
-                            if PM_CONTROL_METHODS[key] and type(args[args.n]) == "function" then
-                                local cb = args[args.n]
-                                args[args.n] = function(...) if pmReady then return cb(...) end end
-                            end
-                        else
-
-                            args = table.pack(first, table.unpack(args, 1, args.n))
-                        end
-                        local ok, err = pcall(value, raw, table.unpack(args, 1, args.n))
-                        if not ok then warn("[" .. BRAND .. "][menu] " .. tostring(key) .. ": " .. tostring(err)) end
-                        return ok and err or nil
-                    end
-                end
-                return value
-            end,
-        })
-    end
-
-    local function AddSection(name)
-        local ok, sec = pcall(function() return shared.AddSection(name) end)
-        local obj
-        if ok and sec then
-            obj = protectSection(sec)
-        else
-            headlessMode = true
-            obj = stubSection()
-        end
-        insert(mySections, { name = name, obj = obj })
-        return obj
-    end
-
-    local function guiRoots()
-        local roots, seen = {}, {}
-        local function add(r)
-            if typeof(r) == "Instance" and not seen[r] then
-                seen[r] = true
-                roots[#roots + 1] = r
-            end
-        end
-        pcall(function() add(gethui and gethui()) end)
-        pcall(function() add(getcore and getcore()) end)
-        add(CoreGui)
-        pcall(function() add(LocalPlayer:FindFirstChildOfClass("PlayerGui")) end)
-        return roots
-    end
-
-    local function hasHostWords(node, memo)
-        local cached = memo[node]
-        if cached ~= nil then return cached end
-        local res = false
-        local descendants = node:GetDescendants()
+local function purgeForeign(force)
+    local t = now()
+    if not force and (t - lastPurge) < PURGE_COOLDOWN then return 0 end
+    lastPurge = t
+    local killed = 0
+    for _, root in ipairs(guiRoots()) do
+        local memo = {}
+        local descendants = root:GetDescendants()
         for i = 1, #descendants do
             local d = descendants[i]
-            if d:IsA("TextLabel") then
+            if d.Parent and d:IsA("TextLabel") then
                 local txt = d.Text
-                for w = 1, #HOST_WORDS do
-                    if txt:find(HOST_WORDS[w], 1, true) then
-                        res = true
-                        break
-                    end
-                end
-                if res then break end
-            end
-        end
-        memo[node] = res
-        return res
-    end
-
-    local function findCard(node, memo)
-        for _ = 1, 7 do
-            if not node or typeof(node) ~= "Instance" or node == game then return nil end
-            if node:IsA("Frame") or node:IsA("ScrollingFrame") then
-                local framed = node:FindFirstChildOfClass("UIStroke") or node:FindFirstChildOfClass("UICorner")
-                if framed then
-                    local sz = node.AbsoluteSize
-                    if sz.Y > 0 and sz.Y < MAX_CARD_HEIGHT and not hasHostWords(node, memo) then
-                        return node
+                if CUR_TITLES[txt] or (CLEAN_LEGACY_MENU and LEGACY_TITLES[txt]) then
+                    local card = findCard(d, memo)
+                    if card and not cardIsOurs(card) then
+                        if pcall(function() card:Destroy() end) then killed = killed + 1 end
                     end
                 end
             end
-            node = node.Parent
         end
-        return nil
     end
+    return killed
+end
 
-    local function markerOf(card)
-        if not card then return nil end
-        local descendants = card:GetDescendants()
+local markedCount = 0
+local function markOwnCards()
+    local marked = 0
+    for _, root in ipairs(guiRoots()) do
+        local memo = {}
+        local descendants = root:GetDescendants()
         for i = 1, #descendants do
             local d = descendants[i]
-            if d.Name:sub(1, #MARKER_PREFIX) == MARKER_PREFIX then return d.Name end
-        end
-        return nil
-    end
-
-    local function attachMarker(card)
-        if not card or markerOf(card) then return false end
-        local ok = pcall(function()
-            local sv = new("StringValue")
-            sv.Name = RUN_ID
-            sv.Value = VERSION
-            sv.Parent = card
-        end)
-        return ok
-    end
-
-    local lastPurge = 0
-    local PURGE_COOLDOWN = 0.5
-
-    local SCAN_CHUNK = 400
-    local function scanChunk(counter)
-        counter.n = counter.n + 1
-        if counter.n >= SCAN_CHUNK then
-            counter.n = 0
-            task.wait()
+            if d.Parent and d:IsA("TextLabel") and CUR_TITLES[d.Text] then
+                local card = findCard(d, memo)
+                if card and markerOf(card) == nil and attachMarker(card) then
+                    marked = marked + 1
+                end
+            end
         end
     end
+    markedCount = markedCount + marked
+    return marked
+end
 
-    local markOwnCards
-
-    local function cardIsOurs(card)
-        if markerOf(card) == RUN_ID then return true end
-        local descendants = card:GetDescendants()
+local function removeByTitles()
+    local removed = 0
+    for _, root in ipairs(guiRoots()) do
+        local memo = {}
+        local descendants = root:GetDescendants()
         for i = 1, #descendants do
             local d = descendants[i]
-            if d:IsA("TextLabel") and d.Text:find(VERSION_TAG, 1, true) then return true end
-        end
-        return false
-    end
-
-    local function purgeForeign(force)
-        local t = now()
-        if not force and (t - lastPurge) < PURGE_COOLDOWN then return 0 end
-        lastPurge = t
-        local killed = 0
-        local counter = { n = 0 }
-        for _, root in ipairs(guiRoots()) do
-            local memo = {}
-            local descendants = root:GetDescendants()
-            for i = 1, #descendants do
-                scanChunk(counter)
-                local d = descendants[i]
-                if d.Parent and d:IsA("TextLabel") then
-                    local txt = d.Text
-                    if CUR_TITLES[txt] or (CLEAN_LEGACY_MENU and LEGACY_TITLES[txt]) then
-                        local card = findCard(d, memo)
-                        if card and not cardIsOurs(card) then
-                            if pcall(function() card:Destroy() end) then killed = killed + 1 end
-                        end
-                    end
-                end
-            end
-        end
-        return killed
-    end
-
-    local guiDirty = true
-    local dirtyWatches = {}
-    local function watchGuiRoots()
-        for _, root in ipairs(guiRoots()) do
-            if not dirtyWatches[root] then
-                local ok, conn = pcall(function()
-                    return root.DescendantAdded:Connect(function() guiDirty = true end)
-                end)
-                dirtyWatches[root] = ok and conn or true
-            end
-        end
-    end
-    local function scanIfDirty()
-        watchGuiRoots()
-        if not guiDirty then return false end
-        guiDirty = false
-        pcall(markOwnCards)
-        pcall(purgeForeign, true)
-        return true
-    end
-
-    local markedCount = 0
-
-    markOwnCards = function()
-        local marked = 0
-        local counter = { n = 0 }
-        for _, root in ipairs(guiRoots()) do
-            local memo = {}
-            local descendants = root:GetDescendants()
-            for i = 1, #descendants do
-                scanChunk(counter)
-                local d = descendants[i]
-                if d.Parent and d:IsA("TextLabel") and CUR_TITLES[d.Text] then
-                    local card = findCard(d, memo)
-                    if card and markerOf(card) == nil and attachMarker(card) then
-                        marked = marked + 1
-                    end
-                end
-            end
-        end
-        markedCount = markedCount + marked
-        return marked
-    end
-
-    local function removeByTitles()
-        local removed = 0
-        for _, root in ipairs(guiRoots()) do
-            local memo = {}
-            local descendants = root:GetDescendants()
-            for i = 1, #descendants do
-                local d = descendants[i]
-                if d.Parent and d:IsA("TextLabel") and CUR_TITLES[d.Text] then
-                    local card = findCard(d, memo)
-                    if card and not markerOf(card) then
-                        if pcall(function() card:Destroy() end) then removed = removed + 1 end
-                    end
-                end
-            end
-        end
-        return removed
-    end
-
-    local function removeMySections()
-        local removed = 0
-        for _, root in ipairs(guiRoots()) do
-            local descendants = root:GetDescendants()
-            for i = 1, #descendants do
-                local d = descendants[i]
-                if d.Name == RUN_ID and d.Parent then
-                    local card = d.Parent
-                    pcall(function() d:Destroy() end)
+            if d.Parent and d:IsA("TextLabel") and CUR_TITLES[d.Text] then
+                local card = findCard(d, memo)
+                if card and not markerOf(card) then
                     if pcall(function() card:Destroy() end) then removed = removed + 1 end
                 end
             end
         end
-        if removed == 0 and markedCount == 0 then removed = removeByTitles() end
-        return removed
     end
+    return removed
+end
 
-    pcall(purgeForeign, true)
-
-    local Audio = { click = nil }
-    function Audio.init()
-        local s = new("Sound")
-        s.Name = "@click"
-        s.SoundId = "rbxassetid://3868133279"
-        s.Volume = config.muteSounds and 0 or 0.5
-        s.Parent = getStorage()
-        Audio.click = s
-        RootMaid:GiveTask(s)
-    end
-    function Audio.play()
-        local s = Audio.click
-        if not s or s.Volume <= 0 then return end
-        pcall(function() s:Play() end)
-    end
-    function Audio.setMuted(muted)
-        config.muteSounds = muted and true or false
-        if Audio.click then Audio.click.Volume = config.muteSounds and 0 or 0.5 end
-        saveConfig()
-    end
-
-    local BindableButtons = {
-        Buttons = {},
-        Maids   = {},
-        recs    = {},
-        order   = {},
-        Count   = 0,
-        ResetActive = false,
-        CurrentSize = config.bindButtonSize or 0.11,
-    }
-
-    local __SHAPES = {
-        [0] = "rbxassetid://86221076925479",
-        [1] = "rbxassetid://96242665417546",
-        [2] = "rbxassetid://97129189935336",
-        [3] = "rbxassetid://76165862027868",
-        [4] = "rbxassetid://125868092127496",
-    }
-    local GLOW_IMG = "rbxassetid://131961136"
-
-    local __NORMAL_COLOR = cs({
-        csk(0,   pclr(0.133333, 0.827451, 0.494118)),
-        csk(0.6, pclr(0.231373, 0.509804, 0.498039)),
-        csk(1,   pclr(0.501961, 0.501961, 0.501961)),
-    })
-    local __WAIT_COLOR = cs({
-        csk(0,   pclr(0.827451, 0.133333, 0.133333)),
-        csk(0.6, pclr(0.509804, 0.231373, 0.231373)),
-        csk(1,   pclr(0.501961, 0.501961, 0.501961)),
-    })
-    local __GOLD_NORMAL_COLOR = cs({
-        csk(0,   rgb(255, 215, 0)),
-        csk(0.6, rgb(218, 165, 32)),
-        csk(1,   rgb(128, 128, 128)),
-    })
-    local __GOLD_WAIT_COLOR = cs({
-        csk(0,   rgb(255, 69, 0)),
-        csk(0.6, rgb(139, 0, 0)),
-        csk(1,   rgb(128, 128, 128)),
-    })
-
-    local function bind_safecallback(callback)
-        if not callback then return end
-        local ok, err = xpcall(callback, debug.traceback)
-        if not ok then warn("[" .. BRAND .. "][bind] " .. tostring(err)) end
-    end
-
-    function BindableButtons.relayout()
-        local camera = Workspace.CurrentCamera
-        local screen = (camera and camera.ViewportSize) or FALLBACK_VIEWPORT
-        local h = BindableButtons.CurrentSize or 0.11
-        local w = h * (screen.Y / screen.X)
-        local perRow = math.max(1, floor(0.84 / (w + 0.008)))
-        for i = 1, #BindableButtons.order do
-            local id = BindableButtons.order[i]
-            local rec = BindableButtons.recs[id]
-            if rec then
-                local saved = config.bindPositions[id]
-                if saved and type(saved.x) == "number" and type(saved.y) == "number" then
-                    rec.x, rec.y = saved.x, saved.y
-                else
-                    local row = floor((i - 1) / perRow)
-                    local col = (i - 1) % perRow
-                    rec.x = 0.08 + col * (w + 0.008)
-                    rec.y = 0.88 - row * (h + 0.02)
-                end
-                rec.btn.Position = ud2(rec.x, 0, rec.y, 0)
-                rec.glow.Position = ud2(rec.x, 0, rec.y, 0)
+local function removeMySections()
+    local removed = 0
+    for _, root in ipairs(guiRoots()) do
+        local descendants = root:GetDescendants()
+        for i = 1, #descendants do
+            local d = descendants[i]
+            if d.Name == RUN_ID and d.Parent then
+                local card = d.Parent
+                pcall(function() d:Destroy() end)
+                if pcall(function() card:Destroy() end) then removed = removed + 1 end
             end
         end
     end
+    if removed == 0 and markedCount == 0 then removed = removeByTitles() end
+    return removed
+end
 
-    function BindableButtons.setSize(sizeScale)
-        BindableButtons.CurrentSize = clamp(sizeScale or 0.11, 0.02, 0.4)
-        config.bindButtonSize = BindableButtons.CurrentSize
-        BindableButtons.relayout()
+pcall(purgeForeign, true)
+
+-- ====== Звук клика ======
+local Audio = { click = nil }
+function Audio.init()
+    local s = new("Sound")
+    s.Name = "@click"
+    s.SoundId = "rbxassetid://3868133279"
+    s.Volume = config.muteSounds and 0 or 0.5
+    s.Parent = getStorage()
+    Audio.click = s
+    RootMaid:GiveTask(s)
+end
+function Audio.play()
+    local s = Audio.click
+    if not s or s.Volume <= 0 then return end
+    pcall(function() s:Play() end)
+end
+function Audio.setMuted(muted)
+    config.muteSounds = muted and true or false
+    if Audio.click then Audio.click.Volume = config.muteSounds and 0 or 0.5 end
+    saveConfig()
+end
+
+-- ====== Bindable Buttons ======
+local BindableButtons = {
+    Buttons = {},
+    Maids   = {},
+    recs    = {},
+    order   = {},
+    Count   = 0,
+    ResetActive = false,
+    CurrentSize = config.bindButtonSize or 0.11,
+}
+
+local __SHAPES = {
+    [0] = "rbxassetid://86221076925479",
+    [1] = "rbxassetid://96242665417546",
+    [2] = "rbxassetid://97129189935336",
+    [3] = "rbxassetid://76165862027868",
+    [4] = "rbxassetid://125868092127496",
+}
+local GLOW_IMG = "rbxassetid://131961136"
+
+local __NORMAL_COLOR = cs({
+    csk(0,   pclr(0.133333, 0.827451, 0.494118)),
+    csk(0.6, pclr(0.231373, 0.509804, 0.498039)),
+    csk(1,   pclr(0.501961, 0.501961, 0.501961)),
+})
+local __WAIT_COLOR = cs({
+    csk(0,   pclr(0.827451, 0.133333, 0.133333)),
+    csk(0.6, pclr(0.509804, 0.231373, 0.231373)),
+    csk(1,   pclr(0.501961, 0.501961, 0.501961)),
+})
+local __GOLD_NORMAL_COLOR = cs({
+    csk(0,   rgb(255, 215, 0)),
+    csk(0.6, rgb(218, 165, 32)),
+    csk(1,   rgb(128, 128, 128)),
+})
+local __GOLD_WAIT_COLOR = cs({
+    csk(0,   rgb(255, 69, 0)),
+    csk(0.6, rgb(139, 0, 0)),
+    csk(1,   rgb(128, 128, 128)),
+})
+
+local function bind_safecallback(callback)
+    if not callback then return end
+    local ok, err = xpcall(callback, debug.traceback)
+    if not ok then warn("[" .. BRAND .. "][bind] " .. tostring(err)) end
+end
+
+function BindableButtons.relayout()
+    local camera = Workspace.CurrentCamera
+    local screen = (camera and camera.ViewportSize) or FALLBACK_VIEWPORT
+    if not screen or screen.X <= 1 or screen.Y <= 1 then
+        screen = FALLBACK_VIEWPORT
+    end
+    local h = BindableButtons.CurrentSize or 0.11
+    local w = h * (screen.Y / screen.X)
+    if w ~= w or w <= 0 or w > 1 then w = h * (FALLBACK_VIEWPORT.Y / FALLBACK_VIEWPORT.X) end
+    local perRow = math.max(1, floor(0.84 / (w + 0.008)))
+    for i = 1, #BindableButtons.order do
+        local id = BindableButtons.order[i]
+        local rec = BindableButtons.recs[id]
+        if rec then
+            local saved = config.bindPositions[id]
+            if saved and type(saved.x) == "number" and type(saved.y) == "number" then
+                rec.x, rec.y = saved.x, saved.y
+            else
+                local row = floor((i - 1) / perRow)
+                local col = (i - 1) % perRow
+                rec.x = 0.08 + col * (w + 0.008)
+                rec.y = 0.88 - row * (h + 0.02)
+            end
+            rec.btn.Position = ud2(rec.x, 0, rec.y, 0)
+            rec.glow.Position = ud2(rec.x, 0, rec.y, 0)
+        end
+    end
+end
+
+function BindableButtons.setSize(sizeScale)
+    BindableButtons.CurrentSize = clamp(sizeScale or 0.11, 0.02, 0.4)
+    config.bindButtonSize = BindableButtons.CurrentSize
+    BindableButtons.relayout()
+    saveConfig()
+end
+
+local dragState = nil
+local binderGlobalMaid = Maid.new()
+RootMaid:GiveTask(binderGlobalMaid)
+
+local function isDragInput(input)
+    if not dragState then return false end
+    if input == dragState.dragInput then return true end
+    if input == dragState.input then return true end
+    return false
+end
+
+binderGlobalMaid:GiveTask(UserInputService.InputChanged:Connect(function(input)
+    if not dragState then return end
+    if input.UserInputType ~= MOUSEMOV and input.UserInputType ~= TOUCH then return end
+    if not isDragInput(input) then return end
+    local rec = dragState.rec
+    if not rec or not rec.btn then return end
+    local delta = input.Position - dragState.startInput
+    if delta.Magnitude > 7 then dragState.moved = true end
+    local parentGui = rec.btn.Parent
+    if not parentGui then return end
+    local screen = parentGui.AbsoluteSize
+    if screen.X <= 0 or screen.Y <= 0 then return end
+    rec.x = clamp(dragState.startX + (delta.X / screen.X), 0.03, 0.97)
+    rec.y = clamp(dragState.startY + (delta.Y / screen.Y), 0.05, 0.95)
+    rec.btn.Position = ud2(rec.x, 0, rec.y, 0)
+    rec.glow.Position = ud2(rec.x, 0, rec.y, 0)
+end))
+
+binderGlobalMaid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+    for _, rec in pairs(BindableButtons.recs) do rec.targetPress = 0 end
+    if not dragState then return end
+    local mine = (input == dragState.input)
+        or (input == dragState.dragInput)
+        or (dragState.isMouse and input.UserInputType == MOUSE1)
+    if not mine then return end
+    local rec, moved = dragState.rec, dragState.moved
+    dragState = nil
+    if not rec then return end
+    if not moved then
+        Audio.play()
+        bind_safecallback(rec.onClick)
+    else
+        config.bindPositions[rec.id] = { x = rec.x, y = rec.y }
         saveConfig(true)
     end
+end))
 
-    local dragState = nil
+local function binderStep(dt)
+    local cam = Workspace.CurrentCamera
+    local scr = (cam and cam.ViewportSize) or FALLBACK_VIEWPORT
+    local bh = BindableButtons.CurrentSize or 0.11
+    local bw = bh * (scr.Y / scr.X)
+    local t = now()
+    local pulseBase = BindableButtons.ResetActive and (sin(t * 7) * 0.5 + 0.5) * 0.3 or 0
+    local rotStep = BindableButtons.ResetActive and 3.5 or 1.1
+    local kHover = clamp(dt * 12, 0, 1)
+    local kPress = clamp(dt * 16, 0, 1)
 
-    local binderGlobalMaid = Maid.new()
-    RootMaid:GiveTask(binderGlobalMaid)
+    for _, rec in pairs(BindableButtons.recs) do
+        local btn, glow = rec.btn, rec.glow
+        if btn and glow then
+            rec.hover = rec.hover + (rec.targetHover - rec.hover) * kHover
+            rec.press = rec.press + (rec.targetPress - rec.press) * kPress
 
-    local function isDragInput(input)
-        if not dragState then return false end
-        if input == dragState.dragInput then return true end
-        if input == dragState.input then return true end
-        return false
+            local scale = 1 + rec.hover * 0.14 - rec.press * 0.10
+            btn.Size = ud2(bw * scale, 0, bh * scale, 0)
+            glow.Size = ud2(bw * 2.5, 0, bh * 2.5, 0)
+            glow.Position = btn.Position
+
+            local hoverGlow = rec.hover * 0.28
+            glow.ImageTransparency = clamp(0.78 - hoverGlow - pulseBase, 0.25, 1)
+
+            rec.rot = (rec.rot + rotStep) % 360
+            rec.stroke.Rotation = rec.rot
+        end
     end
+end
 
-    binderGlobalMaid:GiveTask(UserInputService.InputChanged:Connect(function(input)
-        if not dragState then return end
+local binderTickerOff = nil
+local function binderEnsureTicker()
+    if binderTickerOff then return end
+    binderTickerOff = Ticker.add(binderStep)
+    RootMaid:GiveTask(function()
+        if binderTickerOff then binderTickerOff(); binderTickerOff = nil end
+    end)
+end
+
+function BindableButtons.AddBButton(id, text, clickFunc, isGold)
+    if BindableButtons.Buttons[id] then return BindableButtons.Buttons[id] end
+    binderEnsureTicker()
+
+    local buttonMaid = Maid.new()
+    local storage = getStorage()
+
+    local camera = Workspace.CurrentCamera
+    local screen = (camera and camera.ViewportSize) or FALLBACK_VIEWPORT
+    local h0 = BindableButtons.CurrentSize or 0.11
+    local w0 = h0 * (screen.Y / screen.X)
+
+    local glow = new("ImageLabel")
+    glow.Name = "@glow"
+    glow.Image = GLOW_IMG
+    glow.BackgroundTransparency = 1
+    glow.ImageColor3 = isGold and rgb(255, 200, 40) or rgb(40, 220, 140)
+    glow.ImageTransparency = 0.78
+    glow.Size = ud2(w0 * 2.5, 0, h0 * 2.5, 0)
+    glow.AnchorPoint = v2(0.5, 0.5)
+    glow.ZIndex = 1
+    glow.Parent = storage
+    buttonMaid:GiveTask(glow)
+
+    local ImageButton = new("ImageButton")
+    ImageButton.Name = id
+    ImageButton.Size = ud2(w0, 0, h0, 0)
+    ImageButton.AnchorPoint = v2(0.5, 0.5)
+    ImageButton.Image = __SHAPES[0]
+    ImageButton.BackgroundTransparency = 1
+    ImageButton.BorderSizePixel = 0
+    ImageButton.ClipsDescendants = false
+    ImageButton.AutoButtonColor = false
+    ImageButton.ZIndex = 2
+    ImageButton.Parent = storage
+    buttonMaid:GiveTask(ImageButton)
+
+    local TextLabel = new("TextLabel", ImageButton)
+    TextLabel.Name = "@Text"
+    TextLabel.Size = ud2(0.85, 0, 0.85, 0)
+    TextLabel.Position = ud2(0.5, 0, 0.5, 0)
+    TextLabel.AnchorPoint = v2(0.5, 0.5)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Font = Enum.Font.FredokaOne
+    TextLabel.Text = text
+    TextLabel.TextColor3 = pclr(1, 1, 1)
+    TextLabel.TextStrokeTransparency = 0.5
+    TextLabel.TextStrokeColor3 = rgb(0, 0, 0)
+    TextLabel.TextSize = 11
+    TextLabel.TextWrapped = true
+    TextLabel.ZIndex = 3
+
+    local Aspect = new("UIAspectRatioConstraint", ImageButton)
+    Aspect.AspectRatio = 1
+    pcall(function() Aspect.AspectType = Enum.AspectType.ScaleWithParentSize end)
+
+    local Stroke = new("UIGradient", ImageButton)
+    Stroke.Name = "@Stroke"
+    Stroke.Color = isGold and __GOLD_NORMAL_COLOR or __NORMAL_COLOR
+
+    local ripple = new("Frame")
+    ripple.Name = "@ripple"
+    ripple.BackgroundColor3 = isGold and rgb(255, 215, 0) or rgb(0, 155, 255)
+    ripple.BackgroundTransparency = 0.45
+    ripple.Size = ud2(0, 0, 0, 0)
+    ripple.AnchorPoint = v2(0.5, 0.5)
+    ripple.Visible = false
+    ripple.ZIndex = 2
+    ripple.Parent = ImageButton
+    new("UICorner", ripple).CornerRadius = ud(1, 0)
+
+    local rec = {
+        id = id, btn = ImageButton, glow = glow, stroke = Stroke, ripple = ripple,
+        onClick = clickFunc, isGold = isGold and true or false,
+        hover = 0, press = 0, targetHover = 0, targetPress = 0,
+        rot = 0, x = 0.08, y = 0.88,
+    }
+
+    buttonMaid:GiveTask(ImageButton.InputBegan:Connect(function(input)
+        if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+        rec.targetPress = 1
+        dragState = {
+            rec = rec,
+            input = input,
+            dragInput = nil,
+            isMouse = input.UserInputType == MOUSE1,
+            startInput = input.Position,
+            startX = rec.x, startY = rec.y,
+            moved = false,
+        }
+        local absPos = ImageButton.AbsolutePosition
+        ripple.Position = ud2(0, input.Position.X - absPos.X, 0, input.Position.Y - absPos.Y)
+        ripple.Size = ud2(0, 0, 0, 0)
+        ripple.BackgroundTransparency = 0.45
+        ripple.Visible = true
+        TweenService:Create(ripple, tinfo(0.4, EASING.Sine, EDIR.Out), {
+            Size = ud2(0, 45, 0, 45), BackgroundTransparency = 1,
+        }):Play()
+    end))
+
+    buttonMaid:GiveTask(ImageButton.InputChanged:Connect(function(input)
         if input.UserInputType ~= MOUSEMOV and input.UserInputType ~= TOUCH then return end
-        if not isDragInput(input) then return end
-        local rec = dragState.rec
-        if not rec or not rec.btn then return end
-        local delta = input.Position - dragState.startInput
-        if delta.Magnitude > 7 then dragState.moved = true end
-        local parentGui = rec.btn.Parent
+        if dragState and dragState.rec == rec then dragState.dragInput = input end
+    end))
+
+    buttonMaid:GiveTask(ImageButton.MouseEnter:Connect(function() rec.targetHover = 1 end))
+    buttonMaid:GiveTask(ImageButton.MouseLeave:Connect(function() rec.targetHover = 0 end))
+
+    BindableButtons.Buttons[id] = ImageButton
+    BindableButtons.Maids[id] = buttonMaid
+    BindableButtons.recs[id] = rec
+    insert(BindableButtons.order, id)
+    BindableButtons.Count = #BindableButtons.order
+
+    BindableButtons.relayout()
+    return ImageButton
+end
+
+function BindableButtons.DeleteBButton(id)
+    local maid = BindableButtons.Maids[id]
+    if maid then maid:Destroy() end
+    BindableButtons.Maids[id] = nil
+    BindableButtons.Buttons[id] = nil
+    BindableButtons.recs[id] = nil
+    for i = 1, #BindableButtons.order do
+        if BindableButtons.order[i] == id then
+            table.remove(BindableButtons.order, i)
+            break
+        end
+    end
+    BindableButtons.Count = #BindableButtons.order
+    if dragState and dragState.rec and dragState.rec.id == id then dragState = nil end
+    BindableButtons.relayout()
+end
+
+function BindableButtons.UpdateBButtonText(id, text, isWaiting, isGold)
+    local btn = BindableButtons.Buttons[id]
+    if not btn then return end
+    local textLabel = btn:FindFirstChild("@Text")
+    if textLabel then textLabel.Text = text end
+    local stroke = btn:FindFirstChild("@Stroke")
+    if stroke then
+        if isGold then
+            stroke.Color = isWaiting and __GOLD_WAIT_COLOR or __GOLD_NORMAL_COLOR
+        else
+            stroke.Color = isWaiting and __WAIT_COLOR or __NORMAL_COLOR
+        end
+    end
+end
+
+function BindableButtons.resetLayout()
+    clearTable(config.bindPositions)
+    saveConfig()
+    BindableButtons.relayout()
+end
+
+function BindableButtons.clearAll()
+    local ids = {}
+    for id in pairs(BindableButtons.Buttons) do insert(ids, id) end
+    for _, id in ipairs(ids) do BindableButtons.DeleteBButton(id) end
+end
+
+-- ====== Живой статус-HUD ======
+local StatusHUD = { frame = nil, dot = nil, label = nil, stroke = nil, state = "idle", accum = 0 }
+
+local function hudApplyPosition()
+    if not StatusHUD.frame then return end
+    local pos = config.hudPos or { x = 0.5, y = 6 }
+    StatusHUD.frame.Position = ud2(pos.x, 0, 0, pos.y)
+end
+
+function StatusHUD.Init()
+    local sg = getStorage()
+
+    local frame = new("Frame")
+    frame.Name = "@statushud"
+    frame.Size = ud2(0, 0, 0, 26)
+    frame.AutomaticSize = Enum.AutomaticSize.X
+    frame.AnchorPoint = v2(0.5, 0)
+    frame.BackgroundColor3 = rgb(12, 14, 18)
+    frame.BackgroundTransparency = 0.12
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.ZIndex = 10
+    frame.Parent = sg
+    new("UICorner", frame).CornerRadius = ud(1, 0)
+
+    local stroke = new("UIStroke")
+    stroke.Color = rgb(40, 220, 140)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.25
+    stroke.Parent = frame
+
+    local grad = new("UIGradient")
+    grad.Color = cs(rgb(20, 24, 30), rgb(10, 12, 16))
+    grad.Rotation = 90
+    grad.Parent = frame
+
+    local list = new("UIListLayout")
+    list.FillDirection = Enum.FillDirection.Horizontal
+    list.VerticalAlignment = Enum.VerticalAlignment.Center
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = ud(0, 7)
+    list.Parent = frame
+
+    local pad = new("UIPadding")
+    pad.PaddingLeft = ud(0, 10)
+    pad.PaddingRight = ud(0, 12)
+    pad.PaddingTop = ud(0, 6)
+    pad.PaddingBottom = ud(0, 6)
+    pad.Parent = frame
+
+    local dot = new("Frame")
+    dot.LayoutOrder = 1
+    dot.Size = ud2(0, 8, 0, 8)
+    dot.BackgroundColor3 = rgb(40, 220, 140)
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 11
+    dot.Parent = frame
+    new("UICorner", dot).CornerRadius = ud(1, 0)
+
+    local label = new("TextLabel")
+    label.LayoutOrder = 2
+    label.Size = ud2(0, 0, 0, 14)
+    label.AutomaticSize = Enum.AutomaticSize.X
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.Text = "IDLE"
+    label.TextColor3 = rgb(200, 215, 230)
+    label.TextSize = 12
+    label.ZIndex = 11
+    label.Parent = frame
+
+    StatusHUD.frame, StatusHUD.dot, StatusHUD.label, StatusHUD.stroke = frame, dot, label, stroke
+    hudApplyPosition()
+
+    local hudDrag = nil
+    RootMaid:GiveTask(frame.InputBegan:Connect(function(input)
+        if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+        local pos = config.hudPos
+        hudDrag = { startInput = input.Position, startX = pos.x, startY = pos.y, moved = false }
+    end))
+    RootMaid:GiveTask(UserInputService.InputChanged:Connect(function(input)
+        if not hudDrag then return end
+        if input.UserInputType ~= MOUSEMOV and input.UserInputType ~= TOUCH then return end
+        local parentGui = frame.Parent
         if not parentGui then return end
         local screen = parentGui.AbsoluteSize
         if screen.X <= 0 or screen.Y <= 0 then return end
-        rec.x = clamp(dragState.startX + (delta.X / screen.X), 0.03, 0.97)
-        rec.y = clamp(dragState.startY + (delta.Y / screen.Y), 0.05, 0.95)
-        rec.btn.Position = ud2(rec.x, 0, rec.y, 0)
-        rec.glow.Position = ud2(rec.x, 0, rec.y, 0)
-    end))
-
-    binderGlobalMaid:GiveTask(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
-
-        for _, rec in pairs(BindableButtons.recs) do rec.targetPress = 0 end
-        if not dragState then return end
-
-        local mine = (input == dragState.input)
-            or (input == dragState.dragInput)
-            or (dragState.isMouse and input.UserInputType == MOUSE1)
-        if not mine then return end
-        local rec, moved = dragState.rec, dragState.moved
-        dragState = nil
-        if not rec then return end
-        if not moved then
-            Audio.play()
-            bind_safecallback(rec.onClick)
-        else
-            config.bindPositions[rec.id] = { x = rec.x, y = rec.y }
-            saveConfig(true)
-            savePositions()
-        end
-    end))
-
-    local function binderStep(dt)
-        local cam = Workspace.CurrentCamera
-        local scr = (cam and cam.ViewportSize) or FALLBACK_VIEWPORT
-        local bh = BindableButtons.CurrentSize or 0.11
-        local bw = bh * (scr.Y / scr.X)
-        local t = now()
-        local pulseBase = BindableButtons.ResetActive and (sin(t * 7) * 0.5 + 0.5) * 0.3 or 0
-        local rotStep = BindableButtons.ResetActive and 3.5 or 1.1
-        local kHover = clamp(dt * 12, 0, 1)
-        local kPress = clamp(dt * 16, 0, 1)
-
-        local eps = 1e-4
-        for _, rec in BindableButtons.recs do
-            local btn, glow = rec.btn, rec.glow
-            if btn and glow then
-                rec.hover = rec.hover + (rec.targetHover - rec.hover) * kHover
-                rec.press = rec.press + (rec.targetPress - rec.press) * kPress
-
-                local scale = 1 + rec.hover * 0.14 - rec.press * 0.10
-                local sizeX, sizeY = bw * scale, bh * scale
-                if rec.lastSizeX == nil or math.abs(rec.lastSizeX - sizeX) > eps or math.abs(rec.lastSizeY - sizeY) > eps then
-                    rec.lastSizeX, rec.lastSizeY = sizeX, sizeY
-                    btn.Size = ud2(sizeX, 0, sizeY, 0)
-                end
-
-                local glowX, glowY = bw * 2.5, bh * 2.5
-                if rec.lastGlowX == nil or math.abs(rec.lastGlowX - glowX) > eps or math.abs(rec.lastGlowY - glowY) > eps then
-                    rec.lastGlowX, rec.lastGlowY = glowX, glowY
-                    glow.Size = ud2(glowX, 0, glowY, 0)
-                end
-
-                if rec.lastPosX ~= rec.x or rec.lastPosY ~= rec.y then
-                    rec.lastPosX, rec.lastPosY = rec.x, rec.y
-                    glow.Position = ud2(rec.x, 0, rec.y, 0)
-                end
-
-                local glowT = clamp(0.78 - rec.hover * 0.28 - pulseBase, 0.25, 1)
-                if rec.lastGlowT == nil or math.abs(rec.lastGlowT - glowT) > eps then
-                    rec.lastGlowT = glowT
-                    glow.ImageTransparency = glowT
-                end
-
-                rec.rot = (rec.rot + rotStep) % 360
-                rec.stroke.Rotation = rec.rot
-            end
-        end
-    end
-
-    local binderTickerOff = nil
-    local function binderEnsureTicker()
-        if binderTickerOff then return end
-        binderTickerOff = Ticker.add(binderStep)
-        RootMaid:GiveTask(function()
-            if binderTickerOff then binderTickerOff(); binderTickerOff = nil end
-        end)
-    end
-
-    function BindableButtons.AddBButton(id, text, clickFunc, isGold)
-        if BindableButtons.Buttons[id] then return BindableButtons.Buttons[id] end
-        binderEnsureTicker()
-
-        local buttonMaid = Maid.new()
-        local storage = getStorage()
-
-        local camera = Workspace.CurrentCamera
-        local screen = (camera and camera.ViewportSize) or FALLBACK_VIEWPORT
-        local h0 = BindableButtons.CurrentSize or 0.11
-        local w0 = h0 * (screen.Y / screen.X)
-
-        local glow = new("ImageLabel")
-        glow.Name = "@glow"
-        glow.Image = GLOW_IMG
-        glow.BackgroundTransparency = 1
-        glow.ImageColor3 = isGold and rgb(255, 200, 40) or rgb(40, 220, 140)
-        glow.ImageTransparency = 0.78
-        glow.Size = ud2(w0 * 2.5, 0, h0 * 2.5, 0)
-        glow.AnchorPoint = v2(0.5, 0.5)
-        glow.ZIndex = 1
-        glow.Parent = storage
-        buttonMaid:GiveTask(glow)
-
-        local ImageButton = new("ImageButton")
-        ImageButton.Name = id
-        ImageButton.Size = ud2(w0, 0, h0, 0)
-        ImageButton.AnchorPoint = v2(0.5, 0.5)
-        ImageButton.Image = __SHAPES[0]
-        ImageButton.BackgroundTransparency = 1
-        ImageButton.BorderSizePixel = 0
-        ImageButton.ClipsDescendants = false
-        ImageButton.AutoButtonColor = false
-        ImageButton.ZIndex = 2
-        ImageButton.Parent = storage
-        buttonMaid:GiveTask(ImageButton)
-
-        local TextLabel = new("TextLabel", ImageButton)
-        TextLabel.Name = "@Text"
-        TextLabel.Size = ud2(0.85, 0, 0.85, 0)
-        TextLabel.Position = ud2(0.5, 0, 0.5, 0)
-        TextLabel.AnchorPoint = v2(0.5, 0.5)
-        TextLabel.BackgroundTransparency = 1
-        TextLabel.Font = Enum.Font.FredokaOne
-        TextLabel.Text = text
-        TextLabel.TextColor3 = pclr(1, 1, 1)
-        TextLabel.TextStrokeTransparency = 0.5
-        TextLabel.TextStrokeColor3 = rgb(0, 0, 0)
-        TextLabel.TextSize = 11
-        TextLabel.TextWrapped = true
-        TextLabel.ZIndex = 3
-
-        local Aspect = new("UIAspectRatioConstraint", ImageButton)
-        Aspect.AspectRatio = 1
-        pcall(function() Aspect.AspectType = Enum.AspectType.ScaleWithParentSize end)
-
-        local Stroke = new("UIGradient", ImageButton)
-        Stroke.Name = "@Stroke"
-        Stroke.Color = isGold and __GOLD_NORMAL_COLOR or __NORMAL_COLOR
-
-        local ripple = new("Frame")
-        ripple.Name = "@ripple"
-        ripple.BackgroundColor3 = isGold and rgb(255, 215, 0) or rgb(0, 155, 255)
-        ripple.BackgroundTransparency = 0.45
-        ripple.Size = ud2(0, 0, 0, 0)
-        ripple.AnchorPoint = v2(0.5, 0.5)
-        ripple.Visible = false
-        ripple.ZIndex = 2
-        ripple.Parent = ImageButton
-        new("UICorner", ripple).CornerRadius = ud(1, 0)
-
-        local rec = {
-            id = id, btn = ImageButton, glow = glow, stroke = Stroke, ripple = ripple,
-            onClick = clickFunc, isGold = isGold and true or false,
-            hover = 0, press = 0, targetHover = 0, targetPress = 0,
-            rot = 0, x = 0.08, y = 0.88,
-        }
-
-        buttonMaid:GiveTask(ImageButton.InputBegan:Connect(function(input)
-            if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
-            rec.targetPress = 1
-            dragState = {
-                rec = rec,
-                input = input,
-                dragInput = nil,
-                isMouse = input.UserInputType == MOUSE1,
-                startInput = input.Position,
-                startX = rec.x, startY = rec.y,
-                moved = false,
-            }
-            local absPos = ImageButton.AbsolutePosition
-            ripple.Position = ud2(0, input.Position.X - absPos.X, 0, input.Position.Y - absPos.Y)
-            ripple.Size = ud2(0, 0, 0, 0)
-            ripple.BackgroundTransparency = 0.45
-            ripple.Visible = true
-            TweenService:Create(ripple, tinfo(0.4, EASING.Sine, EDIR.Out), {
-                Size = ud2(0, 45, 0, 45), BackgroundTransparency = 1,
-            }):Play()
-        end))
-
-        buttonMaid:GiveTask(ImageButton.InputChanged:Connect(function(input)
-            if input.UserInputType ~= MOUSEMOV and input.UserInputType ~= TOUCH then return end
-            if dragState and dragState.rec == rec then dragState.dragInput = input end
-        end))
-
-        buttonMaid:GiveTask(ImageButton.MouseEnter:Connect(function() rec.targetHover = 1 end))
-        buttonMaid:GiveTask(ImageButton.MouseLeave:Connect(function() rec.targetHover = 0 end))
-
-        BindableButtons.Buttons[id] = ImageButton
-        BindableButtons.Maids[id] = buttonMaid
-        BindableButtons.recs[id] = rec
-        insert(BindableButtons.order, id)
-        BindableButtons.Count = #BindableButtons.order
-
-        BindableButtons.relayout()
-        return ImageButton
-    end
-
-    function BindableButtons.DeleteBButton(id)
-        local maid = BindableButtons.Maids[id]
-        if maid then maid:Destroy() end
-        BindableButtons.Maids[id] = nil
-        BindableButtons.Buttons[id] = nil
-        BindableButtons.recs[id] = nil
-        for i = 1, #BindableButtons.order do
-            if BindableButtons.order[i] == id then
-                table.remove(BindableButtons.order, i)
-                break
-            end
-        end
-        BindableButtons.Count = #BindableButtons.order
-        if dragState and dragState.rec and dragState.rec.id == id then dragState = nil end
-        BindableButtons.relayout()
-    end
-
-    function BindableButtons.UpdateBButtonText(id, text, isWaiting, isGold)
-        local btn = BindableButtons.Buttons[id]
-        if not btn then return end
-        local textLabel = btn:FindFirstChild("@Text")
-        if textLabel then textLabel.Text = text end
-        local stroke = btn:FindFirstChild("@Stroke")
-        if stroke then
-            if isGold then
-                stroke.Color = isWaiting and __GOLD_WAIT_COLOR or __GOLD_NORMAL_COLOR
-            else
-                stroke.Color = isWaiting and __WAIT_COLOR or __NORMAL_COLOR
-            end
-        end
-    end
-
-    function BindableButtons.resetLayout()
-        clearTable(config.bindPositions)
-        saveConfig(true)
-        savePositions()
-        BindableButtons.relayout()
-    end
-
-    function BindableButtons.clearAll()
-        local ids = {}
-        for id in pairs(BindableButtons.Buttons) do insert(ids, id) end
-        for _, id in ipairs(ids) do BindableButtons.DeleteBButton(id) end
-    end
-
-    local StatusHUD = { frame = nil, dot = nil, label = nil, stroke = nil, state = "idle", accum = 0 }
-
-    local function hudApplyPosition()
-        if not StatusHUD.frame then return end
-        local pos = config.hudPos or { x = 0.5, y = 6 }
-        StatusHUD.frame.Position = ud2(pos.x, 0, 0, pos.y)
-    end
-
-    function StatusHUD.Init()
-        local sg = getStorage()
-
-        local frame = new("Frame")
-        frame.Name = "@statushud"
-        frame.Size = ud2(0, 0, 0, 26)
-        frame.AutomaticSize = Enum.AutomaticSize.X
-        frame.AnchorPoint = v2(0.5, 0)
-        frame.BackgroundColor3 = rgb(12, 14, 18)
-        frame.BackgroundTransparency = 0.12
-        frame.BorderSizePixel = 0
-        frame.Active = true
-        frame.ZIndex = 10
-        frame.Parent = sg
-        new("UICorner", frame).CornerRadius = ud(1, 0)
-
-        local stroke = new("UIStroke")
-        stroke.Color = rgb(40, 220, 140)
-        stroke.Thickness = 1
-        stroke.Transparency = 0.25
-        stroke.Parent = frame
-
-        local grad = new("UIGradient")
-        grad.Color = cs(rgb(20, 24, 30), rgb(10, 12, 16))
-        grad.Rotation = 90
-        grad.Parent = frame
-
-        local list = new("UIListLayout")
-        list.FillDirection = Enum.FillDirection.Horizontal
-        list.VerticalAlignment = Enum.VerticalAlignment.Center
-        list.SortOrder = Enum.SortOrder.LayoutOrder
-        list.Padding = ud(0, 7)
-        list.Parent = frame
-
-        local pad = new("UIPadding")
-        pad.PaddingLeft = ud(0, 10)
-        pad.PaddingRight = ud(0, 12)
-        pad.PaddingTop = ud(0, 6)
-        pad.PaddingBottom = ud(0, 6)
-        pad.Parent = frame
-
-        local dot = new("Frame")
-        dot.LayoutOrder = 1
-        dot.Size = ud2(0, 8, 0, 8)
-        dot.BackgroundColor3 = rgb(40, 220, 140)
-        dot.BorderSizePixel = 0
-        dot.ZIndex = 11
-        dot.Parent = frame
-        new("UICorner", dot).CornerRadius = ud(1, 0)
-
-        local label = new("TextLabel")
-        label.LayoutOrder = 2
-        label.Size = ud2(0, 0, 0, 14)
-        label.AutomaticSize = Enum.AutomaticSize.X
-        label.BackgroundTransparency = 1
-        label.Font = Enum.Font.GothamBold
-        label.Text = "IDLE"
-        label.TextColor3 = rgb(200, 215, 230)
-        label.TextSize = 12
-        label.ZIndex = 11
-        label.Parent = frame
-
-        StatusHUD.frame, StatusHUD.dot, StatusHUD.label, StatusHUD.stroke = frame, dot, label, stroke
+        local delta = input.Position - hudDrag.startInput
+        if delta.Magnitude > 4 then hudDrag.moved = true end
+        config.hudPos.x = clamp(hudDrag.startX + (delta.X / screen.X), 0.05, 0.95)
+        config.hudPos.y = clamp(hudDrag.startY + delta.Y, 2, 120)
         hudApplyPosition()
+    end))
+    RootMaid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+        if hudDrag and hudDrag.moved then saveConfig(true) end
+        hudDrag = nil
+    end))
 
-        local hudDrag = nil
-        RootMaid:GiveTask(frame.InputBegan:Connect(function(input)
-            if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
-            local pos = config.hudPos
-            hudDrag = { startInput = input.Position, startX = pos.x, startY = pos.y, moved = false }
-        end))
-        RootMaid:GiveTask(UserInputService.InputChanged:Connect(function(input)
-            if not hudDrag then return end
-            if input.UserInputType ~= MOUSEMOV and input.UserInputType ~= TOUCH then return end
-            local parentGui = frame.Parent
-            if not parentGui then return end
-            local screen = parentGui.AbsoluteSize
-            if screen.X <= 0 or screen.Y <= 0 then return end
-            local delta = input.Position - hudDrag.startInput
-            if delta.Magnitude > 4 then hudDrag.moved = true end
-            config.hudPos.x = clamp(hudDrag.startX + (delta.X / screen.X), 0.05, 0.95)
-            config.hudPos.y = clamp(hudDrag.startY + delta.Y, 2, 120)
-            hudApplyPosition()
-        end))
-        RootMaid:GiveTask(UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
-            if hudDrag and hudDrag.moved then saveConfig(true); savePositions() end
-            hudDrag = nil
-        end))
-
-        RootMaid:GiveTask(Ticker.add(function(dt)
-            if not StatusHUD.dot then return end
-            StatusHUD.accum = StatusHUD.accum + (dt or 0.016)
-            if StatusHUD.accum < 0.033 then return end
-            StatusHUD.accum = 0
-            local pulse = sin(now() * 4) * 0.5 + 0.5
-            if StatusHUD.state == "active" then
-                StatusHUD.dot.BackgroundColor3 = rgb(255, 70, 70)
-                StatusHUD.dot.Size = ud2(0, 8 + pulse * 3, 0, 8 + pulse * 3)
-                StatusHUD.stroke.Color = rgb(255, 70, 70)
-            else
-                StatusHUD.dot.BackgroundColor3 = rgb(40, 220, 140)
-                StatusHUD.dot.Size = ud2(0, 8 + pulse * 1.5, 0, 8 + pulse * 1.5)
-                StatusHUD.stroke.Color = rgb(40, 220, 140)
-            end
-        end))
-    end
-
-    local lastHudText = nil
-    function StatusHUD.Set(newState, targetName)
-        StatusHUD.state = newState
-        if not StatusHUD.label then return end
-        local text, color
-        if newState == "active" then
-            text = "RESET ▸ " .. (targetName or "?")
-            color = rgb(255, 120, 120)
+    RootMaid:GiveTask(Ticker.add(function(dt)
+        if not StatusHUD.dot then return end
+        StatusHUD.accum = StatusHUD.accum + (dt or 0.016)
+        if StatusHUD.accum < 0.033 then return end
+        StatusHUD.accum = 0
+        local pulse = sin(now() * 4) * 0.5 + 0.5
+        if StatusHUD.state == "active" then
+            StatusHUD.dot.BackgroundColor3 = rgb(255, 70, 70)
+            StatusHUD.dot.Size = ud2(0, 8 + pulse * 3, 0, 8 + pulse * 3)
+            StatusHUD.stroke.Color = rgb(255, 70, 70)
         else
-            text = "IDLE"
-            color = rgb(200, 215, 230)
+            StatusHUD.dot.BackgroundColor3 = rgb(40, 220, 140)
+            StatusHUD.dot.Size = ud2(0, 8 + pulse * 1.5, 0, 8 + pulse * 1.5)
+            StatusHUD.stroke.Color = rgb(40, 220, 140)
         end
-        if text ~= lastHudText then
-            lastHudText = text
-            StatusHUD.label.Text = text
-            StatusHUD.label.TextColor3 = color
-        end
-    end
+    end))
+end
 
-    local roleRemote = nil
-    local roleRemoteTried = -1e9
-    local function getRoleRemote()
-        if roleRemote and roleRemote.Parent then return roleRemote end
-        local t = now()
-        if (t - roleRemoteTried) < 5 then return roleRemote end
-        roleRemoteTried = t
-        pcall(function()
-            local remote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
-            if remote and remote:IsA("RemoteFunction") then roleRemote = remote end
-        end)
-        return roleRemote
+local lastHudText = nil
+function StatusHUD.Set(newState, targetName)
+    StatusHUD.state = newState
+    if not StatusHUD.label then return end
+    local text, color
+    if newState == "active" then
+        text = "FLING ▸ " .. (targetName or "?")
+        color = rgb(255, 120, 120)
+    else
+        text = "IDLE"
+        color = rgb(200, 215, 230)
     end
+    if text ~= lastHudText then
+        lastHudText = text
+        StatusHUD.label.Text = text
+        StatusHUD.label.TextColor3 = color
+    end
+end
 
-    local roleCache = { data = nil, timestamp = 0 }
-    local function getCachedRoleData()
-        local t = now()
-        local ttl = config.roleCacheTTL or 0.8
-        if roleCache.data and (t - roleCache.timestamp) < ttl then return roleCache.data end
-        local remote = getRoleRemote()
-        if remote then
-            local ok, result = pcall(function() return remote:InvokeServer() end)
-            if ok and type(result) == "table" then
-                roleCache.data, roleCache.timestamp = result, t
-                return result
+-- ====== Цели для флинга ======
+local function isValidTarget(player)
+    if not player or player == LocalPlayer or not player.Parent then return false end
+    if state.whitelist[player.UserId] then return false end
+    local char = player.Character
+    if not char then return false end
+    if not char:FindFirstChild("HumanoidRootPart") then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return false end
+    return true
+end
+
+local function getSelectedOrFirst()
+    if isValidTarget(state.resetSelPlr) then return state.resetSelPlr end
+    for _, player in ipairs(state.selectedPlayers) do
+        if isValidTarget(player) then return player end
+    end
+    return nil
+end
+
+local function findNearest()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local best, bestDist = nil, math.huge
+    local players = Players:GetPlayers()
+    for i = 1, #players do
+        local player = players[i]
+        if isValidTarget(player) then
+            local tr = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if tr then
+                local d = (root.Position - tr.Position).Magnitude
+                if d < bestDist then best, bestDist = player, d end
             end
         end
-        roleCache.timestamp = t
-        return roleCache.data
     end
+    return best
+end
 
-    local function invalidateRoleCache()
-        roleCache.data = nil
-        roleCache.timestamp = 0
-    end
+-- ====== Кэш ролей MM2 (для Sheriff / Murderer) ======
+local roleRemote = nil
+local roleRemoteTried = -1e9
+local function getRoleRemote()
+    if roleRemote and roleRemote.Parent then return roleRemote end
+    local t = now()
+    if (t - roleRemoteTried) < 5 then return roleRemote end
+    roleRemoteTried = t
+    pcall(function()
+        local remote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+        if remote and remote:IsA("RemoteFunction") then roleRemote = remote end
+    end)
+    return roleRemote
+end
 
-    local function isValidTarget(player)
-        if not player or player == LocalPlayer or not player.Parent then return false end
-        if state.whitelist[player.UserId] then return false end
-        local char = player.Character
-        if not char then return false end
-        if not char:FindFirstChild("HumanoidRootPart") then return false end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum and hum.Health <= 0 then return false end
-        return true
-    end
-
-    local function getSelectedOrFirst()
-        if isValidTarget(state.resetSelPlr) then return state.resetSelPlr end
-        for _, player in ipairs(state.selectedPlayers) do
-            if isValidTarget(player) then return player end
+local roleCache = { data = nil, timestamp = 0 }
+local function getCachedRoleData()
+    local t = now()
+    local ttl = config.roleCacheTTL or 0.8
+    if roleCache.data and (t - roleCache.timestamp) < ttl then return roleCache.data end
+    local remote = getRoleRemote()
+    if remote then
+        local ok, result = pcall(function() return remote:InvokeServer() end)
+        if ok and type(result) == "table" then
+            roleCache.data, roleCache.timestamp = result, t
+            return result
         end
-        return nil
     end
+    roleCache.timestamp = t
+    return roleCache.data
+end
 
-    local function hasGunModel(char)
-        if not char then return false end
-        if char:FindFirstChild("Gun") or char:FindFirstChild("Revolver") then return true end
-        local tool = char:FindFirstChildOfClass("Tool")
-        if tool then
-            local name = tool.Name:lower()
-            if name:find("gun", 1, true) or name:find("revolver", 1, true) then return true end
-        end
-        return false
+local function invalidateRoleCache()
+    roleCache.data = nil
+    roleCache.timestamp = 0
+end
+
+local function hasGunModel(char)
+    if not char then return false end
+    if char:FindFirstChild("Gun") or char:FindFirstChild("Revolver") then return true end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool then
+        local name = tool.Name:lower()
+        if name:find("gun", 1, true) or name:find("revolver", 1, true) then return true end
     end
+    return false
+end
 
-    local function quickScanSheriff()
-        local players = Players:GetPlayers()
-        for i = 1, #players do
-            local player = players[i]
-            if player ~= LocalPlayer and not state.whitelist[player.UserId] then
-                if hasGunModel(player.Character) then return player end
-                local bp = player:FindFirstChild("Backpack")
-                if bp and (bp:FindFirstChild("Gun") or bp:FindFirstChild("Revolver")) then
-                    return player
-                end
+local function quickScanSheriff()
+    local players = Players:GetPlayers()
+    for i = 1, #players do
+        local player = players[i]
+        if player ~= LocalPlayer and not state.whitelist[player.UserId] then
+            if hasGunModel(player.Character) then return player end
+            local bp = player:FindFirstChild("Backpack")
+            if bp and (bp:FindFirstChild("Gun") or bp:FindFirstChild("Revolver")) then
+                return player
             end
         end
-        return nil
     end
+    return nil
+end
 
-    local function findTargetByRole(roleName)
-        local roleData = getCachedRoleData()
-        if not roleData then return nil end
-        for playerName, data in pairs(roleData) do
-            if type(data) == "table" and data.Role == roleName and not data.Killed and not data.Dead then
-                local p = Players:FindFirstChild(playerName)
-                if p and p ~= LocalPlayer and not state.whitelist[p.UserId] then return p end
-            end
+local function findTargetByRole(roleName)
+    local roleData = getCachedRoleData()
+    if not roleData then return nil end
+    for playerName, data in pairs(roleData) do
+        if type(data) == "table" and data.Role == roleName and not data.Killed and not data.Dead then
+            local p = Players:FindFirstChild(playerName)
+            if p and p ~= LocalPlayer and not state.whitelist[p.UserId] then return p end
         end
-        return nil
     end
+    return nil
+end
 
-    local sheriffCache = { player = nil, at = 0 }
-    local function findSheriff()
-        local t = now()
-        if sheriffCache.player and (t - sheriffCache.at) < 0.35 and isValidTarget(sheriffCache.player) then
-            return sheriffCache.player
-        end
-        local found = quickScanSheriff()
-        if not found then found = findTargetByRole("Sheriff") end
-        sheriffCache.player, sheriffCache.at = (isValidTarget(found) and found or nil), t
+local sheriffCache = { player = nil, at = 0 }
+local function findSheriff()
+    local t = now()
+    if sheriffCache.player and (t - sheriffCache.at) < 0.35 and isValidTarget(sheriffCache.player) then
         return sheriffCache.player
     end
+    local found = quickScanSheriff()
+    if not found then found = findTargetByRole("Sheriff") end
+    sheriffCache.player, sheriffCache.at = (isValidTarget(found) and found or nil), t
+    return sheriffCache.player
+end
 
-    local function findMurderer()
-        local byRole = findTargetByRole("Murderer")
-        if byRole then return byRole end
-
-        local players = Players:GetPlayers()
-        for i = 1, #players do
-            local player = players[i]
-            if player ~= LocalPlayer and not state.whitelist[player.UserId] then
-                local char = player.Character
-                if char then
-                    local tool = char:FindFirstChildOfClass("Tool")
-                    if tool then
-                        local name = tool.Name:lower()
-                        if name:find("knife", 1, true) or name:find("murderer", 1, true) then
-                            return player
-                        end
+local function findMurderer()
+    local byRole = findTargetByRole("Murderer")
+    if byRole then return byRole end
+    local players = Players:GetPlayers()
+    for i = 1, #players do
+        local player = players[i]
+        if player ~= LocalPlayer and not state.whitelist[player.UserId] then
+            local char = player.Character
+            if char then
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then
+                    local name = tool.Name:lower()
+                    if name:find("knife", 1, true) or name:find("murderer", 1, true) then
+                        return player
                     end
                 end
             end
         end
-        return nil
+    end
+    return nil
+end
+
+-- ====== Fling ядро (K1LAS1K / zqyDSUWX) ======
+local flingBV = nil
+local flingOldPos = nil
+local flingFPDH = nil
+pcall(function() flingFPDH = Workspace.FallenPartsDestroyHeight end)
+if type(flingFPDH) ~= "number" or flingFPDH ~= flingFPDH then flingFPDH = -500 end
+pcall(function() if getgenv then getgenv().FPDH = flingFPDH end end)
+
+local currentFling = nil
+local massFlingThread = nil
+
+local function CleanupFlingPhysics()
+    if flingBV then pcall(function() flingBV:Destroy() end) flingBV=nil end
+    pcall(function() Workspace.FallenPartsDestroyHeight = flingFPDH end)
+    pcall(function() if getgenv and getgenv().FPDH then Workspace.FallenPartsDestroyHeight=getgenv().FPDH end end)
+    local char = LocalPlayer and LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end) end
+    if hum and hum.RootPart then
+        pcall(function() Workspace.CurrentCamera.CameraSubject = hum end)
+    end
+end
+
+local function cancelCurrentFling()
+    if massFlingThread then pcall(task.cancel, massFlingThread); massFlingThread=nil end
+    if currentFling and currentFling.cancel then pcall(currentFling.cancel) end
+    currentFling=nil
+    CleanupFlingPhysics()
+    BindableButtons.ResetActive=false
+    StatusHUD.Set("idle")
+end
+
+-- основная функция - один таргет
+local function SkidFling(TargetPlayer)
+    if not TargetPlayer or not TargetPlayer.Parent then return false end
+    if TargetPlayer == LocalPlayer or state.whitelist[TargetPlayer.UserId] then return false end
+
+    -- кулдаун
+    local last = state.lastResetAt[TargetPlayer.UserId]
+    if last and (now()-last) < (config.targetCooldown or 0) then return false end
+    state.lastResetAt[TargetPlayer.UserId]=now()
+
+    cancelCurrentFling()
+
+    local Character = LocalPlayer and LocalPlayer.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    local RootPart = Humanoid and Humanoid.RootPart
+    local TCharacter = TargetPlayer.Character
+    local THumanoid = TCharacter and TCharacter:FindFirstChildOfClass("Humanoid")
+    local TRootPart = THumanoid and THumanoid.RootPart or nil
+    local THead = TCharacter and TCharacter:FindFirstChild("Head")
+    local Accessory = TCharacter and TCharacter:FindFirstChildOfClass("Accessory")
+    local Handle = Accessory and Accessory:FindFirstChild("Handle") or nil
+
+    if not (Character and Humanoid and RootPart and TCharacter) then return false end
+    if not TCharacter:FindFirstChildWhichIsA("BasePart") then return false end
+
+    if RootPart.Velocity.Magnitude < 50 then
+        flingOldPos = RootPart.CFrame
+        pcall(function() if getgenv then getgenv().OldPos = flingOldPos end end)
+    end
+    if THumanoid and THumanoid.Sit then
+        Notify("Fling", TargetPlayer.Name.." is sitting",2)
+        return false
     end
 
-    local function findNearest()
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
+    if THead then pcall(function() Workspace.CurrentCamera.CameraSubject = THead end)
+    elseif Handle then pcall(function() Workspace.CurrentCamera.CameraSubject = Handle end)
+    elseif THumanoid and TRootPart then pcall(function() Workspace.CurrentCamera.CameraSubject = THumanoid end) end
+
+    local power = config.flingPower or 1
+    local velMult = power==1 and 1 or (power==2 and 1.5 or 2)
+    local rotMult = velMult
+
+    local savedDestroy = Workspace.FallenPartsDestroyHeight
+    Workspace.FallenPartsDestroyHeight = 0/0 -- NaN trick
+    if flingBV and flingBV.Parent then pcall(function() flingBV:Destroy() end) end
+    flingBV = new("BodyVelocity")
+    flingBV.Velocity = v3(0,0,0)
+    flingBV.MaxForce = v3(9e9,9e9,9e9)
+    flingBV.Parent = RootPart
+    pcall(function() Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end)
+
+    local startTime = now()
+    local done=false
+    local flingObj={ bv=flingBV, conn=nil, watchdog=nil }
+    local function cleanup(success, manual)
+        if done then return end
+        done=true
+        if currentFling==flingObj then currentFling=nil end
+        if flingObj.conn then pcall(function() flingObj.conn:Disconnect() end) end
+        if flingObj.watchdog then pcall(task.cancel, flingObj.watchdog) end
+        if flingBV then pcall(function() flingBV:Destroy() end) flingBV=nil end
+        pcall(function() Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end)
+        pcall(function() Workspace.CurrentCamera.CameraSubject = Humanoid end)
+        if config.autoReturn and flingOldPos then
+            local tries=0
+            repeat
+                if not RootPart or not RootPart.Parent then break end
+                pcall(function()
+                    RootPart.CFrame = flingOldPos * cfr(0,.5,0)
+                    Character:SetPrimaryPartCFrame(flingOldPos * cfr(0,.5,0))
+                    Humanoid:ChangeState("GettingUp")
+                    for _, part in pairs(Character:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            part.Velocity, part.RotVelocity = V3_ZERO, V3_ZERO
+                        end
+                    end
+                end)
+                task.wait()
+                tries=tries+1
+                if tries>20 then break end
+            until (RootPart.Position - flingOldPos.p).Magnitude < 25
+        end
+        pcall(function() Workspace.FallenPartsDestroyHeight = flingFPDH end)
+        BindableButtons.ResetActive=false
+        StatusHUD.Set("idle")
+    end
+    flingObj.cancel=function() cleanup(true,true) end
+    currentFling=flingObj
+    BindableButtons.ResetActive=true
+    StatusHUD.Set("active", TargetPlayer.Name)
+    flingObj.watchdog = task.delay((config.flingDuration or 2)+2, function() if not done then cleanup(false) end end)
+
+    local function FPos(BasePart, Pos, Ang)
+        if not RootPart or not RootPart.Parent then return end
+        pcall(function()
+            RootPart.CFrame = cfr(BasePart.Position) * Pos * Ang
+            Character:SetPrimaryPartCFrame(cfr(BasePart.Position) * Pos * Ang)
+            RootPart.Velocity = v3(9e7*velMult, 9e7*10*velMult, 9e7*velMult)
+            RootPart.RotVelocity = v3(9e8*rotMult, 9e8*rotMult, 9e8*rotMult)
+        end)
+    end
+
+    local function SFBasePart(BasePart)
+        local TimeToWait = config.flingDuration or 2
+        local Time = tick()
+        local Angle = 0
+        repeat
+            if done then break end
+            if RootPart and THumanoid and BasePart and BasePart.Parent then
+                if BasePart.Velocity.Magnitude < 50 then
+                    Angle = Angle + 100
+                    FPos(BasePart, cfr(0,1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,1.5,0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle),0,0))
+                    task.wait()
+                else
+                    FPos(BasePart, cfr(0,1.5,THumanoid.WalkSpeed), CFrame.Angles(math.rad(90),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,-THumanoid.WalkSpeed), CFrame.Angles(0,0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,1.5,THumanoid.WalkSpeed), CFrame.Angles(math.rad(90),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(math.rad(90),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(0,0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(math.rad(90),0,0))
+                    task.wait()
+                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(0,0,0))
+                    task.wait()
+                end
+            else
+                task.wait()
+            end
+        until Time + TimeToWait < tick()
+    end
+
+    if TRootPart then SFBasePart(TRootPart)
+    elseif THead then SFBasePart(THead)
+    elseif Handle then SFBasePart(Handle)
+    else Notify("Fling", TargetPlayer.Name.." has no valid parts",2) end
+
+    cleanup(true)
+    return true
+end
+
+-- ====== Авто-модули ======
+local function startAutoModule(maidKey, finderFunc, intervalFn)
+    if maids[maidKey] then maids[maidKey]:Destroy(); maids[maidKey]=nil end
+    local maid=Maid.new()
+    maids[maidKey]=maid
+    local thread=task.spawn(function()
+        while not maid._destroyed do
+            local target=nil
+            pcall(function() target=finderFunc() if target then SkidFling(target) end end)
+            local base=intervalFn()
+            if target then task.wait(math.max(base, (config.flingDuration or 2)+0.08))
+            else task.wait(base) end
+        end
+    end)
+    maid:GiveTask(thread)
+    return maid
+end
+
+local function stopAutoModule(maidKey)
+    if maids[maidKey] then maids[maidKey]:Destroy(); maids[maidKey]=nil; cancelCurrentFling() end
+end
+
+-- ====== Действия ======
+local ACTIONS={}
+
+ACTIONS.sheriff={
+    name="Sheriff", short="Sh", label="🔫 Sheriff",
+    run=function()
+        local t=findSheriff()
+        if t then SkidFling(t) else Notify("Fling","Sheriff not found",3) end
+    end,
+}
+ACTIONS.murderer={
+    name="Murderer", short="Mur", label="🔪 Murderer",
+    run=function()
+        local t=findMurderer()
+        if t then SkidFling(t) else Notify("Fling","Murderer not found",3) end
+    end,
+}
+ACTIONS.selected={
+    name="Selected", short="Sel", label="🎯 Selected",
+    run=function()
+        local t=getSelectedOrFirst()
+        if t then SkidFling(t) else Notify("Fling","No valid selected player",2) end
+    end,
+}
+ACTIONS.all={
+    name="All", short="All", label="👥 Everyone",
+    run=function()
+        if massFlingThread then Notify("Fling","Mass fling already running",2) return end
+        massFlingThread=task.spawn(function()
+            local players=Players:GetPlayers()
+            for i=1,#players do
+                local p=players[i]
+                if isValidTarget(p) then
+                    SkidFling(p)
+                    task.wait((config.flingDuration or 2)+0.1)
+                end
+            end
+            massFlingThread=nil
+        end)
+        Notify("Fling","Flinging all...",2)
+    end,
+}
+ACTIONS.nearest={
+    name="Nearest", short="Nrst", label="📍 Nearest",
+    run=function()
+        local t=findNearest()
+        if t then SkidFling(t) else Notify("Fling","No valid target nearby",2) end
+    end,
+}
+ACTIONS.start={
+    name="Start", short="Go", label="▶ Start",
+    run=function()
+        if maids.loopPlr then Notify("Fling","Loop already active - stop it first",2) return end
+        local count=#state.selectedPlayers
+        if count==0 and not isValidTarget(state.resetSelPlr) then Notify("Fling","No targets for loop",2) return end
+        Notify("Fling","Use 🤖 Auto → Loop toggle for continuous",3)
+        for _,p in ipairs(state.selectedPlayers) do if isValidTarget(p) then SkidFling(p); task.wait(0.2) end end
+        if isValidTarget(state.resetSelPlr) then SkidFling(state.resetSelPlr) end
+    end,
+}
+ACTIONS.cancel={
+    name="Cancel", short="Can", label="⏹ Cancel",
+    run=function() cancelCurrentFling(); Notify("Fling","Cancelled",2) end,
+}
+
+local ACTION_ORDER={"sheriff","murderer","selected","all","nearest","start","cancel"}
+
+local function runAction(id)
+    local a=ACTIONS[id]
+    if not a then return end
+    local ok,err=xpcall(a.run, debug.traceback)
+    if not ok then warn("["..BRAND.."][action:"..id.."] "..tostring(err)); Notify("Error","Action failed: "..id,3) end
+end
+
+-- ====== Хоткеи ======
+local Keybinds={ capture=nil }
+local IGNORED_KEYS={
+    LeftShift=true, RightShift=true, LeftControl=true, RightControl=true,
+    LeftAlt=true, RightAlt=true, LeftMeta=true, RightMeta=true,
+    CapsLock=true, Unknown=true, Escape=true,
+}
+local function keyName(id)
+    local k=config.keybinds[id]
+    return (k and k~="") and k or "—"
+end
+
+RootMaid:GiveTask(UserInputService.InputBegan:Connect(function(input, processed)
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    local name=input.KeyCode.Name
+    if Keybinds.capture then
+        if IGNORED_KEYS[name] then return end
+        local id=Keybinds.capture
+        Keybinds.capture=nil
+        config.keybinds[id]=name
+        saveConfig()
+        Notify("Hotkey", ACTIONS[id].name.." → "..name,3)
+        return
+    end
+    if processed then return end
+    for _,id in ipairs(ACTION_ORDER) do
+        if config.keybinds[id]==name then runAction(id); break end
+    end
+end))
+
+-- ====== МЕНЮ ======
+local mainSection = AddSection("💀 " .. BRAND)
+mainSection:AddLabel("Ultimate Fling • by " .. AUTHOR .. " • " .. VERSION)
+mainSection:AddParagraph("Info","Мульти-таргет флинг с сохранением позиции. Выбери цели в 📋 Lists, жми ▶ в ⚡ Fling или включи Loop/Aura в 🤖 Auto. FPDH и физика чистятся авто.")
+
+-- ⚡ Fling
+local actionSection = AddSection("⚡ Fling")
+actionSection:AddButton("🔫 Sheriff", function() runAction("sheriff") end)
+actionSection:AddButton("🔪 Murderer", function() runAction("murderer") end)
+actionSection:AddButton("🎯 Selected", function() runAction("selected") end)
+actionSection:AddButton("👥 Everyone", function() runAction("all") end)
+actionSection:AddButton("📍 Nearest", function() runAction("nearest") end)
+actionSection:AddButton("▶ Start (list)", function() runAction("start") end)
+actionSection:AddButton("⏹ Cancel", function() runAction("cancel") end)
+actionSection:AddPlayerDropdown("▸ Fling player", function(p)
+    if p and p ~= LocalPlayer then
+        state.resetSelPlr = p
+        if state.whitelist[p.UserId] then Notify("Whitelist", p.Name.." is whitelisted!",3)
+        else SkidFling(p); Notify("Fling","Flinging "..p.Name,2) end
+    end
+end)
+
+-- 🤖 Auto
+local autoSection = AddSection("🤖 Auto")
+autoSection:AddToggle("Auto Sheriff", function(enabled)
+    if enabled then
+        startAutoModule("autoSheriff", findSheriff, function() return config.autoSheriffDelay end)
+    else
+        stopAutoModule("autoSheriff")
+    end
+end)
+autoSection:AddToggle("Auto Murderer", function(enabled)
+    if enabled then
+        startAutoModule("autoMurderer", findMurderer, function() return config.autoMurdererDelay end)
+    else
+        stopAutoModule("autoMurderer")
+    end
+end)
+autoSection:AddToggle("Loop", function(enabled)
+    if not enabled then stopAutoModule("loopPlr") return end
+    local idx=1
+    startAutoModule("loopPlr", function()
+        if isValidTarget(state.resetSelPlr) then return state.resetSelPlr end
+        local list=state.selectedPlayers
+        for _=1,#list do
+            idx=((idx-1)%#list)+1
+            local p=list[idx]
+            if isValidTarget(p) then return p end
+        end
+        return nil
+    end, function() return config.loopInterval end)
+end)
+autoSection:AddToggle("Aura", function(enabled)
+    if not enabled then stopAutoModule("aura") return end
+    startAutoModule("aura", function()
+        local char=LocalPlayer.Character
+        local root=char and char:FindFirstChild("HumanoidRootPart")
         if not root then return nil end
-        local best, bestDist = nil, math.huge
-        local players = Players:GetPlayers()
-        for i = 1, #players do
-            local player = players[i]
+        local myPos=root.Position
+        local maxSq=(config.auraStuds or 15)^2
+        local best,bestDist=nil,maxSq
+        local players=Players:GetPlayers()
+        for i=1,#players do
+            local player=players[i]
             if isValidTarget(player) then
-                local tr = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                local tr=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                 if tr then
-                    local d = (root.Position - tr.Position).Magnitude
-                    if d < bestDist then best, bestDist = player, d end
+                    local d=(myPos-tr.Position).Magnitude
+                    local dsq=d*d
+                    if dsq<=bestDist then best,bestDist=player,dsq end
                 end
             end
         end
         return best
-    end
-
-    local firetouch = (type(firetouchinterest) == "function") and firetouchinterest or nil
-    local sethidden = (type(sethiddenproperty) == "function") and sethiddenproperty or nil
-
-    local function touch(a, b)
-        if not firetouch or not a or not b then return end
-        firetouch(a, b, 0)
-        firetouch(a, b, 1)
-    end
-
-    local BODY_PART_NAMES = {
-        "HumanoidRootPart", "Head", "Torso", "Upper Torso", "Lower Torso",
-        "Left Arm", "Right Arm", "Left Leg", "Right Leg",
-        "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
-        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
-    }
-
-    local function restoreSelf(character, savedData, originalDestroyHeight)
-        pcall(function()
-            Workspace.FallenPartsDestroyHeight = originalDestroyHeight
-            if not character or not savedData then return end
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            if not humanoid or not rootPart then return end
-            rootPart.CFrame = savedData.cframe
-            rootPart.AssemblyLinearVelocity = V3_ZERO
-            rootPart.AssemblyAngularVelocity = V3_ZERO
-            humanoid.PlatformStand = false
-            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-            if humanoid.Health < humanoid.MaxHealth then humanoid.Health = humanoid.MaxHealth end
-            for i = 1, #BODY_PART_NAMES do
-                local part = character:FindFirstChild(BODY_PART_NAMES[i])
-                if part and part:IsA("BasePart") then part.CanCollide = true end
-            end
-        end)
-        pcall(function() Workspace.FallenPartsDestroyHeight = originalDestroyHeight end)
-    end
-
-    local currentReset = nil
-    local massResetThread = nil
-    local pendingRetryThread = nil
-
-    local function cancelCurrentReset()
-        if massResetThread then
-            pcall(task.cancel, massResetThread)
-            massResetThread = nil
-        end
-
-        if pendingRetryThread then
-            pcall(task.cancel, pendingRetryThread)
-            pendingRetryThread = nil
-        end
-        if currentReset and currentReset.cancel then
-            pcall(currentReset.cancel)
-        end
-        currentReset = nil
-    end
-
-    local TOUCH_PART_PRIORITY = {
-        "RightHand", "LeftHand", "RightFoot", "LeftFoot",
-        "Right Arm", "Left Arm", "Right Leg", "Left Leg",
-        "Torso", "HumanoidRootPart", "Head",
-    }
-
-    local function VoidReset(TargetPlayer, _retryCount)
-        if not TargetPlayer or not TargetPlayer.Parent then return false end
-        if TargetPlayer == LocalPlayer or state.whitelist[TargetPlayer.UserId] then return false end
-
-        _retryCount = _retryCount or 0
-
-        if _retryCount == 0 then
-            local last = state.lastResetAt[TargetPlayer.UserId]
-            if last and (now() - last) < (config.targetCooldown or 0) then return false end
-        end
-
-        cancelCurrentReset()
-
-        local Character = LocalPlayer.Character
-        if not Character then return false end
-        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
-        local RootPart = Humanoid and Humanoid.RootPart
-        local TCharacter = TargetPlayer.Character
-        local TRootPart = TCharacter and TCharacter:FindFirstChild("HumanoidRootPart")
-        local THead = TCharacter and TCharacter:FindFirstChild("Head")
-        if not (Humanoid and RootPart and TRootPart) then return false end
-
-        state.lastResetAt[TargetPlayer.UserId] = now()
-
-        local touchParts = {}
-        for i = 1, #TOUCH_PART_PRIORITY do
-            local p = TCharacter:FindFirstChild(TOUCH_PART_PRIORITY[i])
-            if p and p:IsA("BasePart") then insert(touchParts, p) end
-        end
-        if #touchParts == 0 then insert(touchParts, TRootPart) end
-
-        local savedData = { cframe = RootPart.CFrame }
-        local originalDestroyHeight = Workspace.FallenPartsDestroyHeight
-        Workspace.FallenPartsDestroyHeight = -math.huge
-        Humanoid.PlatformStand = true
-
-        local bv = new("BodyVelocity")
-        bv.MaxForce = v3(math.huge, math.huge, math.huge)
-        bv.Velocity = v3(0, -200000, 0)
-        bv.Parent = RootPart
-
-        local bg = new("BodyGyro")
-        bg.MaxTorque = v3(math.huge, math.huge, math.huge)
-        bg.P = 9e8
-        bg.D = 9e8
-        bg.CFrame = RootPart.CFrame
-        bg.Parent = RootPart
-
-        local startTime = now()
-        local frameCount = 0
-        local done = false
-        local spinRate = math.pi * 20
-        local resetObj = { bv = bv, bg = bg, conn = nil, watchdog = nil }
-
-        local function cleanup(success, manual)
-            if done then return end
-            done = true
-            if currentReset == resetObj then currentReset = nil end
-            if resetObj.conn then pcall(function() resetObj.conn:Disconnect() end) end
-            if resetObj.watchdog then pcall(task.cancel, resetObj.watchdog) end
-            pcall(function() bv:Destroy() end)
-            pcall(function() bg:Destroy() end)
-            restoreSelf(Character, savedData, originalDestroyHeight)
-            BindableButtons.ResetActive = false
-            StatusHUD.Set("idle")
-            if not success and not manual and _retryCount < config.maxRetries then
-                local delay = (config.retryDelay or 0.18) * (1 + _retryCount * 0.5)
-                pendingRetryThread = task.delay(delay, function()
-                    pendingRetryThread = nil
-                    if TargetPlayer and TargetPlayer.Parent and not state.whitelist[TargetPlayer.UserId] then
-                        VoidReset(TargetPlayer, _retryCount + 1)
-                    end
-                end)
-                RootMaid:GiveTask(pendingRetryThread)
+    end, function() return config.auraInterval end)
+end)
+autoSection:AddToggle("Click", function(enabled)
+    if maids.clickFling then maids.clickFling:Destroy(); maids.clickFling=nil end
+    if not enabled then return end
+    maids.clickFling=Maid.new()
+    local camera=Workspace.CurrentCamera
+    local rayParams=RaycastParams.new()
+    rayParams.FilterType=Enum.RaycastFilterType.Exclude
+    rayParams.IgnoreWater=true
+    local function resolveTarget()
+        local char=LocalPlayer.Character
+        rayParams.FilterDescendantsInstances=char and {char} or {}
+        local mouse=LocalPlayer:GetMouse()
+        if camera and mouse then
+            local unit=camera:ViewportPointToRay(mouse.X, mouse.Y, 1000)
+            local hit=Workspace:Raycast(unit.Origin, unit.Direction*1000, rayParams)
+            if hit and hit.Instance then
+                local model=hit.Instance:FindFirstAncestorWhichIsA("Model")
+                local player=model and Players:GetPlayerFromCharacter(model)
+                if player then return player end
             end
         end
-
-        resetObj.cancel = function() cleanup(true, true) end
-        currentReset = resetObj
-
-        StatusHUD.Set("active", TargetPlayer.Name)
-        BindableButtons.ResetActive = true
-
-        resetObj.watchdog = task.delay((config.resetDuration or 0.55) + 2, function()
-            if not done then cleanup(false) end
-        end)
-
-        resetObj.conn = RunService.Heartbeat:Connect(function()
-            frameCount = frameCount + 1
-            local elapsed = now() - startTime
-
-            if TargetPlayer.Character ~= TCharacter or not TRootPart.Parent then
-                cleanup(true)
-                return
-            end
-            if elapsed >= (config.resetDuration or 0.55) or not Character.Parent or not RootPart.Parent then
-                cleanup(false)
-                return
-            end
-
-            local angle = elapsed * spinRate
-            local dynamicOffset = v3(cos(angle) * 1.5, sin(angle) * 1.5, sin(angle) * 1.5)
-            RootPart.CFrame = cfr(TRootPart.Position + dynamicOffset)
-            RootPart.AssemblyLinearVelocity = v3(200000, -200000, 200000)
-            RootPart.AssemblyAngularVelocity = v3(20000, 20000, 20000)
-
-            if frameCount % 2 == 1 then
-                for i = 1, #touchParts do touch(RootPart, touchParts[i]) end
-            else
-                touch(RootPart, TRootPart)
-                if THead then touch(RootPart, THead) end
-            end
-
-            if sethidden then pcall(sethidden, RootPart, "PhysicsRepRootPart", TRootPart) end
-            if Humanoid.Health < Humanoid.MaxHealth * 0.5 then
-                Humanoid.Health = Humanoid.MaxHealth
-            end
-        end)
-
-        return true
+        local target=mouse and mouse.Target
+        local model=target and target:FindFirstAncestorWhichIsA("Model")
+        local player=model and Players:GetPlayerFromCharacter(model)
+        return player or nil
     end
-
-    local function startAutoModule(maidKey, finderFunc, intervalFn)
-        if maids[maidKey] then
-            maids[maidKey]:Destroy()
-            maids[maidKey] = nil
-        end
-        local maid = Maid.new()
-        maids[maidKey] = maid
-        local thread = task.spawn(function()
-            while not maid._destroyed do
-                local target = nil
-                pcall(function()
-                    target = finderFunc()
-                    if target then VoidReset(target) end
-                end)
-                local base = intervalFn()
-                if target then
-                    task.wait(math.max(base, (config.resetDuration or 0.55) + 0.08))
-                else
-                    task.wait(base)
-                end
-            end
-        end)
-        maid:GiveTask(thread)
-        return maid
-    end
-
-    local function stopAutoModule(maidKey)
-        if maids[maidKey] then
-            maids[maidKey]:Destroy()
-            maids[maidKey] = nil
-
-            cancelCurrentReset()
-        end
-    end
-
-    local ACTIONS = {}
-
-    ACTIONS.sheriff = {
-        name = "Sheriff", short = "Sh", label = "🔫 Sheriff",
-        run = function()
-            local t = findSheriff()
-            if t then VoidReset(t) else Notify("Error", "Sheriff not found", 3) end
-        end,
-    }
-    ACTIONS.murderer = {
-        name = "Murderer", short = "Mur", label = "🔪 Murderer",
-        run = function()
-            local t = findMurderer()
-            if t then VoidReset(t) else Notify("Error", "Murderer not found", 3) end
-        end,
-    }
-    ACTIONS.all = {
-        name = "All(w)", short = "All", label = "👥 Everyone",
-        run = function()
-            if massResetThread then
-                Notify("Action", "Mass reset already running", 2)
-                return
-            end
-            massResetThread = task.spawn(function()
-                local players = Players:GetPlayers()
-                for i = 1, #players do
-                    local p = players[i]
-                    if isValidTarget(p) then
-                        VoidReset(p)
-                        task.wait((config.resetDuration or 0.55) + 0.1)
-                    end
-                end
-                massResetThread = nil
-            end)
-            Notify("Action", "Resetting all non-whitelisted...", 2)
-        end,
-    }
-    ACTIONS.selected = {
-        name = "Selected", short = "Sel", label = "🎯 Selected",
-        run = function()
-            local t = getSelectedOrFirst()
-            if t then VoidReset(t) else Notify("Quick", "No valid selected player", 2) end
-        end,
-    }
-    ACTIONS.nearest = {
-        name = "Nearest", short = "Nrst", label = "📍 Nearest",
-        run = function()
-            local t = findNearest()
-            if t then VoidReset(t) else Notify("Quick", "No valid target nearby", 2) end
-        end,
-    }
-    ACTIONS.cancel = {
-        name = "Cancel", short = "Can", label = "⏹ Cancel",
-        run = function()
-            cancelCurrentReset()
-            Notify("Quick", "Reset cancelled", 2)
-        end,
-    }
-
-    local ACTION_ORDER = { "sheriff", "murderer", "all", "selected", "nearest", "cancel" }
-
-    local function runAction(id)
-        local action = ACTIONS[id]
-        if not action then return end
-        local ok, err = xpcall(action.run, debug.traceback)
-        if not ok then
-            warn("[" .. BRAND .. "][action:" .. id .. "] " .. tostring(err))
-            Notify("Error", "Action failed: " .. id, 3)
-        end
-    end
-
-    local Keybinds = { capture = nil }
-    local IGNORED_KEYS = {
-        LeftShift = true, RightShift = true, LeftControl = true, RightControl = true,
-        LeftAlt = true, RightAlt = true, LeftMeta = true, RightMeta = true,
-        CapsLock = true, Unknown = true, Escape = true,
-    }
-
-    local function keyName(id)
-        local k = config.keybinds[id]
-        return (k and k ~= "") and k or "—"
-    end
-
-    RootMaid:GiveTask(UserInputService.InputBegan:Connect(function(input, processed)
-        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-        local name = input.KeyCode.Name
-
-        if Keybinds.capture then
-            if IGNORED_KEYS[name] then return end
-            local id = Keybinds.capture
-            Keybinds.capture = nil
-            config.keybinds[id] = name
-            saveConfig()
-            Notify("Hotkey", ACTIONS[id].name .. " → " .. name, 3)
-            return
-        end
-
+    local function onInput(input, processed)
         if processed then return end
-        for _, id in ipairs(ACTION_ORDER) do
-            if config.keybinds[id] == name then
-                runAction(id)
-                break
-            end
+        if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+        local ok, player=pcall(resolveTarget)
+        if not ok or not player or player==LocalPlayer then return end
+        state.resetSelPlr=player
+        if state.whitelist[player.UserId] then Notify("Click", player.Name.." is whitelisted!",3)
+        else SkidFling(player); Notify("Click","Flinging "..player.Name,2) end
+    end
+    maids.clickFling:GiveTask(UserInputService.InputBegan:Connect(onInput))
+end)
+
+-- 📋 Lists
+local listSection = AddSection("📋 Lists")
+listSection:AddPlayerDropdown("🎯 Select", function(p)
+    if p and p ~= LocalPlayer then state.resetSelPlr=p; Notify("Selected", p.Name.." set",3) end
+end)
+listSection:AddPlayerDropdown("➕ Loop", function(p)
+    if p and p ~= LocalPlayer then
+        state.resetSelPlr=p
+        if not state.selectedSet[p.UserId] then
+            state.selectedSet[p.UserId]=true
+            insert(state.selectedPlayers,p)
+            Notify("Selected", p.Name.." added",3)
         end
-    end))
+    end
+end)
+listSection:AddButton("🧹 Clear loop", function()
+    clearTable(state.selectedPlayers); clearTable(state.selectedSet)
+    Notify("Selected","Cleared",3)
+end)
+listSection:AddPlayerDropdown("🛡 Whitelist", function(p)
+    if p and p ~= LocalPlayer then state.whitelist[p.UserId]=p.Name; Notify("Whitelist", p.Name.." added",3); saveConfig() end
+end)
+listSection:AddPlayerDropdown("🛡 Un-whitelist", function(p)
+    if p and state.whitelist[p.UserId] then state.whitelist[p.UserId]=nil; Notify("Whitelist", p.Name.." removed",3); saveConfig()
+    elseif p then Notify("Whitelist", p.Name.." is not whitelisted",3) end
+end)
+listSection:AddButton("🧹 Clear WL", function() clearTable(state.whitelist); Notify("Whitelist","Cleared",3); saveConfig() end)
 
-    local mainSection = AddSection("💀 " .. BRAND)
-    mainSection:AddLabel("MM2 • Void Reset • by " .. AUTHOR)
+-- ⚙️ Tuning
+local settingsSection = AddSection("⚙️ Tuning")
+settingsSection:AddSlider("Fling Duration", 1, 5, config.flingDuration, function(v) config.flingDuration=v; saveConfig() end)
+settingsSection:AddSlider("Fling Power", 1, 3, config.flingPower, function(v) config.flingPower=v; saveConfig() end)
+settingsSection:AddSlider("Aura Radius", 5, 50, config.auraStuds, function(v) config.auraStuds=v; saveConfig() end)
+settingsSection:AddSlider("Loop Interval", 0.1, 1.0, config.loopInterval, function(v) config.loopInterval=v; saveConfig() end)
+settingsSection:AddSlider("Aura Interval", 0.1, 1.0, config.auraInterval, function(v) config.auraInterval=v; saveConfig() end)
+settingsSection:AddSlider("Target Cooldown", 0, 3, config.targetCooldown, function(v) config.targetCooldown=v; saveConfig() end)
+settingsSection:AddSlider("Auto Sheriff Delay", 0.1, 1.0, config.autoSheriffDelay, function(v) config.autoSheriffDelay=v; saveConfig() end)
+settingsSection:AddSlider("Auto Murderer Delay", 0.1, 1.0, config.autoMurdererDelay, function(v) config.autoMurdererDelay=v; saveConfig() end)
+settingsSection:AddSlider("Role Cache TTL", 0.2, 3.0, config.roleCacheTTL, function(v) config.roleCacheTTL=v; saveConfig() end)
+settingsSection:AddToggle("Auto Return", function(enabled) config.autoReturn=enabled and true or false; saveConfig() end)
+settingsSection:AddToggle("Notifications", function(enabled) config.notifications=enabled and true or false; saveConfig() end)
 
-    local actionSection = AddSection("⚡ Reset")
-    actionSection:AddButton("🔫 Sheriff", function() runAction("sheriff") end)
-    actionSection:AddButton("🔪 Murderer", function() runAction("murderer") end)
-    actionSection:AddButton("👥 Everyone", function() runAction("all") end)
-    actionSection:AddButton("🎯 Selected", function() runAction("selected") end)
-    actionSection:AddButton("📍 Nearest", function() runAction("nearest") end)
-    actionSection:AddButton("⏹ Cancel", function() runAction("cancel") end)
-    actionSection:AddPlayerDropdown("▸ Pick player", function(p)
-        if p and p ~= LocalPlayer then
-            state.resetSelPlr = p
-            if state.whitelist[p.UserId] then
-                Notify("Whitelist", p.Name .. " is whitelisted!", 3)
-            else
-                VoidReset(p)
-                Notify("Action", "Resetting " .. p.Name, 2)
-            end
-        end
-    end)
+-- 🔘 Binds
+local floatSection = AddSection("🔘 Binds")
+floatSection:AddToggle("SFX 🔇", function(bool) Audio.setMuted(bool) end)
 
-    local autoSection = AddSection("🤖 Auto")
-    autoSection:AddToggle("Auto Sheriff", function(enabled)
+local function toggleBindButton(actionId)
+    return function(enabled)
+        local id="bind_"..actionId
         if enabled then
-            startAutoModule("autoSheriff", findSheriff, function() return config.autoSheriffDelay end)
+            BindableButtons.AddBButton(id, ACTIONS[actionId].short, function() runAction(actionId) end, actionId=="selected")
         else
-            stopAutoModule("autoSheriff")
-        end
-    end)
-    autoSection:AddToggle("Auto Murderer", function(enabled)
-        if enabled then
-            startAutoModule("autoMurderer", findMurderer, function() return config.autoMurdererDelay end)
-        else
-            stopAutoModule("autoMurderer")
-        end
-    end)
-    autoSection:AddToggle("Loop", function(enabled)
-        if not enabled then
-            stopAutoModule("loopPlr")
-            return
-        end
-        local loopIndex = 1
-        startAutoModule("loopPlr", function()
-            if isValidTarget(state.resetSelPlr) then return state.resetSelPlr end
-            local list = state.selectedPlayers
-            for _ = 1, #list do
-                loopIndex = ((loopIndex - 1) % #list) + 1
-                local p = list[loopIndex]
-                if isValidTarget(p) then return p end
-            end
-            return nil
-        end, function() return config.loopInterval end)
-    end)
-    autoSection:AddToggle("Aura", function(enabled)
-        if not enabled then
-            stopAutoModule("resetAura")
-            return
-        end
-        startAutoModule("resetAura", function()
-            local char = LocalPlayer.Character
-            local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-            if not rootPart then return nil end
-            local myPos = rootPart.Position
-            local maxDistSq = (config.auraStuds or 15) ^ 2
-            local best, bestDist = nil, maxDistSq
-            local players = Players:GetPlayers()
-            for i = 1, #players do
-                local player = players[i]
-                if isValidTarget(player) then
-                    local tr = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                    if tr then
-                        local d = (myPos - tr.Position).Magnitude
-                        if d * d <= bestDist then best, bestDist = player, d * d end
-                    end
-                end
-            end
-            return best
-        end, function() return config.auraInterval end)
-    end)
-    autoSection:AddToggle("Click", function(enabled)
-        if maids.clickReset then
-            maids.clickReset:Destroy()
-            maids.clickReset = nil
-        end
-        if not enabled then return end
-
-        maids.clickReset = Maid.new()
-        local camera = Workspace.CurrentCamera
-        local rayParams = RaycastParams.new()
-        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-        rayParams.IgnoreWater = true
-
-        local function resolveTarget()
-
-            local char = LocalPlayer.Character
-            rayParams.FilterDescendantsInstances = char and { char } or {}
-            local mouse = LocalPlayer:GetMouse()
-            if camera and mouse then
-                local unit = camera:ViewportPointToRay(mouse.X, mouse.Y, 1000)
-                local hit = Workspace:Raycast(unit.Origin, unit.Direction * 1000, rayParams)
-                if hit and hit.Instance then
-                    local model = hit.Instance:FindFirstAncestorWhichIsA("Model")
-                    local player = model and Players:GetPlayerFromCharacter(model)
-                    if player then return player end
-                end
-            end
-            local target = mouse and mouse.Target
-            local model = target and target:FindFirstAncestorWhichIsA("Model")
-            local player = model and Players:GetPlayerFromCharacter(model)
-            return player or nil
-        end
-
-        local function onInput(input, processed)
-            if processed then return end
-            if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
-            local ok, player = pcall(resolveTarget)
-            if not ok or not player or player == LocalPlayer then return end
-            state.resetSelPlr = player
-            if state.whitelist[player.UserId] then
-                Notify("Click", player.Name .. " is whitelisted!", 3)
-            else
-                VoidReset(player)
-                Notify("Click", "Resetting " .. player.Name, 2)
-            end
-        end
-
-        maids.clickReset:GiveTask(UserInputService.InputBegan:Connect(onInput))
-    end)
-
-    local listSection = AddSection("📋 Lists")
-    listSection:AddPlayerDropdown("🎯 Select", function(p)
-        if p and p ~= LocalPlayer then
-            state.resetSelPlr = p
-            Notify("Selected", p.Name .. " set", 3)
-        end
-    end)
-    listSection:AddPlayerDropdown("➕ Loop", function(p)
-        if p and p ~= LocalPlayer then
-            state.resetSelPlr = p
-            if not state.selectedSet[p.UserId] then
-                state.selectedSet[p.UserId] = true
-                insert(state.selectedPlayers, p)
-                Notify("Selected", p.Name .. " added", 3)
-            end
-        end
-    end)
-    listSection:AddButton("🧹 Clear loop", function()
-        clearTable(state.selectedPlayers)
-        clearTable(state.selectedSet)
-        Notify("Selected", "Cleared", 3)
-    end)
-    listSection:AddPlayerDropdown("🛡 Whitelist", function(p)
-        if p and p ~= LocalPlayer then
-            state.whitelist[p.UserId] = p.Name
-            Notify("Whitelist", p.Name .. " added", 3)
-            saveConfig()
-        end
-    end)
-    listSection:AddPlayerDropdown("🛡 Un-whitelist", function(p)
-        if p and state.whitelist[p.UserId] then
-            state.whitelist[p.UserId] = nil
-            Notify("Whitelist", p.Name .. " removed", 3)
-            saveConfig()
-        elseif p then
-            Notify("Whitelist", p.Name .. " is not whitelisted", 3)
-        end
-    end)
-    listSection:AddButton("🧹 Clear WL", function()
-        clearTable(state.whitelist)
-        Notify("Whitelist", "Cleared", 3)
-        saveConfig()
-    end)
-
-    local settingsSection = AddSection("⚙️ Tuning")
-    settingsSection:AddSlider("Max Retries", 0, 5, config.maxRetries, function(v)
-        config.maxRetries = v
-        saveConfig()
-    end)
-    settingsSection:AddSlider("Retry Delay (x0.1s)", 1, 10, (config.retryDelay or 0.18) * 10, function(v)
-        config.retryDelay = v * 0.1
-        saveConfig()
-    end)
-    settingsSection:AddSlider("Reset Duration (s)", 0.2, 1.0, config.resetDuration, function(v)
-        config.resetDuration = v
-        saveConfig()
-    end)
-    settingsSection:AddSlider("Aura Radius (studs)", 5, 50, config.auraStuds, function(v)
-        config.auraStuds = v
-        saveConfig()
-    end)
-    settingsSection:AddSlider("Loop Interval (s)", 0.1, 1.0, config.loopInterval, function(v)
-        config.loopInterval = v
-        saveConfig()
-    end)
-    settingsSection:AddSlider("Aura Interval (s)", 0.1, 1.0, config.auraInterval, function(v)
-        config.auraInterval = v
-        saveConfig()
-    end)
-    settingsSection:AddSlider("Target Cooldown (s)", 0, 3, config.targetCooldown, function(v)
-        config.targetCooldown = v
-        saveConfig()
-    end)
-    settingsSection:AddSlider("Role Cache (x0.1s)", 2, 30, (config.roleCacheTTL or 0.8) * 10, function(v)
-        config.roleCacheTTL = v * 0.1
-        saveConfig()
-    end)
-    settingsSection:AddToggle("Notifications", function(enabled)
-        config.notifications = enabled and true or false
-        saveConfig()
-    end)
-
-    local floatSection = AddSection("🔘 Binds")
-    floatSection:AddToggle("SFX 🔇", function(bool) Audio.setMuted(bool) end)
-
-    local function toggleBindButton(actionId)
-        return function(enabled)
-            local id = "bind_" .. actionId
-
-            config.binds[actionId] = (enabled == true)
-            saveConfig()
-            if enabled then
-                BindableButtons.AddBButton(id, ACTIONS[actionId].short, function() runAction(actionId) end, actionId == "sheriff")
-            else
-                BindableButtons.DeleteBButton(id)
-            end
+            BindableButtons.DeleteBButton(id)
         end
     end
+end
 
-    for _, id in ipairs(ACTION_ORDER) do
-        floatSection:AddToggle("Bind " .. ACTIONS[id].name, toggleBindButton(id))
+for _,id in ipairs(ACTION_ORDER) do
+    floatSection:AddToggle("Bind "..ACTIONS[id].name, toggleBindButton(id))
+end
+floatSection:AddSlider("Bind Size (%)", 5, 25, math.floor((config.bindButtonSize or 0.11)*100), function(value)
+    BindableButtons.setSize(value/100)
+end)
+floatSection:AddButton("🧩 Reset bind layout", function() BindableButtons.resetLayout(); Notify("Binds","Layout reset",2) end)
+floatSection:AddButton("🛑 Panic", function()
+    cancelCurrentFling()
+    for _,key in ipairs({"loopPlr","clickFling","aura","autoSheriff","autoMurderer"}) do stopAutoModule(key) end
+    BindableButtons.clearAll()
+    for _,r in ipairs(ODHX.records) do
+        if r.kind=="Toggle" and (r.section=="🤖 Auto" or (r.section=="🔘 Binds" and r.name:sub(1,5)=="Bind ")) then
+            ODHX.Set(r.section,r.name,r.kind,false,false)
+        end
     end
-    floatSection:AddSlider("Bind Size (%)", 5, 25, math.floor((config.bindButtonSize or 0.11) * 100), function(value)
-        BindableButtons.setSize(value / 100)
-    end)
-    floatSection:AddButton("🧩 Reset bind layout", function()
-        BindableButtons.resetLayout()
-        Notify("Binds", "Layout reset", 2)
-    end)
-    floatSection:AddButton("🛑 Panic", function()
-        cancelCurrentReset()
-        for _, key in ipairs({ "loopPlr", "clickReset", "resetAura", "autoSheriff", "autoMurderer" }) do
-            stopAutoModule(key)
-        end
-        BindableButtons.clearAll()
-        for _,r in ipairs(ODHX.records) do
-            if r.kind=="Toggle" and (r.section=="🤖 Auto" or (r.section=="🔘 Binds" and r.name:sub(1,5)=="Bind ")) then
-                ODHX.Set(r.section,r.name,r.kind,false,false)
-            end
-        end
-        Notify("Panic", "All modules stopped", 3)
-    end)
+    Notify("Panic","All modules stopped",3)
+end)
 
-    local keySection = AddSection("🔑 Keys")
-    for _, id in ipairs(ACTION_ORDER) do
-        keySection:AddToggle("Key " .. ACTIONS[id].name .. " [" .. keyName(id) .. "]", function(enabled)
-            if enabled then
-                Keybinds.capture = id
-                Notify("Hotkey", "Press a key for " .. ACTIONS[id].name .. "...", 5)
-            else
-                config.keybinds[id] = nil
-                if Keybinds.capture == id then Keybinds.capture = nil end
-                saveConfig()
-                Notify("Hotkey", ACTIONS[id].name .. " key cleared", 3)
-            end
-        end)
-    end
-    keySection:AddButton("🧹 Clear keys", function()
-        clearTable(config.keybinds)
-        Keybinds.capture = nil
-        saveConfig()
-        Notify("Hotkey", "All hotkeys cleared", 3)
+-- 🔑 Keys
+local keySection = AddSection("🔑 Keys")
+for _,id in ipairs(ACTION_ORDER) do
+    keySection:AddToggle("Key "..ACTIONS[id].name.." ["..keyName(id).."]", function(enabled)
+        if enabled then Keybinds.capture=id; Notify("Hotkey","Press a key for "..ACTIONS[id].name.."...",5)
+        else config.keybinds[id]=nil; if Keybinds.capture==id then Keybinds.capture=nil end; saveConfig(); Notify("Hotkey", ACTIONS[id].name.." key cleared",3) end
     end)
+end
+keySection:AddButton("🧹 Clear keys", function() clearTable(config.keybinds); Keybinds.capture=nil; saveConfig(); Notify("Hotkey","All hotkeys cleared",3) end)
 
-    local configSection = AddSection("💾 Config")
-    configSection:AddButton("💾 Save", function()
-        if saveConfig(true) then Notify("Config", "Saved → " .. CONFIG_PATH, 3)
-        else Notify("Config", "Filesystem unavailable in this executor", 4) end
-    end)
-    configSection:AddButton("📂 Reload", function()
-        if loadConfig() then
-            ODHX.data.controls=config.pluginUI or {}
-            ODHX.Restore()
-            BindableButtons.setSize(config.bindButtonSize or 0.11)
-            hudApplyPosition()
-            Notify("Config", "Reloaded", 3)
-        else
-            Notify("Config", "Nothing to load", 3)
-        end
-    end)
-    configSection:AddButton("♻ Reset config", function()
-        for k, v in pairs(DEFAULTS) do
-            if type(v) == "table" then
-                clearTable(config[k])
-                for k2, v2 in pairs(v) do config[k][k2] = v2 end
-            else
-                config[k] = v
-            end
-        end
-        clearTable(state.whitelist)
-        ODHX.ResetControls()
-        BindableButtons.setSize(config.bindButtonSize)
+-- 💾 Config
+local configSection = AddSection("💾 Config")
+configSection:AddButton("💾 Save", function()
+    if saveConfig(true) then Notify("Config","Saved → "..CONFIG_PATH,3)
+    else Notify("Config","Filesystem unavailable",4) end
+end)
+configSection:AddButton("📂 Reload", function()
+    if loadConfig() then
+        ODHX.data.controls=config.pluginUI or {}
+        ODHX.Restore()
+        BindableButtons.setSize(config.bindButtonSize or 0.11)
         hudApplyPosition()
-        saveConfig(true)
-        Notify("Config", "Defaults restored", 3)
-    end)
-
-    local infoSection = AddSection("ℹ️")
-    infoSection:AddButton("🧹 Clean duplicates", function()
-        local n = purgeForeign(true)
-        markOwnCards()
-        Notify("Clean", "Removed " .. n .. " duplicate section(s)", 3)
-    end)
-    infoSection:AddLabel(PLUGIN_NAME .. " • " .. VERSION .. " • by " .. AUTHOR)
-    infoSection:AddLabel("HUD drag • Binds drag • config saved")
-
-    markOwnCards()
-
-    RootMaid:GiveTask(task.spawn(function()
-
-        for _, delay in ipairs({ 1.5, 2.5, 3.0, 5.0 }) do
-            task.wait(delay)
-            scanIfDirty()
-        end
-    end))
-
-    Audio.init()
-    StatusHUD.Init()
-    BindableButtons.setSize(config.bindButtonSize or 0.11)
+        Notify("Config","Reloaded",3)
+    else Notify("Config","Nothing to load",3) end
+end)
+configSection:AddButton("♻ Reset config", function()
+    for k,v in pairs(DEFAULTS) do
+        if type(v)=="table" then clearTable(config[k]); for k2,v2 in pairs(v) do config[k][k2]=v2 end
+        else config[k]=v end
+    end
+    clearTable(state.whitelist)
+    ODHX.ResetControls()
+    BindableButtons.setSize(config.bindButtonSize)
     hudApplyPosition()
-    if configLoaded then
-        SR_Log(BRAND .. " " .. VERSION .. " loaded (config restored)"
-               .. (positionsLoaded and " (button layout restored)" or ""))
-    else
-        SR_Log(BRAND .. " " .. VERSION .. " loaded. Duplicates auto-cleaned.")
+    saveConfig(true)
+    Notify("Config","Defaults restored",3)
+end)
+
+-- ℹ️
+local infoSection = AddSection("ℹ️")
+infoSection:AddButton("🧹 Clean duplicates", function()
+    local n=purgeForeign(true); markOwnCards(); Notify("Clean","Removed "..n.." duplicate section(s)",3)
+end)
+infoSection:AddLabel(PLUGIN_NAME.." • "..VERSION.." • by "..AUTHOR)
+infoSection:AddLabel("HUD drag • Binds drag • config saved → "..CONFIG_PATH)
+
+-- ====== Пометить свои карточки ======
+markOwnCards()
+
+RootMaid:GiveTask(task.spawn(function()
+    for _,delay in ipairs({1.5,2.5,3.0,5.0}) do
+        task.wait(delay)
+        pcall(markOwnCards)
+        pcall(purgeForeign, true)
     end
-    if headlessMode then
-        Notify(BRAND, "Menu API missing — headless mode (binds/hotkeys work)", 5)
-    end
+end))
 
-    RootMaid:GiveTask(Players.PlayerRemoving:Connect(function(player)
-        if not player then return end
-        state.lastResetAt[player.UserId] = nil
-        state.selectedSet[player.UserId] = nil
-        for i = #state.selectedPlayers, 1, -1 do
-            if state.selectedPlayers[i] == player then table.remove(state.selectedPlayers, i) end
-        end
-        if state.resetSelPlr == player then state.resetSelPlr = nil end
-        if sheriffCache.player == player then sheriffCache.player = nil end
-        invalidateRoleCache()
-    end))
+-- ====== Init ======
+Audio.init()
+StatusHUD.Init()
+BindableButtons.setSize(config.bindButtonSize or 0.11)
+hudApplyPosition()
+if configLoaded then Notify(BRAND, VERSION.." loaded (config restored)",3)
+else Notify(BRAND, VERSION.." loaded. Duplicates auto-cleaned.",3) end
+if headlessMode then Notify(BRAND,"Menu API missing — headless mode (binds/hotkeys work)",5) end
 
-    RootMaid:GiveTask(Players.PlayerAdded:Connect(invalidateRoleCache))
+RootMaid:GiveTask(Players.PlayerRemoving:Connect(function(player)
+    if not player then return end
+    state.lastResetAt[player.UserId]=nil
+    state.selectedSet[player.UserId]=nil
+    for i=#state.selectedPlayers,1,-1 do if state.selectedPlayers[i]==player then table.remove(state.selectedPlayers,i) end end
+    if state.resetSelPlr==player then state.resetSelPlr=nil end
+    if sheriffCache and sheriffCache.player==player then sheriffCache.player=nil end
+    invalidateRoleCache()
+end))
+RootMaid:GiveTask(Players.PlayerAdded:Connect(function() invalidateRoleCache() end))
 
-    RootMaid:GiveTask(function()
+-- ====== Очистка ======
+RootMaid:GiveTask(function()
+    persistDisabled=true
+    if saveThread then pcall(task.cancel, saveThread) end
+    saveThread,saveQueued=nil,false
+    cancelCurrentFling()
+    for _,m in pairs(maids) do if m then m:Destroy() end end
+    clearTable(maids)
+    clearTable(state.whitelist)
+    clearTable(state.selectedPlayers)
+    clearTable(state.selectedSet)
+    clearTable(state.lastResetAt)
+    Keybinds.capture=nil
+    BindableButtons.clearAll()
+    pcall(removeMySections)
+    pcall(function() if storageGui then storageGui:Destroy() end; storageGui=nil end)
+end)
 
-        if canPersist and not persistDisabled then
-            if saveThread then pcall(task.cancel, saveThread) end
-            saveThread, saveQueued = nil, false
-            pcall(saveConfig, true)
-            pcall(savePositions)
-        end
+local function unload()
+    RootMaid:DoCleaning()
+end
 
-        persistDisabled = true
-        if saveThread then pcall(task.cancel, saveThread) end
-        saveThread, saveQueued = nil, false
+pcall(function()
+    if type(getgenv) ~= "function" then return end
+    local g=getgenv()
+    if type(g)~="table" then return end
+    rawset(g, UNLOAD_GLOBAL, ODHX.Stop)
+end)
 
-        cancelCurrentReset()
-        for _, m in pairs(maids) do if m then m:Destroy() end end
-        clearTable(maids)
-        clearTable(state.whitelist)
-        clearTable(state.selectedPlayers)
-        clearTable(state.selectedSet)
-        clearTable(state.lastResetAt)
-        Keybinds.capture = nil
-        BindableButtons.clearAll()
-        pcall(removeMySections)
-        pcall(function()
-            if storageGui then storageGui:Destroy() end
-            storageGui = nil
-        end)
-    end)
-
-    local function unload()
-        RootMaid:DoCleaning()
-    end
-
-    pcall(function()
-        if type(getgenv) ~= "function" then return end
-        local g = getgenv()
-        if type(g) ~= "table" then return end
-        rawset(g, UNLOAD_GLOBAL, ODHX.Stop)
-    end)
-
-    ODHX.Bind("⚙️ Tuning", "Notifications", "Toggle", function() return config.notifications end)
-    ODHX.Bind("🔘 Binds", "SFX 🔇", "Toggle", function() return config.muteSounds end)
-    ODHX.Bind("⚙️ Tuning", "Max Retries", "Slider", function() return config.maxRetries end)
-    ODHX.Bind("⚙️ Tuning", "Retry Delay (x0.1s)", "Slider", function() return config.retryDelay*10 end)
-    ODHX.Bind("⚙️ Tuning", "Reset Duration (s)", "Slider", function() return config.resetDuration end)
-    ODHX.Bind("⚙️ Tuning", "Aura Radius (studs)", "Slider", function() return config.auraStuds end)
-    ODHX.Bind("⚙️ Tuning", "Loop Interval (s)", "Slider", function() return config.loopInterval end)
-    ODHX.Bind("⚙️ Tuning", "Aura Interval (s)", "Slider", function() return config.auraInterval end)
-    ODHX.Bind("⚙️ Tuning", "Target Cooldown (s)", "Slider", function() return config.targetCooldown end)
-    ODHX.Bind("⚙️ Tuning", "Role Cache (x0.1s)", "Slider", function() return config.roleCacheTTL*10 end)
-    ODHX.Bind("🔘 Binds", "Bind Size (%)", "Slider", function() return config.bindButtonSize*100 end)
-    ODHX.cleanup=unload
-    ODHX.Finish()
-    pmReady = true
-
-    local function reconcileBindButtons()
-        for _, actionId in ipairs(ACTION_ORDER) do
-            local btnId = "bind_" .. actionId
-            local want = config.binds and config.binds[actionId] == true
-            if not want then
-
-                local ok, restored = pcall(function()
-                    if not (ODHX.records and ACTIONS[actionId]) then return false end
-                    local wanted = "Bind " .. ACTIONS[actionId].name
-                    for _, rec in ipairs(ODHX.records) do
-                        if rec.kind == "Toggle" and rec.name == wanted and rec.value == true then return true end
-                    end
-                    return false
-                end)
-                if ok and restored then want = true end
-            end
-            if want then
-                BindableButtons.AddBButton(btnId, ACTIONS[actionId].short, function() runAction(actionId) end, actionId == "sheriff")
-            else
-                BindableButtons.DeleteBButton(btnId)
-            end
-        end
-        BindableButtons.relayout()
-    end
-    local reconcileOK, reconcileErr = pcall(reconcileBindButtons)
-    if not reconcileOK then SR_Log("[PM VALEX] on-screen buttons were not rebuilt: " .. tostring(reconcileErr)) end
+ODHX.Bind("⚙️ Tuning", "Auto Return", "Toggle", function() return config.autoReturn end)
+ODHX.Bind("⚙️ Tuning", "Notifications", "Toggle", function() return config.notifications end)
+ODHX.Bind("🔘 Binds", "SFX 🔇", "Toggle", function() return config.muteSounds end)
+ODHX.Bind("⚙️ Tuning", "Fling Duration", "Slider", function() return config.flingDuration end)
+ODHX.Bind("⚙️ Tuning", "Fling Power", "Slider", function() return config.flingPower end)
+ODHX.Bind("⚙️ Tuning", "Aura Radius", "Slider", function() return config.auraStuds end)
+ODHX.Bind("⚙️ Tuning", "Loop Interval", "Slider", function() return config.loopInterval end)
+ODHX.Bind("⚙️ Tuning", "Aura Interval", "Slider", function() return config.auraInterval end)
+ODHX.Bind("⚙️ Tuning", "Target Cooldown", "Slider", function() return config.targetCooldown end)
+ODHX.Bind("⚙️ Tuning", "Auto Sheriff Delay", "Slider", function() return config.autoSheriffDelay end)
+ODHX.Bind("⚙️ Tuning", "Auto Murderer Delay", "Slider", function() return config.autoMurdererDelay end)
+ODHX.Bind("⚙️ Tuning", "Role Cache TTL", "Slider", function() return config.roleCacheTTL end)
+ODHX.Bind("🔘 Binds", "Bind Size (%)", "Slider", function() return config.bindButtonSize*100 end)
+ODHX.cleanup=unload
+ODHX.Finish()
 
 end
 end)
+
 
 SR_UI.tryModule("Pm-Wallhop", function()
 do
