@@ -22,10 +22,240 @@ function SR_UI.service(name)
     return service
 end
 
-local SR_TEXT_WIDTH = 58
+-- ============================================================================
+--  SR_Perf: автопроверка устройства (слабый телефон / средний / мощный),
+--  бюджет кадра для фоновой работы и плавная загрузка без долгого фриза.
+--  Ручной выбор (если нужно): _G.SR_PERF_TIER = "low" | "mid" | "high" до запуска.
+-- ============================================================================
+local SR_Perf = {
+    level = 3, tier = "high", maxLevel = 3, fps = 0, booting = true,
+    device = "PC", reason = "start", forced = false, quality = 0,
+    names = { "low", "mid", "high" },
+    pretty = { "Low (weak device)", "Medium", "High" },
+    budgets = { 0.0025, 0.004, 0.006 },   -- сек. фоновой работы за кадр
+    slows = { 2.5, 1.5, 1 },              -- множитель интервалов периодических проверок
+    qcaps = { 0.45, 0.7, 1 },             -- потолок качества эффектов PrismFlux
+    animCaps = { 30, 60, 0 },             -- потолок FPS анимаций эффектов (0 = без потолка)
+    listeners = {}, bootJobs = {}, bootKeys = {}, times = {},
+}
+SR_UI.Perf = SR_Perf
+
+function SR_Perf.log(msg) pcall(print, "[Noir_Perf] " .. tostring(msg)) end
+function SR_Perf.pick(high, mid, low)
+    local l = SR_Perf.level
+    if l >= 3 then return high end
+    if l == 2 then if mid == nil then return high end return mid end
+    if low ~= nil then return low end
+    if mid ~= nil then return mid end
+    return high
+end
+function SR_Perf.isLow() return SR_Perf.level <= 1 end
+function SR_Perf.slow() return SR_Perf.slows[SR_Perf.level] or 1 end
+function SR_Perf.budget() return SR_Perf.budgets[SR_Perf.level] or 0.004 end
+function SR_Perf.qualityCap() return SR_Perf.qcaps[SR_Perf.level] or 1 end
+function SR_Perf.animCap() return SR_Perf.animCaps[SR_Perf.level] or 0 end
+function SR_Perf.onChange(fn)
+    if type(fn) == "function" then SR_Perf.listeners[#SR_Perf.listeners + 1] = fn end
+end
+function SR_Perf.describe()
+    return SR_Perf.device .. " · " .. (SR_Perf.pretty[SR_Perf.level] or SR_Perf.tier)
+        .. (SR_Perf.forced and " (manual)" or " (auto)")
+        .. (SR_Perf.fps > 0 and (" · " .. tostring(SR_Perf.fps) .. " FPS") or " · FPS: measuring")
+end
+
+function SR_Perf.canYield()
+    if type(task) ~= "table" or type(task.wait) ~= "function" then return false end
+    local ok, y = pcall(coroutine.isyieldable)
+    return ok and y == true
+end
+
+function SR_Perf.setLevel(l, why)
+    l = math.max(1, math.min(SR_Perf.forced and 3 or SR_Perf.maxLevel, math.floor(tonumber(l) or 3)))
+    if l == SR_Perf.level then return end
+    SR_Perf.level, SR_Perf.tier, SR_Perf.reason = l, SR_Perf.names[l], why or "manual"
+    SR_Perf.log("mode: " .. SR_Perf.describe() .. " | " .. tostring(why))
+    for _, fn in ipairs(SR_Perf.listeners) do pcall(fn, SR_Perf.tier, l) end
+end
+
+-- корни GUI без вложенных друг в друга (gethui() часто лежит внутри CoreGui —
+-- иначе каждый элемент обрабатывался бы дважды)
+function SR_Perf.uniqueRoots(list)
+    local out = {}
+    for i, r in ipairs(list or {}) do
+        local nested = false
+        for j, other in ipairs(list) do
+            if i ~= j and other ~= r then
+                local ok, inside = pcall(function() return r:IsDescendantOf(other) end)
+                if ok and inside then nested = true break end
+            end
+        end
+        if not nested then out[#out + 1] = r end
+    end
+    return out
+end
+
+-- длинный цикл делится на кусочки: после бюджета отдаём кадр игре
+function SR_Perf.slicer(budget)
+    local start, n = os.clock(), 0
+    return function()
+        n = n + 1
+        if n % 16 ~= 0 then return false end
+        if os.clock() - start < (budget or SR_Perf.budget() * 2) then return false end
+        if not SR_Perf.canYield() then return false end
+        task.wait()
+        start = os.clock()
+        return true
+    end
+end
+
+-- очередь событий: обработка пачками по бюджету кадра вместо всплеска в одном кадре
+function SR_Perf.batch(handler)
+    local items, head, tail, running = {}, 1, 0, false
+    local function run()
+        while head <= tail do
+            local start, budget = os.clock(), SR_Perf.budget()
+            while head <= tail and os.clock() - start < budget do
+                local item = items[head]
+                items[head] = nil
+                head = head + 1
+                pcall(handler, item)
+            end
+            if head <= tail then task.wait() end
+        end
+        items, head, tail = {}, 1, 0
+        running = false
+    end
+    return function(item)
+        if type(task) ~= "table" or type(task.defer) ~= "function" then return pcall(handler, item) end
+        tail = tail + 1
+        items[tail] = item
+        if not running then
+            running = true
+            task.defer(function()
+                local ok = pcall(run)
+                if not ok then items, head, tail, running = {}, 1, 0, false end
+            end)
+        end
+    end
+end
+
+-- загрузка: между модулями даём кадр игре, тяжёлое — после появления меню
+SR_Perf.bootStart = os.clock()
+SR_Perf.lastBootYield = os.clock()
+function SR_Perf.bootBreath()
+    if rawget(_G, "SR_BOOT_NOYIELD") then return end
+    if os.clock() - SR_Perf.lastBootYield < SR_Perf.pick(0.05, 0.033, 0.025) then return end
+    if SR_Perf.canYield() then task.wait() end
+    SR_Perf.lastBootYield = os.clock()
+end
+function SR_Perf.afterBoot(key, fn)
+    if type(fn) ~= "function" then return end
+    if not SR_Perf.booting then return fn() end
+    if key then
+        if SR_Perf.bootKeys[key] then return end
+        SR_Perf.bootKeys[key] = true
+    end
+    SR_Perf.bootJobs[#SR_Perf.bootJobs + 1] = { key = key, fn = fn }
+end
+function SR_Perf.finishBoot()
+    if not SR_Perf.booting then return end
+    SR_Perf.booting = false
+    SR_Perf.bootTime = os.clock() - SR_Perf.bootStart
+    local jobs = SR_Perf.bootJobs
+    SR_Perf.bootJobs, SR_Perf.bootKeys = {}, {}
+    local function runAll()
+        for _, job in ipairs(jobs) do
+            if SR_Perf.canYield() then task.wait() end   -- одна тяжёлая задача на кадр
+            local ok, err = pcall(job.fn)
+            if not ok then SR_Perf.log("delayed job " .. tostring(job.key) .. " failed: " .. tostring(err)) end
+        end
+    end
+    if type(task) == "table" and type(task.spawn) == "function" then task.spawn(runAll) else runAll() end
+end
+
+-- ---------------- определение устройства ----------------
+do
+    local UIS = SR_UI.service("UserInputService")
+    local touch, keyboard = false, false
+    pcall(function() touch = UIS.TouchEnabled == true; keyboard = UIS.KeyboardEnabled == true end)
+    local phone = touch and not keyboard
+    local minSide = 0
+    pcall(function()
+        local vp = workspace.CurrentCamera.ViewportSize
+        minSide = math.min(vp.X, vp.Y)
+    end)
+    local q = 0
+    pcall(function()
+        local gs = UserSettings():GetService("UserGameSettings")
+        local v = gs.SavedQualityLevel
+        q = tonumber(v and v.Value) or 0            -- 0 = Automatic, 1..10 = ручной уровень графики
+    end)
+    SR_Perf.phone, SR_Perf.quality, SR_Perf.minSide = phone, q, minSide
+    SR_Perf.device = phone and (minSide > 0 and minSide < 500 and "Phone" or "Tablet") or (touch and "Touch PC" or "PC")
+
+    local start, maxL = 3, 3
+    if phone then start, maxL = 2, 2 end            -- телефон: максимум «средний», пока FPS не докажет обратное
+    if q >= 1 and q <= 3 then start, maxL = 1, 2    -- низкая графика в настройках Roblox — слабое устройство
+    elseif q >= 4 and q <= 6 then start = math.min(start, 2)
+    elseif q >= 8 and phone then maxL = 3 end       -- мощный телефон с высокой графикой
+    SR_Perf.maxLevel = maxL
+    SR_Perf.level, SR_Perf.tier = start, SR_Perf.names[start]
+    SR_Perf.reason = "device check"
+
+    local forced = rawget(_G, "SR_PERF_TIER")
+    pcall(function()
+        if forced == nil and type(getgenv) == "function" then forced = rawget(getgenv(), "SR_PERF_TIER") end
+    end)
+    forced = type(forced) == "string" and forced:lower() or nil
+    local map = { low = 1, weak = 1, mid = 2, medium = 2, high = 3 }
+    if forced and map[forced] then
+        SR_Perf.forced = true
+        SR_Perf.level, SR_Perf.tier = map[forced], SR_Perf.names[map[forced]]
+        SR_Perf.reason = "manual SR_PERF_TIER"
+    end
+
+    -- замер FPS: один дешёвый Heartbeat на весь плагин
+    local RS = SR_UI.service("RunService")
+    local frames, acc, lowSec, veryLowSec, goodSec, cooldown, warm = 0, 0, 0, 0, 0, 0, 0
+    pcall(function()
+        SR_Perf.fpsConn = RS.Heartbeat:Connect(function(dt)
+            frames = frames + 1
+            acc = acc + (dt or 0)
+            if acc < 1 then return end
+            local fps = math.floor(frames / acc + 0.5)
+            frames, acc = 0, 0
+            SR_Perf.fps = fps
+            if SR_Perf.forced or SR_Perf.booting then return end
+            warm = warm + 1
+            if warm < 4 then return end                  -- первые секунды после загрузки не считаем
+            if cooldown > 0 then cooldown = cooldown - 1 return end
+            lowSec = fps < 40 and lowSec + 1 or 0
+            veryLowSec = fps < 25 and veryLowSec + 1 or 0
+            goodSec = fps >= 55 and goodSec + 1 or 0
+            local floorL = keyboard and 2 or 1           -- ПК уходит в «низкий» только при совсем плохом FPS
+            if (veryLowSec >= 3 or (lowSec >= 5 and SR_Perf.level > floorL)) and SR_Perf.level > 1 then
+                lowSec, veryLowSec, goodSec, cooldown = 0, 0, 0, 8
+                SR_Perf.setLevel(SR_Perf.level - 1, "low FPS " .. fps)
+            elseif goodSec >= 20 and SR_Perf.level < SR_Perf.maxLevel then
+                lowSec, veryLowSec, goodSec, cooldown = 0, 0, 0, 8
+                SR_Perf.setLevel(SR_Perf.level + 1, "stable FPS " .. fps)
+            end
+        end)
+    end)
+    SR_Perf.log("device: " .. SR_Perf.describe() .. " | graphics " .. (q == 0 and "Auto" or tostring(q))
+        .. " | " .. SR_Perf.reason)
+    -- страховка: если конец файла не дошёл до finishBoot
+    if type(task) == "table" and type(task.delay) == "function" then
+        task.delay(25, function() SR_Perf.finishBoot() end)
+    end
+end
+
+local SR_TEXT_WIDTH = 54
 
 local function SR_Paragraph(sec, title, text)
     if type(title) ~= "string" or type(text) ~= "string" then return end
+    local TX = SR_UI and SR_UI.Text
+    if TX then TX.mark(title, "heading") end
     sec:AddLabel(title)
     local LINE_LEN_CACHE = {}
     local function lineLen(s)
@@ -36,17 +266,26 @@ local function SR_Paragraph(sec, title, text)
         return result
     end
     local line = ""
-    for word in tostring(text):gmatch("%S+") do
-        if line == "" then
-            line = word
-        elseif lineLen(line) + lineLen(word) + 1 <= SR_TEXT_WIDTH then
-            line = line .. " " .. word
-        else
-            sec:AddLabel(line)
-            line = word
+    _G.SR_ICON_MUTE = (tonumber(rawget(_G, "SR_ICON_MUTE")) or 0) + 1
+    local okLines, errLines = pcall(function()
+        for word in tostring(text):gmatch("%S+") do
+            if line == "" then
+                line = word
+            elseif lineLen(line) + lineLen(word) + 1 <= SR_TEXT_WIDTH then
+                line = line .. " " .. word
+            else
+                if TX then TX.mark(line, "about") end
+                sec:AddLabel(line)
+                line = word
+            end
         end
-    end
-    if line ~= "" then sec:AddLabel(line) end
+        if line ~= "" then
+            if TX then TX.mark(line, "about") end
+            sec:AddLabel(line)
+        end
+    end)
+    _G.SR_ICON_MUTE = math.max(0, (tonumber(rawget(_G, "SR_ICON_MUTE")) or 1) - 1)
+    if not okLines then error(errLines, 0) end
 end
 
 local SR_Rota = { list = {}, byObj = {}, conn = nil, RunService = nil }
@@ -86,12 +325,15 @@ function SR_Rota.Attach(obj, maid, speed)
     SR_Rota.list[#SR_Rota.list + 1] = entry
     if not SR_Rota.conn then
         if not SR_Rota.RunService then SR_Rota.RunService = SR_UI.service("RunService") end
-        local frameSkip = 2
-        local frameCount = 0
-        SR_Rota.conn = SR_Rota.RunService.RenderStepped:Connect(function(dt)
+        local frameCount, pendingDt = 0, 0
+        SR_Rota.conn = SR_Rota.RunService.Heartbeat:Connect(function(dt)
             frameCount = frameCount + 1
-            if frameCount < frameSkip then return end
+            pendingDt = pendingDt + (dt or 0)
+            -- слабое устройство: обновляем реже, скорость вращения та же
+            if frameCount < SR_Perf.pick(2, 3, 4) then return end
             frameCount = 0
+            dt = pendingDt * 0.5   -- 0.5 = прежняя видимая скорость вращения
+            pendingDt = 0
             local list = SR_Rota.list
             local i = 1
             while i <= #list do
@@ -481,7 +723,10 @@ SR_UI.moduleFailures = {}
 -- console and the remaining modules keep loading.
 function SR_UI.tryModule(name, body)
     SR_UI.modulesSeen = SR_UI.modulesSeen + 1
+    local t0 = os.clock()
     local ok, err = pcall(body)
+    SR_Perf.times[#SR_Perf.times + 1] = name .. " " .. math.floor((os.clock() - t0) * 1000 + 0.5) .. "ms"
+    pcall(SR_Perf.bootBreath)
     if ok then
         SR_UI.modulesLoaded = SR_UI.modulesLoaded + 1
     else
@@ -521,6 +766,2141 @@ local function SR_Tab(moduleTitle)
     if SR_UI.tab then return SR_UI.tab end
     SR_UI.tab = create(SR_UI.title)
     return SR_UI.tab
+end
+
+-- ============================================================================
+--  SR_UI.Text — понятные названия, пояснения и шрифт для всего меню
+--  • Названия меняются только НА ЭКРАНЕ: ключи сохранения остаются прежними,
+--    поэтому сохранённые настройки игроков не сбрасываются.
+--  • Под неочевидными настройками — короткая серая подсказка,
+--    в начале секции — блок «что это делает».
+--  • Шрифт: Builder Sans (встроен в Roblox, rbxasset — грузится мгновенно).
+--  • Вернуть старые подписи:  _G.SR_TEXT_ORIGINAL = true   (до загрузки)
+--  • Оставить шрифт хоста:    _G.SR_FONT_OFF = true
+-- ============================================================================
+do
+    local T = {}
+    SR_UI.Text = T
+
+    T.enabled     = (rawget(_G, "SR_TEXT_ORIGINAL") ~= true)
+    T.fontEnabled = (rawget(_G, "SR_FONT_OFF") ~= true)
+    T.FAMILY      = "rbxasset://fonts/families/BuilderSans.json"
+    T.width       = 54     -- символов в строке пояснения
+
+    -- ------------------------------------------------------------------
+    -- Заголовки секций (оригинал -> на экране).
+    -- ВАЖНО: не использовать имена из CUR_TITLES/LEGACY_TITLES модуля Fling
+    -- (Auto, Lists, Tuning, Binds, Keys, Config, Status, Reset, Info …):
+    -- Fling удаляет «чужие» карточки с такими заголовками.
+    -- ------------------------------------------------------------------
+    T.Sections = {
+        ["MM2 AIMLOCK"]                = "Aimlock",
+        ["Bindable Buttons Color"]     = "Button Colors",
+        ["About"]                      = "Bomb Jump Settings",
+        ["Mobile Shiftlock Crosshair"] = "Crosshair Glow",
+        ["Pm-WallHop"]                 = "WallHop",
+        ["Omega Auto Revert"]          = "Omega Ping Tuner",
+        -- Fling
+        ["ULTIMATE FLING"]             = "Ultimate Fling",
+        ["Fling"]                      = "Fling Now",
+        ["Auto"]                       = "Auto Fling",
+        ["Lists"]                      = "Fling Targets",
+        ["Tuning"]                     = "Fling Settings",
+        ["Binds"]                      = "Fling Buttons",
+        ["Keys"]                       = "Fling Hotkeys",
+        ["Config"]                     = "Fling Save & Load",
+        ["Info"]                       = "Fling Tools",
+        -- PrismFlux
+        ["Jump FX"]                    = "Jump Effects",
+        ["MM2 Kill FX"]                = "Kill Effects",
+        ["Anya-Port FX"]               = "Body Auras",
+        ["Screen FX"]                  = "Screen Particles",
+        ["Extras"]                     = "Glow, Pet & More",
+        ["Profiles"]                   = "Effect Save Slots",
+        -- Emotes
+        ["Card Browser"]               = "Emote Window",
+        ["Custom Emote"]               = "Emote by ID",
+    }
+
+    -- мелкий подзаголовок под названием секции
+    T.Subtitles = {
+        ["MM2 Aimlock"]            = "Aimlock",
+        ["Bindable Buttons Color"] = "Button Colors",
+        ["ULTIMATE FLING"]         = "Ultimate Fling",
+        ["PrismFlux"]              = "PrismFlux Effects",
+        ["Shiftlock Crosshair"]    = "Crosshair Glow",
+        ["Dynamic MM2 settings by ping"]                         = "Tunes MM2 lag settings to your ping",
+        ["Pictures • favorites • play buttons • mobile layout"]  = "Pick emotes from picture cards",
+        ["7yd7 catalog • native Overdrive H controls"]           = "Search and choose emotes",
+        ["R15 • controls only this plugin's emote track"]        = "Play, stop, repeat, speed (R15 only)",
+        ["Catalog emote asset ID or raw animation ID"]           = "Play any emote by its Roblox ID",
+    }
+
+    -- ------------------------------------------------------------------
+    -- Подписи элементов. Ключ: "Оригинальная секция|Оригинальная подпись"
+    -- или просто "Оригинальная подпись" (для всех секций).
+    -- ------------------------------------------------------------------
+    T.Names = {
+        -- ===== Aimlock =====
+        ["MM2 AIMLOCK|Show Screen Button"]                 = "Show on-screen Aim button",
+        ["MM2 AIMLOCK|Button Size (%)"]                    = "Aim button size",
+        ["MM2 AIMLOCK|Wall Check"]                         = "Ignore targets behind walls",
+        ["MM2 AIMLOCK|FOV Check"]                          = "Only aim inside the circle",
+        ["MM2 AIMLOCK|FOV Radius (px)"]                    = "Circle size (FOV)",
+        ["MM2 AIMLOCK|Smoothness"]                         = "Aim smoothness",
+        ["MM2 AIMLOCK|Horizontal Prediction"]              = "Lead players who strafe",
+        ["MM2 AIMLOCK|Select Player (overrides Murderer)"] = "Aim at a chosen player",
+        ["MM2 AIMLOCK|Clear Player Selection"]             = "Aim at the murderer again",
+        ["MM2 AIMLOCK|Target Body Part"]                   = "Body part to aim at",
+        ["MM2 AIMLOCK|Prediction"]                         = "Aim ahead of runners",
+        ["MM2 AIMLOCK|Quick Toggle"]                       = "Aimlock hotkey",
+
+        -- ===== Button Colors =====
+        ["Bindable Buttons Color|Button color (background/icon)"]           = "Button color",
+        ["Bindable Buttons Color|Toggle ON light color (for dark buttons)"] = "ON color for dark buttons",
+        ["Bindable Buttons Color|Toggle ON dark color (for light buttons)"] = "ON color for light buttons",
+        ["Bindable Buttons Color|Stroke color"]                             = "Outline color",
+        ["Bindable Buttons Color|Pick a button by tap"]                     = "Pick a button by tapping it",
+        ["Bindable Buttons Color|Save current button"]                      = "Save picked button",
+        ["Bindable Buttons Color|Clear current pick (unsaved)"]             = "Cancel current pick",
+        ["Bindable Buttons Color|Clear saved buttons"]                      = "Forget saved buttons",
+        ["Bindable Buttons Color|Reset (restore original)"]                 = "Reset all colors",
+
+        -- ===== Bomb Jump+ =====
+        ["About|Mute Button SFX"]                  = "Mute button click sounds",
+        ["Enable AutoBomb Jump"]                   = "Tap anywhere to bomb jump",
+        ["Enable Auto Bomb Jump"]                  = "Tap anywhere to bomb jump",
+        ["Auto-GetFakeBomb"]                       = "Auto-get the bomb toy",
+        ["Auto-Get FakeBomb"]                      = "Auto-get the bomb toy",
+        ["EnableBomb Jump Big Button"]             = "Big Bomb Jump button",
+        ["Enable Bomb Jump Big Button"]            = "Big Bomb Jump button",
+        ["Bomb Jump Big Button Size"]              = "Big button size",
+        ["EnableBomb Jump Bind Button"]            = "Small round BJ button",
+        ["Enable Bomb Jump Bind Button"]           = "Small round BJ button",
+        ["Bomb Jump Bind Button Size"]             = "Round button size",
+        ["Bomb Jump Keybind"]                      = "Bomb Jump hotkey",
+        ["Enable AutoGold Bomb Jump"]              = "Tap anywhere to gold bomb jump",
+        ["Enable Auto Gold Bomb Jump"]             = "Tap anywhere to gold bomb jump",
+        ["Auto-GetGoldBomb"]                       = "Auto-get the gold bomb toy",
+        ["Auto-Get GoldBomb"]                      = "Auto-get the gold bomb toy",
+        ["EnableGold Bomb Jump Big Button"]        = "Big Gold Bomb Jump button",
+        ["Enable Gold Bomb Jump Big Button"]       = "Big Gold Bomb Jump button",
+        ["Gold Bomb Jump Big Button Size"]         = "Big button size",
+        ["EnableGold Bomb Jump Bind Button"]       = "Small round GBJ button",
+        ["Enable Gold Bomb Jump Bind Button"]      = "Small round GBJ button",
+        ["Gold Bomb Jump Bind Button Size"]        = "Round button size",
+        ["Gold Bomb Jump Keybind"]                 = "Gold Bomb Jump hotkey",
+
+        -- ===== Button Transparency =====
+        ["Button Transparency|Button opacity"]            = "Transparency",
+        ["Button Transparency|Pick a button by tap"]      = "Pick a button by tapping it",
+        ["Button Transparency|Remove manual button pick"] = "Forget picked button",
+        ["Button Transparency|Reset (restore as before)"] = "Reset transparency",
+
+        -- ===== Ultimate Fling =====
+        ["Fling|Sheriff"]        = "Fling Sheriff",
+        ["Fling|Murderer"]       = "Fling Murderer",
+        ["Fling|Selected"]       = "Fling selected player",
+        ["Fling|Everyone"]       = "Fling everyone",
+        ["Fling|Nearest"]        = "Fling nearest player",
+        ["Fling|Start (list)"]   = "Fling the Loop list once",
+        ["Fling|Cancel"]         = "Stop fling",
+        ["Fling|Fling player"]   = "Choose a player to fling",
+        ["Auto|Auto Sheriff"]    = "Auto-fling Sheriff",
+        ["Auto|Auto Murderer"]   = "Auto-fling Murderer",
+        ["Auto|Loop"]            = "Loop fling targets",
+        ["Auto|Aura"]            = "Fling aura",
+        ["Auto|Click"]           = "Tap a player to fling",
+        ["Lists|Select"]         = "Select player",
+        ["Lists|Loop"]           = "Add to Loop list",
+        ["Lists|Clear loop"]     = "Clear Loop list",
+        ["Lists|Whitelist"]      = "Protect player (whitelist)",
+        ["Lists|Un-whitelist"]   = "Remove from whitelist",
+        ["Lists|Clear WL"]       = "Clear whitelist",
+        ["Tuning|Fling Duration"]      = "Fling time (sec)",
+        ["Tuning|Fling Power"]         = "Fling power",
+        ["Tuning|Aura Radius"]         = "Aura radius (studs)",
+        ["Tuning|Loop Interval"]       = "Loop delay (sec)",
+        ["Tuning|Aura Interval"]       = "Aura delay (sec)",
+        ["Tuning|Target Cooldown"]     = "Same-player cooldown (sec)",
+        ["Tuning|Auto Sheriff Delay"]  = "Auto Sheriff check (sec)",
+        ["Tuning|Auto Murderer Delay"] = "Auto Murderer check (sec)",
+        ["Tuning|Role Cache TTL"]      = "Role refresh (sec)",
+        ["Tuning|Auto Return"]         = "Return to my spot after fling",
+        ["Tuning|Notifications"]       = "Show fling notifications",
+        ["Binds|SFX"]                  = "Mute button sounds",
+        ["Binds|Bind Sheriff"]         = "Sheriff button",
+        ["Binds|Bind Murderer"]        = "Murderer button",
+        ["Binds|Bind Selected"]        = "Selected player button",
+        ["Binds|Bind All"]             = "Fling everyone button",
+        ["Binds|Bind Nearest"]         = "Nearest player button",
+        ["Binds|Bind Start"]           = "Loop list button",
+        ["Binds|Bind Cancel"]          = "Stop fling button",
+        ["Binds|Bind Size (%)"]        = "Button size",
+        ["Binds|Reset bind layout"]    = "Reset button positions",
+        ["Binds|Panic"]                = "Panic: stop everything",
+        ["Keys|Clear keys"]            = "Remove all hotkeys",
+        ["Config|Save"]                = "Save Fling settings",
+        ["Config|Reload"]              = "Load saved settings",
+        ["Config|Reset config"]        = "Reset Fling to defaults",
+        ["Info|Clean duplicates"]      = "Remove duplicate menus",
+
+        -- ===== WallHop =====
+        ["Pm-WallHop|Toggle WallHop"]        = "Quick switch on/off",
+        ["Pm-WallHop|Detection distance"]    = "Wall detection range",
+        ["Pm-WallHop|Fling power"]           = "Seam boost power",
+        ["Pm-WallHop|Test Fling"]            = "Test the boost",
+        ["Pm-WallHop|Toggle Keybind"]        = "WallHop on/off hotkey",
+        ["Pm-WallHop|WallHop Jump Key"]      = "Wall jump hotkey",
+        ["Pm-WallHop|Show on-screen button"] = "Show on-screen WallHop button",
+        ["Pm-WallHop|Button size (%)"]       = "WallHop button size",
+
+        -- ===== Crosshair Glow =====
+        ["Mobile Shiftlock Crosshair|Enable Glow"]             = "Enable crosshair glow",
+        ["Mobile Shiftlock Crosshair|Custom Color"]            = "Glow color",
+        ["Mobile Shiftlock Crosshair|Rainbow Mode (RGB)"]      = "Rainbow colors",
+        ["Mobile Shiftlock Crosshair|Rainbow Slow"]            = "Rainbow speed: Slow",
+        ["Mobile Shiftlock Crosshair|Rainbow Normal"]          = "Rainbow speed: Normal",
+        ["Mobile Shiftlock Crosshair|Rainbow Fast"]            = "Rainbow speed: Fast",
+        ["Mobile Shiftlock Crosshair|Rainbow Ultra"]           = "Rainbow speed: Ultra",
+        ["Mobile Shiftlock Crosshair|Random Preset"]           = "Random preset",
+        ["Mobile Shiftlock Crosshair|Random Color"]            = "Random color",
+        ["Mobile Shiftlock Crosshair|Pulsate Transparency"]    = "Blinking",
+        ["Mobile Shiftlock Crosshair|Wave: Sine Wave"]         = "Blink style: Smooth wave",
+        ["Mobile Shiftlock Crosshair|Wave: Breath (smooth)"]   = "Blink style: Breathing",
+        ["Mobile Shiftlock Crosshair|Wave: Triangle"]          = "Blink style: Even",
+        ["Mobile Shiftlock Crosshair|Wave: Pulse (hard)"]      = "Blink style: Hard on/off",
+        ["Mobile Shiftlock Crosshair|Faint Transparency (0.2)"]  = "Blink strength: Faint (20%)",
+        ["Mobile Shiftlock Crosshair|Light Transparency (0.4)"]  = "Blink strength: Light (40%)",
+        ["Mobile Shiftlock Crosshair|Strong Transparency (0.6)"] = "Blink strength: Strong (60%)",
+        ["Mobile Shiftlock Crosshair|Deep Transparency (0.85)"]  = "Blink strength: Deep (85%)",
+        ["Mobile Shiftlock Crosshair|Pulse Slow"]              = "Blink speed: Slow",
+        ["Mobile Shiftlock Crosshair|Pulse Normal"]            = "Blink speed: Normal",
+        ["Mobile Shiftlock Crosshair|Pulse Fast"]              = "Blink speed: Fast",
+        ["Mobile Shiftlock Crosshair|Pulse Ultra"]             = "Blink speed: Ultra",
+        ["Mobile Shiftlock Crosshair|Scale Pulse (Breathing)"] = "Breathing",
+        ["Mobile Shiftlock Crosshair|Subtle Scale (+5%)"]      = "Breathing size: +5%",
+        ["Mobile Shiftlock Crosshair|Light Scale (+10%)"]      = "Breathing size: +10%",
+        ["Mobile Shiftlock Crosshair|Medium Scale (+20%)"]     = "Breathing size: +20%",
+        ["Mobile Shiftlock Crosshair|Heavy Scale (+35%)"]      = "Breathing size: +35%",
+        ["Mobile Shiftlock Crosshair|Enable Trail"]            = "Ghost trail",
+        ["Mobile Shiftlock Crosshair|Trail x1"]                = "Ghost copies: 1",
+        ["Mobile Shiftlock Crosshair|Trail x2"]                = "Ghost copies: 2",
+        ["Mobile Shiftlock Crosshair|Trail x3"]                = "Ghost copies: 3",
+        ["Mobile Shiftlock Crosshair|Trail x5"]                = "Ghost copies: 5",
+        ["Mobile Shiftlock Crosshair|Speed Slow"]              = "Animation speed: Slow",
+        ["Mobile Shiftlock Crosshair|Speed Normal"]            = "Animation speed: Normal",
+        ["Mobile Shiftlock Crosshair|Speed Fast"]              = "Animation speed: Fast",
+        ["Mobile Shiftlock Crosshair|Speed Ultra"]             = "Animation speed: Ultra",
+        ["Mobile Shiftlock Crosshair|Reverse Direction"]       = "Reverse color direction",
+        ["Mobile Shiftlock Crosshair|Reset to Defaults"]       = "Reset crosshair glow",
+        ["Mobile Shiftlock Crosshair|Re-scan Crosshair"]       = "Find the crosshair again",
+
+        -- ===== PrismFlux: Jump FX =====
+        ["Jump FX|Enable jump FX"]                    = "Jump effect",
+        ["Jump FX|Style"]                             = "Effect style",
+        ["Jump FX|Size"]                              = "Effect size",
+        ["Jump FX|Duration x10"]                      = "Duration",
+        ["Jump FX|Echo ring"]                         = "Second ring",
+        ["Jump FX|Combo chain (grows on bunny-hops)"] = "Grows on jumps in a row",
+        ["Jump FX|Mid-air (double jump) ring"]        = "Ring on mid-air jumps",
+        ["Jump FX|Test jump FX"]                      = "Preview jump effect",
+        -- Wings
+        ["Wings|Enable wings"]                  = "Wings",
+        ["Wings|Style"]                         = "Wing style",
+        ["Wings|Color"]                         = "Wing color",
+        ["Wings|Size x10"]                      = "Wing size",
+        ["Wings|Droop (deg)"]                   = "Wing droop (degrees)",
+        ["Wings|Glow light"]                    = "Wings glow",
+        ["Wings|Dust / feathers"]               = "Falling feathers",
+        ["Wings|Dynamic (spread on jump/run)"]  = "Spread when jumping/running",
+        ["Wings|Tip trails"]                    = "Trails from wing tips",
+        ["Wings|Prop ring Style"]               = "Energy ring style",
+        ["Wings|Ring Size x10"]                 = "Energy ring size",
+        ["Wings|Ring Speed x10"]                = "Energy ring speed",
+        ["Wings|Ring halo echo (second ring)"]  = "Double energy ring",
+        ["Wings|Ring glow light"]               = "Energy ring glow",
+        -- Halo
+        ["Halo|Enable halo"]                    = "Halo",
+        ["Halo|Style"]                          = "Halo style",
+        ["Halo|Color"]                          = "Halo color",
+        ["Halo|Speed x10"]                      = "Spin speed",
+        ["Halo|Height x100"]                    = "Height above head",
+        ["Halo|Tilt (deg)"]                     = "Tilt (degrees)",
+        ["Halo|Glow light"]                     = "Halo glow",
+        ["Halo|Satellites (orbiting sparks)"]   = "Orbiting sparks",
+        ["Halo|Mood (dims & sags at low HP)"]   = "React to my health",
+        -- Hat
+        ["Hat|Enable hat"]                      = "Hat",
+        ["Hat|Style"]                           = "Hat style",
+        ["Hat|Color"]                           = "Hat color",
+        ["Hat|Size x10"]                        = "Hat size",
+        ["Hat|Spin x10"]                        = "Hat spin speed",
+        ["Hat|Glow light"]                      = "Hat glow",
+        ["Hat|Fringe (hanging sparks)"]         = "Hanging sparks",
+        ["Hat|Bob (gentle bounce)"]             = "Gentle bounce",
+        -- Sky
+        ["Sky|Preset"]                                          = "Sky preset",
+        ["Sky|Skybox override"]                                 = "Sky picture",
+        ["Sky|Smooth transitions"]                              = "Smooth sky change",
+        ["Sky|Skybox spin (deg/s)"]                             = "Sky rotation speed",
+        ["Sky|Weather intensity x10"]                           = "Weather strength",
+        ["Sky|Wind (0 west · 10 calm · 20 east)"]               = "Wind direction",
+        ["Sky|Wind gusts (GlobalWind: grass, leaves, smoke)"]   = "Wind gusts",
+        ["Sky|Cycle speed x10"]                                 = "Day/night speed",
+        ["Sky|Restore original lighting"]                       = "Restore normal sky",
+        -- Trails
+        ["Trails|Enable trails"]                         = "Body trail",
+        ["Trails|Style"]                                 = "Trail style",
+        ["Trails|Color A"]                               = "Trail start color",
+        ["Trails|Color B"]                               = "Trail end color",
+        ["Trails|Width x10"]                             = "Trail width",
+        ["Trails|Lifetime x10"]                          = "Trail length",
+        ["Trails|Rainbow"]                               = "Rainbow trail",
+        ["Trails|Echo (second ghost trail)"]             = "Second ghost trail",
+        ["Trails|Limb trails"]                           = "Trails on arms and legs",
+        ["Trails|Speed reactive"]                        = "Longer when running fast",
+        ["Trails|Sparks"]                                = "Trail sparks",
+        ["Trails|Reset trail colors to style defaults"]  = "Reset trail colors",
+        -- Kill FX
+        ["MM2 Kill FX|Enable kill FX"]                 = "Kill effect",
+        ["MM2 Kill FX|Style"]                          = "Effect style",
+        ["MM2 Kill FX|Color"]                          = "Effect color",
+        ["MM2 Kill FX|Size x10"]                       = "Effect size",
+        ["MM2 Kill FX|Max distance (0 = any)"]         = "Max distance (studs)",
+        ["MM2 Kill FX|Flash light"]                    = "Flash of light",
+        ["MM2 Kill FX|Kill counter notify"]            = "Show kill counter",
+        ["MM2 Kill FX|Streak rings (2+ kills in 8s)"]  = "Streak rings",
+        ["MM2 Kill FX|Preview on myself"]              = "Preview effect",
+        -- Anya-Port FX
+        ["Anya-Port FX|Aura trailer (energy wake)"] = "Energy wake",
+        ["Anya-Port FX|Aura trailer Color"]         = "Energy wake color",
+        ["Anya-Port FX|Aura trail Length x10"]      = "Energy wake length",
+        ["Anya-Port FX|Aura trail Width x10"]       = "Energy wake width",
+        ["Anya-Port FX|Aura trail sparks"]          = "Energy wake sparks",
+        ["Anya-Port FX|Forcefield (repaint rig)"]   = "Forcefield skin",
+        ["Anya-Port FX|Forcefield Color"]           = "Forcefield color",
+        ["Anya-Port FX|Particle aura Style"]        = "Particle aura style",
+        ["Anya-Port FX|Particle aura Color"]        = "Particle aura color",
+        ["Anya-Port FX|Motion Echo"]                = "Afterimages",
+        ["Anya-Port FX|Echo Color"]                 = "Afterimage color",
+        ["Anya-Port FX|Echo Lifetime x10"]          = "Afterimage lifetime",
+        ["Anya-Port FX|Echo Interval x100"]         = "Afterimage spacing",
+        ["Anya-Port FX|Echo opacity %"]             = "Afterimage visibility (%)",
+        -- Screen FX
+        ["Screen FX|Enable screen particles"] = "Screen particles",
+        ["Screen FX|Style"]                   = "Particle style",
+        ["Screen FX|Color"]                   = "Particle color",
+        ["Screen FX|Rate"]                    = "Amount",
+        ["Screen FX|Size x10"]                = "Particle size",
+        ["Screen FX|Speed x10"]               = "Particle speed",
+        -- Color Presets
+        ["Color Presets|Target"]                 = "Effect to recolor",
+        ["Color Presets|Preset → target"]        = "Apply preset to that effect",
+        ["Color Presets|Preset → ALL"]           = "Apply preset to all effects",
+        ["Color Presets|Random preset → target"] = "Random preset: that effect",
+        ["Color Presets|Random preset → ALL"]    = "Random preset: all effects",
+        ["Color Presets|Rainbow on target"]      = "Rainbow: that effect",
+        ["Color Presets|Rainbow on ALL"]         = "Rainbow: all effects",
+        ["Color Presets|Reset target colors"]    = "Reset colors of that effect",
+        -- Extras
+        ["Extras|Glow light"]                     = "Body glow",
+        ["Extras|Glow range"]                     = "Glow range (studs)",
+        ["Extras|Glow brightness x10"]            = "Glow brightness",
+        ["Extras|Glow pulse"]                     = "Pulsing glow",
+        ["Extras|Glow hue drift"]                 = "Color-shifting glow",
+        ["Extras|Glow outline (Highlight)"]       = "Glowing outline",
+        ["Extras|Glow follows HP"]                = "Glow shows my health",
+        ["Extras|Second head light"]              = "Extra light on head",
+        ["Extras|Glow bloom sprite (soft halo)"]  = "Soft halo around me",
+        ["Extras|Glow casts shadows (costly)"]    = "Glow casts shadows",
+        ["Extras|Aura"]                           = "Orbiting aura",
+        ["Extras|Aura count"]                     = "Aura amount",
+        ["Extras|Aura radius x10"]                = "Aura radius",
+        ["Extras|Aura speed x10"]                 = "Aura speed",
+        ["Extras|Footprint interval x100"]        = "Footprint spacing",
+        ["Extras|Footprint size x10"]             = "Footprint size",
+        ["Extras|Footprint dust puffs"]           = "Footprint dust",
+        ["Extras|Idle spin (halo & hat)"]         = "Spin halo & hat when idle",
+        ["Extras|Spin speed x10"]                 = "Idle spin speed",
+        ["Extras|Spin wobble"]                    = "Wobble while spinning",
+        ["Extras|Pet"]                            = "Pet companion",
+        ["Extras|Pet size x10"]                   = "Pet size",
+        ["Extras|Pet distance x10"]               = "Pet distance",
+        ["Extras|Pet height x10"]                 = "Pet height",
+        ["Extras|Pet speed x10"]                  = "Pet speed",
+        ["Extras|Pet leash (beam to you)"]        = "Pet leash",
+        -- Performance
+        ["Performance|Quality %"]                             = "Effect quality (%)",
+        ["Performance|Animation FPS cap"]                     = "Effect animation FPS limit",
+        ["Performance|Rebuild all active effects"]            = "Rebuild effects",
+        ["Performance|Unload PrismFlux (remove everything)"]  = "Turn off PrismFlux completely",
+        -- Profiles
+        ["Profiles|Slot"]                           = "Save slot",
+        ["Profiles|Save settings → slot"]           = "Save to slot",
+        ["Profiles|Load settings ← slot"]           = "Load from slot",
+        ["Profiles|Reset everything to defaults"]   = "Reset all effects",
+        ["Profiles|Auto-load this slot on start"]   = "Load this slot on start",
+
+        -- ===== Omega =====
+        ["Omega Auto Revert|Auto Revert"]      = "Auto-tune by ping",
+        ["Omega Auto Revert|Adaptive Engine"]  = "Smooth adaptive mode",
+        ["Omega Auto Revert|Lock Config"]      = "Freeze current values",
+        ["Omega Auto Revert|Upgrade Mode"]     = "Extra compensation",
+        ["Omega Auto Revert|Monitor"]          = "Ping monitor on screen",
+        ["Omega Auto Revert|FPS Boost"]        = "FPS boost",
+        ["Omega Auto Revert|Print Telemetry"]  = "Print debug info",
+
+        -- ===== Emotes =====
+        ["Card Browser|Open card browser"]         = "Open emote window",
+        ["Card Browser|Hide card browser"]         = "Hide emote window",
+        ["Card Browser|Open browser on load"]      = "Open the window on start",
+        ["Card Browser|Window transparency (%)"]   = "Window transparency (%)",
+        ["Card Browser|Thumbnail size (%)"]        = "Picture size (%)",
+        ["Card Browser|Center card browser"]       = "Move window to center",
+        ["Card Browser|Remove all screen buttons"] = "Remove pinned emote buttons",
+        ["Emote Library|Search name or ID"]              = "Search by name or ID",
+        ["Emote Library|Favorites only"]                 = "Show favorites only",
+        ["Emote Library|Emote"]                          = "Choose emote",
+        ["Emote Library|Go to page"]                     = "Go to page number",
+        ["Emote Library|Add selected to favorites"]      = "Add to favorites",
+        ["Emote Library|Remove selected from favorites"] = "Remove from favorites",
+        ["Emote Library|Refresh catalog"]                = "Reload emote list",
+        ["Emote Playback|Play selected"]        = "Play selected emote",
+        ["Emote Playback|Random from results"]  = "Play a random emote",
+        ["Emote Playback|Loop emote"]           = "Repeat emote",
+        ["Custom Emote|Custom ID"]              = "Emote ID",
+        ["Custom Emote|Play custom ID"]         = "Play this ID",
+
+        -- ===== Inventory Unlimiter =====
+        ["Inventory Unlimiter|Unlimit Inventory"] = "Remove inventory limit",
+        ["Inventory Unlimiter|Max Items"]         = "Max items shown",
+        ["Inventory Unlimiter|Reapply / Retry"]   = "Apply again",
+    }
+
+    -- имена действий Fling для строк горячих клавиш
+    T.FlingActions = {
+        Sheriff = "Sheriff", Murderer = "Murderer", Selected = "Selected player",
+        All = "Everyone", Nearest = "Nearest player", Start = "Loop list", Cancel = "Stop fling",
+    }
+    -- подписи, которые собираются из частей
+    T.Patterns = {
+        { section = "Keys", pattern = "^Key (.+) %[(.-)%]$", make = function(name, key)
+            return (T.FlingActions[name] or name) .. " hotkey [" .. key .. "]"
+        end },
+    }
+
+    -- ------------------------------------------------------------------
+    -- Короткие подсказки под элементами (одна строка, серым)
+    -- ------------------------------------------------------------------
+    local X10  = "Shown ×10: 10 means 1.0"
+    local X100 = "Shown ×100: 100 means 1.0"
+    T.Hints = {
+        -- Aimlock
+        ["MM2 AIMLOCK|Show Screen Button"]                 = "A round button to turn Aimlock on and off",
+        ["MM2 AIMLOCK|Wall Check"]                         = "Locks on only when the target is visible",
+        ["MM2 AIMLOCK|FOV Check"]                          = "Players outside the circle are ignored",
+        ["MM2 AIMLOCK|FOV Radius (px)"]                    = "Radius of the aim circle in pixels",
+        ["MM2 AIMLOCK|Smoothness"]                         = "0 = instant snap, higher = softer turn",
+        ["MM2 AIMLOCK|Horizontal Prediction"]              = "Aims a bit ahead of players moving sideways",
+        ["MM2 AIMLOCK|Select Player (overrides Murderer)"] = "Aims at this player instead of the murderer",
+        ["MM2 AIMLOCK|Target Body Part"]                   = "Head = precise, HumanoidRootPart = torso",
+        ["MM2 AIMLOCK|Prediction"]                         = "How far ahead of a moving target to aim",
+        ["MM2 AIMLOCK|Quick Toggle"]                       = "Key to turn Aimlock on and off (PC)",
+        -- Button Colors
+        ["Bindable Buttons Color|Button color (background/icon)"]           = "Background and icon of the round buttons",
+        ["Bindable Buttons Color|Toggle ON light color (for dark buttons)"] = "A dark button turns this color while ON",
+        ["Bindable Buttons Color|Toggle ON dark color (for light buttons)"] = "A light button turns this color while ON",
+        ["Bindable Buttons Color|Pick a button by tap"]                     = "Needed for the big Shoot button, then Save",
+        ["Bindable Buttons Color|Save current button"]                      = "Saved buttons keep their color",
+        ["Bindable Buttons Color|Reset (restore original)"]                 = "Restores the original colors of all buttons",
+        -- Bomb Jump+
+        ["Enable AutoBomb Jump"]          = "Hold the bomb, jump, then tap anywhere",
+        ["Enable Auto Bomb Jump"]         = "Hold the bomb, jump, then tap anywhere",
+        ["Auto-GetFakeBomb"]              = "Gets the bomb toy again after every respawn",
+        ["Auto-Get FakeBomb"]             = "Gets the bomb toy again after every respawn",
+        ["EnableBomb Jump Big Button"]    = "Large on-screen button; drag it to move",
+        ["Enable Bomb Jump Big Button"]   = "Large on-screen button; drag it to move",
+        ["EnableBomb Jump Bind Button"]   = "Small round button; drag it to move",
+        ["Enable Bomb Jump Bind Button"]  = "Small round button; drag it to move",
+        ["Bomb Jump Keybind"]             = "Works only in the air (PC)",
+        ["Enable AutoGold Bomb Jump"]     = "Hold the gold bomb, jump, then tap anywhere",
+        ["Enable Auto Gold Bomb Jump"]    = "Hold the gold bomb, jump, then tap anywhere",
+        ["Auto-GetGoldBomb"]              = "Gets the gold bomb again after every respawn",
+        ["Auto-Get GoldBomb"]             = "Gets the gold bomb again after every respawn",
+        ["Gold Bomb Jump Keybind"]        = "Works only in the air (PC)",
+        -- Button Transparency
+        ["Button Transparency|Button opacity"]       = "0 = normal, 100 = fully invisible",
+        ["Button Transparency|Pick a button by tap"] = "For a button that did not change",
+        -- Fling
+        ["Fling|Selected"]          = "The player chosen in Fling Targets",
+        ["Fling|Everyone"]          = "One by one, skips whitelisted players",
+        ["Fling|Start (list)"]      = "To repeat it, use Loop in Auto Fling",
+        ["Auto|Auto Sheriff"]       = "Flings the sheriff as soon as one is found",
+        ["Auto|Auto Murderer"]      = "Flings the murderer as soon as one is found",
+        ["Auto|Loop"]               = "Keeps flinging the Loop list / selected player",
+        ["Auto|Aura"]               = "Flings anyone who comes close to you",
+        ["Auto|Click"]              = "Tap or click a player in the world",
+        ["Lists|Select"]            = "Target for Fling selected player",
+        ["Lists|Loop"]              = "Players for Loop fling targets",
+        ["Lists|Whitelist"]         = "Whitelisted players are never flung",
+        ["Tuning|Fling Duration"]      = "How long one fling attempt lasts",
+        ["Tuning|Fling Power"]         = "1 = normal, 3 = strongest",
+        ["Tuning|Loop Interval"]       = "Pause between flings in Loop",
+        ["Tuning|Aura Interval"]       = "How often the aura checks for players",
+        ["Tuning|Target Cooldown"]     = "Wait before flinging the same player again",
+        ["Tuning|Auto Sheriff Delay"]  = "How often to look for the sheriff",
+        ["Tuning|Auto Murderer Delay"] = "How often to look for the murderer",
+        ["Tuning|Role Cache TTL"]      = "How often roles are checked again",
+        ["Binds|Panic"]                = "Stops all flings and removes the buttons",
+        ["Info|Clean duplicates"]      = "Fixes doubled sections after a re-run",
+        -- WallHop
+        ["Pm-WallHop|Detection distance"]  = "How close a wall must be, in studs",
+        ["Pm-WallHop|Fling power"]         = "Upward push when you pass a wall seam",
+        ["Pm-WallHop|Test Fling"]          = "Works only while WallHop is on",
+        ["Pm-WallHop|WallHop Jump Key"]    = "Press next to a wall to jump off it (PC)",
+        -- Crosshair Glow
+        ["Mobile Shiftlock Crosshair|Pulsate Transparency"]    = "The crosshair fades in and out",
+        ["Mobile Shiftlock Crosshair|Scale Pulse (Breathing)"] = "The crosshair gently grows and shrinks",
+        ["Mobile Shiftlock Crosshair|Enable Trail"]            = "Faded copies follow the crosshair",
+        ["Mobile Shiftlock Crosshair|Re-scan Crosshair"]       = "Use it if the glow is gone after respawn",
+        -- PrismFlux
+        ["Jump FX|Duration x10"]        = X10 .. " sec",
+        ["Wings|Size x10"]              = X10,
+        ["Wings|Ring Size x10"]         = X10,
+        ["Wings|Ring Speed x10"]        = X10,
+        ["Halo|Speed x10"]              = X10,
+        ["Halo|Height x100"]            = X100 .. " stud",
+        ["Halo|Mood (dims & sags at low HP)"] = "Dims and drops when your HP is low",
+        ["Hat|Size x10"]                = X10,
+        ["Hat|Spin x10"]                = X10,
+        ["Sky|Skybox override"]         = "Replaces the sky picture of the preset",
+        ["Sky|Weather intensity x10"]   = X10,
+        ["Sky|Wind (0 west · 10 calm · 20 east)"]             = "0 = west, 10 = no wind, 20 = east",
+        ["Sky|Wind gusts (GlobalWind: grass, leaves, smoke)"] = "Moves grass, leaves and smoke",
+        ["Sky|Cycle speed x10"]         = X10,
+        ["Trails|Width x10"]            = X10,
+        ["Trails|Lifetime x10"]         = X10 .. " sec",
+        ["MM2 Kill FX|Size x10"]        = X10,
+        ["MM2 Kill FX|Max distance (0 = any)"]        = "0 = any distance",
+        ["MM2 Kill FX|Streak rings (2+ kills in 8s)"] = "Extra rings for 2+ deaths within 8 sec",
+        ["Anya-Port FX|Aura trailer (energy wake)"]   = "A stream of energy behind you",
+        ["Anya-Port FX|Aura trail Length x10"]        = X10,
+        ["Anya-Port FX|Aura trail Width x10"]         = X10,
+        ["Anya-Port FX|Forcefield (repaint rig)"]     = "Paints your body like a forcefield",
+        ["Anya-Port FX|Motion Echo"]                  = "Leaves see-through copies as you move",
+        ["Anya-Port FX|Echo Lifetime x10"]            = X10 .. " sec",
+        ["Anya-Port FX|Echo Interval x100"]           = "Shown ×100: lower = more copies",
+        ["Screen FX|Size x10"]          = X10,
+        ["Screen FX|Speed x10"]         = X10,
+        ["Color Presets|Target"]        = "Pick the effect first, then a preset below",
+        ["Extras|Glow brightness x10"]  = X10,
+        ["Extras|Glow casts shadows (costly)"] = "Looks nicer but lowers FPS",
+        ["Extras|Glow follows HP"]      = "The glow changes with your health",
+        ["Extras|Aura"]                 = "Shapes circling around you",
+        ["Extras|Aura radius x10"]      = X10,
+        ["Extras|Aura speed x10"]       = X10,
+        ["Extras|Footprint interval x100"] = "Shown ×100: lower = more footprints",
+        ["Extras|Footprint size x10"]   = X10,
+        ["Extras|Spin speed x10"]       = X10,
+        ["Extras|Pet"]                  = "A small glowing pet follows you",
+        ["Extras|Pet size x10"]         = X10,
+        ["Extras|Pet distance x10"]     = X10,
+        ["Extras|Pet height x10"]       = X10,
+        ["Extras|Pet speed x10"]        = X10,
+        ["Extras|Pet leash (beam to you)"] = "A glowing beam between you and the pet",
+        ["Performance|Quality %"]       = "Lower = more FPS on weak phones",
+        ["Performance|Show effect stats"]                    = "How many effects are running right now",
+        ["Performance|Rebuild all active effects"]           = "Fixes effects that disappeared",
+        ["Performance|Unload PrismFlux (remove everything)"] = "Removes all effects until you re-run it",
+        -- Omega
+        ["Omega Auto Revert|Auto Revert"]     = "Main switch; off = values stop changing",
+        ["Omega Auto Revert|Adaptive Engine"] = "On = smooth tuning, off = 4 fixed profiles",
+        ["Omega Auto Revert|Lock Config"]     = "Pauses changes without turning it off",
+        ["Omega Auto Revert|Upgrade Mode"]    = "Adds a little more lag compensation",
+        ["Omega Auto Revert|Monitor"]         = "Small panel with your ping and profile",
+        ["Omega Auto Revert|FPS Boost"]       = "Turns off shadows and water waves",
+        ["Omega Auto Revert|Print Telemetry"] = "Writes diagnostics to the console (F9)",
+        -- Emotes
+        ["Card Browser|Hide card browser"]        = "Also hides pinned emote buttons",
+        ["Card Browser|Remove all screen buttons"] = "Unpins every emote button from the screen",
+        ["Emote Playback|Random from results"]    = "Random pick from the current search",
+        ["Emote Playback|Keep playing while moving"] = "Off = walking stops the emote",
+        ["Emote Playback|Emote speed"]            = "1 = normal, 0 = pause, 3 = triple speed",
+        ["Custom Emote|Custom ID"]                = "A number, rbxassetid link or catalog link",
+        ["Custom Emote|ID type"]                  = "Catalog emote ID or raw Animation ID",
+        -- Inventory Unlimiter
+        ["Inventory Unlimiter|Reapply / Retry"]   = "Use it if the limit comes back",
+    }
+
+    -- ------------------------------------------------------------------
+    -- Блок «что это делает» в начале секции (ключ — оригинальное имя секции)
+    -- ------------------------------------------------------------------
+    T.About = {
+        ["MM2 AIMLOCK"]            = "Turns your camera to the murderer so your shots hit. Choose a player below to aim at someone else.",
+        ["Bindable Buttons Color"] = "Recolors the small round Shoot Murderer buttons. A button that is switched ON turns the contrast color, so you always see its state.",
+        ["Bomb Jump+"]             = "Blows up the bomb toy under your feet while you are in the air and throws you higher. You need the bomb toy in your hands.",
+        ["Gold Bomb Jump+"]        = "Same as Bomb Jump, but with the gold bomb toy.",
+        ["Button Transparency"]    = "Makes the Shoot Murderer buttons see-through without changing their color.",
+        ["ULTIMATE FLING"]         = "Launches other players far away with physics. Your character comes back to where it was. Whitelisted players are never touched.",
+        ["Fling"]                  = "Tap a button to fling that player once.",
+        ["Auto"]                   = "These keep flinging automatically while they are on.",
+        ["Lists"]                  = "Choose who Loop flings and who is protected.",
+        ["Binds"]                  = "Round buttons on the screen for each Fling action. Drag them anywhere.",
+        ["Keys"]                   = "Turn one on, then press a key to assign it. Turn it off to remove the key. For PC.",
+        ["Pm-WallHop"]             = "Helps you climb walls: jump next to a wall and you bounce off it again. Crossing a seam between two walls gives an extra push up.",
+        ["Mobile Shiftlock Crosshair"] = "Makes the Shift Lock crosshair glow and animate. Turn on the glow, then pick a color, preset or rainbow. Only you see it.",
+        ["Jump FX"]                = "A visual effect every time you jump. All PrismFlux effects are visible only to you.",
+        ["Wings"]                  = "Glowing wings on your back.",
+        ["Halo"]                   = "A glowing ring above your head.",
+        ["Hat"]                    = "A glowing hat that floats on your head.",
+        ["Sky"]                    = "Changes the sky, weather and lighting. Only you see it.",
+        ["Trails"]                 = "A glowing trail behind your character.",
+        ["MM2 Kill FX"]            = "Plays an effect when a player dies near you.",
+        ["Anya-Port FX"]           = "Energy effects around your character.",
+        ["Screen FX"]              = "Particles on your screen, not in the world: sparks, embers, snow, rain, glitch or speed lines.",
+        ["Color Presets"]          = "Quickly recolor any PrismFlux effect.",
+        ["Extras"]                 = "Body glow, orbiting aura, footprints and a pet that follows you.",
+        ["Performance"]            = "Lower these if the game lags with effects on.",
+        ["Profiles"]               = "Your last settings are saved automatically. Slots keep extra setups you can load later.",
+        ["Omega Auto Revert"]      = "Adjusts Overdrive H lag compensation (MM2 revert settings) to your current ping, all by itself.",
+        ["Card Browser"]           = "Opens a window with emote pictures: tap Play to play, the star to add to favorites, the circle to pin a button on the screen.",
+        ["Emote Library"]          = "Search the list, choose an emote, then press Play in Emote Playback.",
+        ["Emote Playback"]         = "Emotes need an R15 avatar. Moving stops the emote unless Keep playing while moving is on.",
+        ["Custom Emote"]           = "Paste an emote ID, choose its type and press Play.",
+        ["Inventory Unlimiter"]    = "Lets the inventory screen show more items than the usual limit. It changes only your screen; the server limit stays.",
+    }
+
+    -- ------------------------------------------------------------------
+    -- служебное
+    -- ------------------------------------------------------------------
+    local function lookup(map, section, label)
+        if type(section) == "string" then
+            local v = map[section .. "|" .. label]
+            if v ~= nil then return v end
+        end
+        return map[label]
+    end
+
+    function T.section(name)
+        if not T.enabled or type(name) ~= "string" then return name end
+        return T.Sections[name] or name
+    end
+
+    function T.subtitle(text)
+        if not T.enabled or type(text) ~= "string" then return text end
+        return T.Subtitles[text] or text
+    end
+
+    function T.label(section, label)
+        if not T.enabled or type(label) ~= "string" then return label end
+        local v = lookup(T.Names, section, label)
+        if v then return v end
+        for _, p in ipairs(T.Patterns) do
+            if p.section == nil or p.section == section then
+                local a, b = label:match(p.pattern)
+                if a then
+                    local ok, out = pcall(p.make, a, b)
+                    if ok and type(out) == "string" then return out end
+                end
+            end
+        end
+        return label
+    end
+
+    function T.hint(section, label)
+        if not T.enabled or type(label) ~= "string" then return nil end
+        return lookup(T.Hints, section, label)
+    end
+
+    -- оригиналы, у которых есть новое имя (для статистики иконок)
+    local renamed = {}
+    for k in pairs(T.Names) do renamed[k:match("|(.*)$") or k] = true end
+    for k in pairs(T.Sections) do renamed[k] = true end
+    for k in pairs(T.Subtitles) do renamed[k] = true end
+    function T.isRenamed(label)
+        return T.enabled and renamed[label] == true
+    end
+
+    local function ulen(s)
+        local ok, n = pcall(utf8.len, s)
+        return (ok and n) or #s
+    end
+    function T.wrap(text, width)
+        local lines, line = {}, ""
+        for word in tostring(text):gmatch("%S+") do
+            if line == "" then
+                line = word
+            elseif ulen(line) + 1 + ulen(word) <= (width or T.width) then
+                line = line .. " " .. word
+            else
+                lines[#lines + 1] = line
+                line = word
+            end
+        end
+        if line ~= "" then lines[#lines + 1] = line end
+        return lines
+    end
+
+    -- ------------------------------------------------------------------
+    -- стили: подсказка / пояснение / автор / подзаголовок
+    -- ------------------------------------------------------------------
+    local function rgb(r, g, b)
+        local ok, c = pcall(function() return Color3.fromRGB(r, g, b) end)
+        return ok and c or nil
+    end
+    T.STYLE = {
+        hint    = { color = rgb(150, 160, 182), delta = -2, weight = "Regular" },
+        about   = { color = rgb(200, 207, 222), delta = -1, weight = "Regular" },
+        credit  = { color = rgb(122, 130, 150), delta = -3, weight = "Regular" },
+        heading = { color = rgb(255, 255, 255), delta = 0,  weight = "Bold" },
+    }
+    T.styleOf = {}            -- [точный текст] = имя стиля
+    local styled   = setmetatable({}, { __mode = "k" })
+    local fonted   = setmetatable({}, { __mode = "k" })
+    local baseSize = setmetatable({}, { __mode = "k" })
+
+    function T.mark(text, style)
+        if type(text) == "string" and T.STYLE[style] then T.styleOf[text] = style end
+        return text
+    end
+
+    local function weightValue(w)
+        local ok, v = pcall(function() return w.Value end)
+        return (ok and tonumber(v)) or 400
+    end
+
+    -- заменяет только семейство шрифта; жирность хоста сохраняется
+    -- (обычный текст не тоньше Medium, чтобы читалось на телефоне)
+    function T.setFont(node, weightName, keepRegular)
+        if not T.fontEnabled or not node then return false end
+        local ok = pcall(function()
+            local cur = node.FontFace
+            local w
+            if weightName then
+                w = Enum.FontWeight[weightName]
+            else
+                w = (cur and cur.Weight) or Enum.FontWeight.Medium
+                if not keepRegular and weightValue(w) < 500 then w = Enum.FontWeight.Medium end
+            end
+            if fonted[node] == w and cur and cur.Family == T.FAMILY then return end
+            node.FontFace = Font.new(T.FAMILY, w, Enum.FontStyle.Normal)
+            fonted[node] = w
+        end)
+        return ok
+    end
+
+    local TEXT_CLASS = { TextLabel = true, TextButton = true, TextBox = true }
+
+    -- шрифт для подписи и её соседей в той же строке меню (значение слайдера,
+    -- выбранный пункт списка, клавиша бинда …)
+    function T.fontTree(node)
+        if not T.fontEnabled or not node then return end
+        local own = T.styleOf[node.Text or ""]
+        if own then T.applyStyle(node, node.Text); return end
+        T.setFont(node)
+        pcall(function()
+            local parent = node.Parent
+            if not parent or parent.ClassName == "ScrollingFrame" then return end
+            local list = parent:GetDescendants()
+            if #list > 40 then return end
+            for _, d in ipairs(list) do
+                if d ~= node and TEXT_CLASS[d.ClassName] and not styled[d] then T.setFont(d) end
+            end
+        end)
+    end
+
+    function T.applyStyle(node, txt)
+        local name = T.styleOf[txt]
+        if not name then return false end
+        if styled[node] == txt then return true end
+        local S = T.STYLE[name]
+        styled[node] = txt
+        pcall(function()
+            local base = baseSize[node] or tonumber(node.TextSize) or 14
+            baseSize[node] = base
+            if S.color then node.TextColor3 = S.color end
+            if S.delta ~= 0 then node.TextSize = math.max(10, base + S.delta) end
+        end)
+        T.setFont(node, S.weight)
+        return true
+    end
+
+    -- стилизует только что созданную строку, если её можно найти сразу
+    local function styleNow(handle, gui, line)
+        local finder = SR_UI.Icons and SR_UI.Icons.findInstance
+        local roots = {}
+        if finder then
+            local inst = finder(handle)
+            if inst then roots[#roots + 1] = inst end
+        end
+        if gui then roots[#roots + 1] = gui end
+        for _, root in ipairs(roots) do
+            local found = false
+            pcall(function()
+                if TEXT_CLASS[root.ClassName] and root.Text == line then
+                    T.applyStyle(root, line); found = true; return
+                end
+                for _, d in ipairs(root:GetDescendants()) do
+                    if TEXT_CLASS[d.ClassName] and d.Text == line and styled[d] ~= line then
+                        T.applyStyle(d, line); found = true; return
+                    end
+                end
+            end)
+            if found then return end
+        end
+    end
+
+    -- добавляет пояснение строками (без иконок) прямо в секцию хоста
+    function T.addLines(rawSection, text, style, gui)
+        if type(rawSection) ~= "table" or type(text) ~= "string" or text == "" then return end
+        local add = rawSection.AddLabel
+        if type(add) ~= "function" then return end
+        _G.SR_ICON_MUTE = (tonumber(rawget(_G, "SR_ICON_MUTE")) or 0) + 1
+        pcall(function()
+            for _, line in ipairs(T.wrap(text, T.width)) do
+                T.styleOf[line] = style
+                local ok, handle = pcall(add, rawSection, line)
+                if ok then styleNow(handle, gui, line) end
+            end
+        end)
+        _G.SR_ICON_MUTE = math.max(0, (tonumber(rawget(_G, "SR_ICON_MUTE")) or 1) - 1)
+    end
+
+    function T.addAbout(rawSection, sectionName, gui)
+        if not T.enabled or type(sectionName) ~= "string" then return end
+        local text = T.About[sectionName]
+        if text then T.addLines(rawSection, text, "about", gui) end
+    end
+
+    function T.addHint(rawSection, sectionName, label, gui)
+        local text = T.hint(sectionName, label)
+        if text then T.addLines(rawSection, text, "hint", gui) end
+    end
+
+    -- шрифт для собственных кнопок плагина (плавающие кнопки, HUD)
+    function T.buttonFont(obj, weightName)
+        return T.setFont(obj, weightName or "Bold")
+    end
+end
+
+-- ============================================================================
+--  SR_UI.Icons — ЕДИНАЯ СИСТЕМА ИКОНОК ДЛЯ ВСЕГО ПЛАГИНА (все модули сразу)
+--  • Lucide Icons 48px: официальные спрайт-листы (latte-soft/lucide-roblox, MIT)
+--  • Иконки вешаются на ВСЁ: заголовки секций, тумблеры, слайдеры, цвета,
+--    дропдауны, кнопки, бинды, выбор игрока, текстбоксы и плавающие кнопки-бинды.
+--  • Отключить иконки:      _G.SR_ICONS_OFF   = true   (до загрузки плагина)
+--  • Только символы (быстро, без картинок): _G.SR_ICONS_GLYPH = true
+-- ============================================================================
+do
+    local Icons = {}
+    SR_UI.Icons = Icons
+
+    Icons.enabled        = (rawget(_G, "SR_ICONS_OFF") ~= true)
+    Icons.forceGlyphs    = (rawget(_G, "SR_ICONS_GLYPH") == true)
+    Icons.decorateLabels = (rawget(_G, "SR_ICONS_NOLABEL") ~= true)
+    Icons.iconSize       = 16
+    Icons.sectionSize    = 18
+    Icons.iconMax        = 18   -- предел для обычных подписей
+    Icons.sectionMax     = 22   -- предел для крупного заголовка секции
+
+    -- [name] = { assetId, offsetX, offsetY } — Lucide 48px, официальные оффсеты
+    Icons.Data = {
+        ["activity"] = { 16898612629, 514, 771 },
+        ["alert-triangle"] = { 16898612629, 771, 98 },
+        ["align-left"] = { 16898612629, 514, 869 },
+        ["anvil"] = { 16898612629, 820, 612 },
+        ["aperture"] = { 16898612629, 771, 661 },
+        ["atom"] = { 16898612629, 404, 918 },
+        ["audio-lines"] = { 16898612629, 355, 967 },
+        ["axe"] = { 16898612629, 869, 710 },
+        ["backpack"] = { 16898612629, 710, 869 },
+        ["ban"] = { 16898612629, 196, 967 },
+        ["battery-charging"] = { 16898612629, 771, 955 },
+        ["bell"] = { 16898612819, 820, 257 },
+        ["bell-off"] = { 16898612819, 771, 49 },
+        ["binary"] = { 16898612819, 563, 771 },
+        ["bomb"] = { 16898612819, 257, 869 },
+        ["book-marked"] = { 16898612819, 49, 869 },
+        ["book-open"] = { 16898612819, 820, 355 },
+        ["box"] = { 16898612819, 771, 196 },
+        ["boxes"] = { 16898612819, 196, 771 },
+        ["braces"] = { 16898612819, 147, 820 },
+        ["brick-wall"] = { 16898612819, 918, 306 },
+        ["brush"] = { 16898612819, 404, 820 },
+        ["bug"] = { 16898612819, 257, 967 },
+        ["camera"] = { 16898612819, 967, 563 },
+        ["check"] = { 16898612819, 710, 869 },
+        ["check-check"] = { 16898612819, 967, 612 },
+        ["chevron-left"] = { 16898612819, 404, 967 },
+        ["chevron-right"] = { 16898612819, 869, 759 },
+        ["chevrons-right"] = { 16898612819, 967, 710 },
+        ["chevrons-up"] = { 16898612819, 869, 808 },
+        ["circle"] = { 16898613044, 771, 355 },
+        ["circle-check"] = { 16898612819, 869, 955 },
+        ["circle-dot"] = { 16898613044, 514, 771 },
+        ["circle-gauge"] = { 16898613044, 0, 820 },
+        ["circle-help"] = { 16898613044, 820, 257 },
+        ["circle-slash"] = { 16898613044, 98, 771 },
+        ["circle-x"] = { 16898613044, 820, 306 },
+        ["clock"] = { 16898613044, 771, 661 },
+        ["cloud"] = { 16898613044, 918, 306 },
+        ["cloud-fog"] = { 16898613044, 514, 918 },
+        ["cloud-lightning"] = { 16898613044, 918, 49 },
+        ["cloud-rain"] = { 16898613044, 147, 820 },
+        ["cloud-snow"] = { 16898613044, 98, 869 },
+        ["cloud-sun"] = { 16898613044, 0, 967 },
+        ["code"] = { 16898613044, 355, 869 },
+        ["cog"] = { 16898613044, 918, 563 },
+        ["columns-3"] = { 16898613044, 771, 710 },
+        ["compass"] = { 16898613044, 514, 967 },
+        ["component"] = { 16898613044, 967, 49 },
+        ["contrast"] = { 16898613044, 918, 355 },
+        ["copy"] = { 16898613044, 918, 612 },
+        ["corner-down-right"] = { 16898613044, 710, 820 },
+        ["cpu"] = { 16898613044, 196, 869 },
+        ["crop"] = { 16898613044, 918, 404 },
+        ["crosshair"] = { 16898613044, 453, 869 },
+        ["crown"] = { 16898613044, 404, 918 },
+        ["dices"] = { 16898613044, 918, 710 },
+        ["disc-3"] = { 16898613044, 771, 857 },
+        ["download"] = { 16898613044, 820, 906 },
+        ["droplet"] = { 16898613044, 820, 955 },
+        ["droplets"] = { 16898613044, 967, 857 },
+        ["eraser"] = { 16898613353, 820, 257 },
+        ["expand"] = { 16898613353, 306, 771 },
+        ["eye"] = { 16898613353, 771, 563 },
+        ["eye-off"] = { 16898613353, 820, 514 },
+        ["fan"] = { 16898613353, 869, 0 },
+        ["fast-forward"] = { 16898613353, 820, 49 },
+        ["feather"] = { 16898613353, 771, 98 },
+        ["file-plus"] = { 16898613353, 918, 49 },
+        ["file-text"] = { 16898613353, 869, 355 },
+        ["files"] = { 16898613353, 771, 710 },
+        ["film"] = { 16898613353, 710, 771 },
+        ["filter"] = { 16898613353, 612, 869 },
+        ["flag"] = { 16898613353, 98, 918 },
+        ["flame"] = { 16898613353, 967, 306 },
+        ["flask-conical"] = { 16898613353, 453, 820 },
+        ["focus"] = { 16898613353, 771, 759 },
+        ["folder-input"] = { 16898613353, 453, 869 },
+        ["folder-open"] = { 16898613353, 820, 759 },
+        ["folder-output"] = { 16898613353, 771, 808 },
+        ["footprints"] = { 16898613353, 918, 710 },
+        ["frame"] = { 16898613353, 710, 918 },
+        ["gamepad-2"] = { 16898613353, 710, 967 },
+        ["gauge"] = { 16898613353, 771, 955 },
+        ["ghost"] = { 16898613353, 869, 906 },
+        ["grid-3x3"] = { 16898613509, 98, 771 },
+        ["hammer"] = { 16898613509, 306, 820 },
+        ["hand"] = { 16898613509, 563, 820 },
+        ["hard-hat"] = { 16898613509, 771, 147 },
+        ["hash"] = { 16898613509, 147, 771 },
+        ["heart"] = { 16898613509, 661, 771 },
+        ["heart-pulse"] = { 16898613509, 771, 661 },
+        ["help-circle"] = { 16898613509, 563, 869 },
+        ["hourglass"] = { 16898613509, 49, 918 },
+        ["image"] = { 16898613509, 306, 918 },
+        ["images"] = { 16898613509, 257, 967 },
+        ["infinity"] = { 16898613509, 661, 820 },
+        ["info"] = { 16898613509, 612, 869 },
+        ["key"] = { 16898613509, 869, 404 },
+        ["key-round"] = { 16898613509, 967, 306 },
+        ["keyboard"] = { 16898613509, 453, 820 },
+        ["layers"] = { 16898613509, 98, 967 },
+        ["layout-grid"] = { 16898613509, 918, 404 },
+        ["leaf"] = { 16898613509, 918, 661 },
+        ["lightbulb"] = { 16898613509, 918, 196 },
+        ["link"] = { 16898613509, 918, 453 },
+        ["list"] = { 16898613509, 869, 808 },
+        ["list-plus"] = { 16898613509, 661, 967 },
+        ["list-x"] = { 16898613509, 918, 759 },
+        ["lock"] = { 16898613509, 918, 857 },
+        ["map-pin"] = { 16898613613, 820, 257 },
+        ["maximize-2"] = { 16898613613, 820, 514 },
+        ["medal"] = { 16898613613, 563, 771 },
+        ["megaphone"] = { 16898613613, 869, 0 },
+        ["memory-stick"] = { 16898613613, 771, 98 },
+        ["minimize-2"] = { 16898613613, 967, 0 },
+        ["monitor"] = { 16898613613, 404, 820 },
+        ["moon"] = { 16898613613, 306, 918 },
+        ["mountain"] = { 16898613613, 869, 612 },
+        ["mouse-pointer"] = { 16898613613, 612, 869 },
+        ["mouse-pointer-2"] = { 16898613613, 820, 661 },
+        ["mouse-pointer-click"] = { 16898613613, 771, 710 },
+        ["move"] = { 16898613613, 453, 820 },
+        ["move-3d"] = { 16898613613, 514, 967 },
+        ["move-horizontal"] = { 16898613613, 147, 869 },
+        ["move-vertical"] = { 16898613613, 820, 453 },
+        ["music"] = { 16898613613, 967, 563 },
+        ["music-2"] = { 16898613613, 404, 869 },
+        ["music-4"] = { 16898613613, 306, 967 },
+        ["network"] = { 16898613613, 710, 820 },
+        ["nut"] = { 16898613613, 967, 355 },
+        ["orbit"] = { 16898613613, 967, 612 },
+        ["package"] = { 16898613613, 918, 196 },
+        ["paint-bucket"] = { 16898613613, 196, 918 },
+        ["paintbrush"] = { 16898613613, 918, 453 },
+        ["palette"] = { 16898613613, 453, 918 },
+        ["pause"] = { 16898613699, 0, 771 },
+        ["pause-circle"] = { 16898613613, 967, 955 },
+        ["paw-print"] = { 16898613699, 771, 257 },
+        ["pencil"] = { 16898613699, 820, 257 },
+        ["percent"] = { 16898613699, 771, 563 },
+        ["person-standing"] = { 16898613699, 563, 771 },
+        ["pickaxe"] = { 16898613699, 355, 771 },
+        ["play"] = { 16898613699, 918, 257 },
+        ["play-circle"] = { 16898613699, 49, 869 },
+        ["power"] = { 16898613699, 820, 147 },
+        ["power-off"] = { 16898613699, 918, 49 },
+        ["puzzle"] = { 16898613699, 49, 918 },
+        ["radar"] = { 16898613699, 820, 404 },
+        ["refresh-ccw"] = { 16898613699, 820, 453 },
+        ["refresh-cw"] = { 16898613699, 404, 869 },
+        ["repeat"] = { 16898613699, 820, 710 },
+        ["rewind"] = { 16898613699, 563, 967 },
+        ["rocket"] = { 16898613699, 918, 147 },
+        ["rotate-ccw"] = { 16898613699, 967, 355 },
+        ["rotate-cw"] = { 16898613699, 869, 453 },
+        ["route"] = { 16898613699, 404, 918 },
+        ["rows-3"] = { 16898613699, 918, 661 },
+        ["ruler"] = { 16898613699, 710, 869 },
+        ["save"] = { 16898613699, 918, 453 },
+        ["scaling"] = { 16898613699, 967, 661 },
+        ["scissors"] = { 16898613699, 820, 857 },
+        ["search"] = { 16898613699, 918, 857 },
+        ["send"] = { 16898613699, 967, 857 },
+        ["settings"] = { 16898613777, 771, 257 },
+        ["settings-2"] = { 16898613777, 0, 771 },
+        ["shapes"] = { 16898613777, 257, 771 },
+        ["share-2"] = { 16898613777, 771, 514 },
+        ["shield"] = { 16898613777, 869, 0 },
+        ["shield-alert"] = { 16898613777, 49, 771 },
+        ["shield-check"] = { 16898613777, 820, 257 },
+        ["shield-question"] = { 16898613777, 563, 771 },
+        ["shield-x"] = { 16898613777, 514, 820 },
+        ["shrink"] = { 16898613777, 355, 771 },
+        ["sigma"] = { 16898613777, 820, 563 },
+        ["signal"] = { 16898613777, 918, 0 },
+        ["siren"] = { 16898613777, 771, 147 },
+        ["skip-back"] = { 16898613777, 147, 771 },
+        ["skip-forward"] = { 16898613777, 98, 820 },
+        ["skull"] = { 16898613777, 49, 869 },
+        ["sliders"] = { 16898613777, 404, 771 },
+        ["sliders-horizontal"] = { 16898613777, 820, 355 },
+        ["smartphone"] = { 16898613777, 257, 918 },
+        ["smile"] = { 16898613777, 869, 563 },
+        ["snowflake"] = { 16898613777, 771, 661 },
+        ["sparkle"] = { 16898613777, 967, 0 },
+        ["sparkles"] = { 16898613777, 918, 49 },
+        ["spray-can"] = { 16898613777, 967, 257 },
+        ["square-dot"] = { 16898613777, 918, 355 },
+        ["square-mouse-pointer"] = { 16898613777, 869, 661 },
+        ["square-stack"] = { 16898613777, 453, 869 },
+        ["star"] = { 16898613777, 967, 147 },
+        ["star-off"] = { 16898613777, 612, 967 },
+        ["stop-circle"] = { 16898613777, 453, 918 },
+        ["sun"] = { 16898613777, 967, 453 },
+        ["sun-medium"] = { 16898613777, 661, 967 },
+        ["sun-moon"] = { 16898613777, 967, 196 },
+        ["swatch-book"] = { 16898613777, 869, 808 },
+        ["table"] = { 16898613777, 820, 955 },
+        ["tablet"] = { 16898613777, 918, 906 },
+        ["target"] = { 16898613869, 514, 771 },
+        ["tent"] = { 16898613869, 49, 771 },
+        ["terminal"] = { 16898613869, 820, 257 },
+        ["test-tube"] = { 16898613869, 257, 820 },
+        ["text-cursor-input"] = { 16898613869, 771, 563 },
+        ["thermometer"] = { 16898613869, 869, 257 },
+        ["thumbs-up"] = { 16898613869, 771, 355 },
+        ["timer"] = { 16898613869, 918, 0 },
+        ["toggle-left"] = { 16898613869, 869, 49 },
+        ["toggle-right"] = { 16898613869, 820, 98 },
+        ["tornado"] = { 16898613869, 771, 147 },
+        ["trash"] = { 16898613869, 918, 514 },
+        ["trash-2"] = { 16898613869, 257, 918 },
+        ["tree-pine"] = { 16898613869, 771, 661 },
+        ["trees"] = { 16898613869, 661, 771 },
+        ["trending-up"] = { 16898613869, 514, 918 },
+        ["trophy"] = { 16898613869, 820, 147 },
+        ["type"] = { 16898613869, 967, 257 },
+        ["umbrella"] = { 16898613869, 869, 355 },
+        ["unlink"] = { 16898613869, 869, 612 },
+        ["unlock"] = { 16898613869, 771, 710 },
+        ["upload"] = { 16898613869, 612, 869 },
+        ["user"] = { 16898613869, 661, 869 },
+        ["user-check"] = { 16898613869, 918, 98 },
+        ["user-minus"] = { 16898613869, 49, 967 },
+        ["user-plus"] = { 16898613869, 918, 355 },
+        ["user-round"] = { 16898613869, 967, 563 },
+        ["user-search"] = { 16898613869, 918, 612 },
+        ["user-x"] = { 16898613869, 710, 820 },
+        ["users"] = { 16898613869, 967, 98 },
+        ["video"] = { 16898613869, 355, 967 },
+        ["volume-2"] = { 16898613869, 771, 808 },
+        ["volume-x"] = { 16898613869, 710, 869 },
+        ["wand"] = { 16898613869, 404, 967 },
+        ["wand-2"] = { 16898613869, 918, 453 },
+        ["wand-sparkles"] = { 16898613869, 453, 918 },
+        ["waves"] = { 16898613869, 820, 808 },
+        ["wifi"] = { 16898613869, 869, 808 },
+        ["wind"] = { 16898613869, 820, 857 },
+        ["wrench"] = { 16898613869, 820, 906 },
+        ["x"] = { 16898613869, 869, 906 },
+        ["zap"] = { 16898613869, 918, 906 },
+        ["zap-off"] = { 16898613869, 967, 857 },
+        ["swords"] = { 16898613777, 967, 759 },
+        ["x-circle"] = { 16898613869, 771, 955 },
+        ["gem"] = { 16898613353, 918, 857 },
+        ["sunset"] = { 16898613777, 967, 710 },
+        ["square"] = { 16898613777, 869, 710 },
+        ["moon-star"] = { 16898613613, 355, 869 },
+        ["radiation"] = { 16898613699, 771, 453 },
+        ["flower-2"] = { 16898613353, 869, 661 },
+        ["circle-dashed"] = { 16898613044, 0, 771 },
+    }
+
+    -- запасной символ: если спрайт не загрузился (нет ассета/медленный CDN)
+    Icons.Glyph = {}   -- эмодзи-заменители удалены: всегда показывается настоящая иконка
+
+    -- все подписи плагина: если перехват меню не сработал, иконки всё равно найдутся по тексту
+    Icons.Known = {
+        Section = {
+            "MM2 AIMLOCK", "Bindable Buttons Color", "About", "Bomb Jump+", "Gold Bomb Jump+", "Button Transparency",
+            "Fling", "Auto", "Lists", "Tuning", "Binds", "Keys", "Config", "Info", "Pm-WallHop", "Jump FX", "Wings",
+            "Halo", "Hat", "Sky", "Trails", "MM2 Kill FX", "Anya-Port FX", "Screen FX", "Color Presets", "Extras",
+            "Performance", "Profiles", "Mobile Shiftlock Crosshair", "Omega Auto Revert", "Card Browser",
+            "Emote Library", "Emote Playback", "Custom Emote", "Inventory Unlimiter",
+        },
+        Toggle = {
+            "Enable Aimlock", "Show Screen Button", "Wall Check", "FOV Check", "Horizontal Prediction",
+            "Mute Button SFX", "Enable Auto", "Auto-Get", "Enable", "Auto Sheriff", "Auto Murderer", "Loop", "Aura",
+            "Click", "Auto Return", "Notifications", "SFX", "Bind ", "Key ", "Enable WallHop",
+            "Show on-screen button", "Enable jump FX", "Ground flash", "Sparks", "Light column", "Echo ring",
+            "Combo chain (grows on bunny-hops)", "Random style each jump", "Mid-air (double jump) ring",
+            "Enable wings", "Flapping", "Glow light", "Dust / feathers", "Dynamic (spread on jump/run)", "Tip trails",
+            "Energy ring behind wings", "Ring halo echo (second ring)", "Ring glow light", "Enable halo",
+            "Satellites (orbiting sparks)", "Mood (dims & sags at low HP)", "Enable hat", "Fringe (hanging sparks)",
+            "Bob (gentle bounce)", "Smooth transitions", "Wind gusts (GlobalWind: grass, leaves, smoke)",
+            "Day/night cycle", "Enable trails", "Rainbow", "Echo (second ghost trail)", "Limb trails",
+            "Speed reactive", "Enable kill FX", "Flash light", "Kill counter notify", "Streak rings (2+ kills in 8s)",
+            "Also on my own death", "Aura trailer (energy wake)", "Aura trail sparks", "Forcefield (repaint rig)",
+            "Particle aura", "Motion Echo", "Enable screen particles", "Rainbow on target", "Rainbow on ALL",
+            "Glow pulse", "Glow hue drift", "Glow outline (Highlight)", "Glow follows HP", "Second head light",
+            "Glow bloom sprite (soft halo)", "Glow casts shadows (costly)", "Footprints", "Footprint sparks",
+            "Footprint dust puffs", "Idle spin (halo & hat)", "Spin wobble", "Pet", "Pet trail",
+            "Pet leash (beam to you)", "Pet reacts to events", "Auto-load this slot on start", "Enable Glow",
+            "Rainbow Mode (RGB)", "Pulsate Transparency", "Scale Pulse (Breathing)", "Enable Trail",
+            "Reverse Direction", "Open browser on load", "Favorites only", "Loop emote", "Keep playing while moving",
+            "Unlimit Inventory",
+        },
+        Slider = {
+            "Button Size (%)", "FOV Radius (px)", "Smoothness", "Button opacity", "Fling Duration", "Fling Power",
+            "Aura Radius", "Loop Interval", "Aura Interval", "Target Cooldown", "Auto Sheriff Delay",
+            "Auto Murderer Delay", "Role Cache TTL", "Bind Size (%)", "Detection distance", "Fling power",
+            "Button size (%)", "Size", "Duration x10", "Size x10", "Droop (deg)", "Ring Size x10", "Ring Speed x10",
+            "Speed x10", "Height x100", "Tilt (deg)", "Spin x10", "Skybox spin (deg/s)", "Weather intensity x10",
+            "Wind (0 west · 10 calm · 20 east)", "Cycle speed x10", "Width x10", "Lifetime x10",
+            "Max distance (0 = any)", "Aura trail Length x10", "Aura trail Width x10", "Echo Lifetime x10",
+            "Echo Interval x100", "Echo opacity %", "Rate", "Glow range", "Glow brightness x10", "Aura count",
+            "Aura radius x10", "Aura speed x10", "Footprint interval x100", "Footprint size x10", "Spin speed x10",
+            "Pet size x10", "Pet distance x10", "Pet height x10", "Pet speed x10", "Quality %",
+            "Window transparency (%)", "Thumbnail size (%)", "Emote speed", "Max Items",
+        },
+        Colorpicker = {
+            "Button color (background/icon)", "Toggle ON light color (for dark buttons)",
+            "Toggle ON dark color (for light buttons)", "Text color", "Stroke color", "Color", "Color A", "Color B",
+            "Aura trailer Color", "Forcefield Color", "Particle aura Color", "Echo Color", "Glow color", "Aura color",
+            "Footprint color", "Pet color", "Custom Color",
+        },
+        Dropdown = {
+            "Target Body Part", "Prediction", "Style", "Prop ring Style", "Preset", "Skybox override", "Clouds",
+            "Color filter", "Weather", "Particle aura Style", "Target", "Preset → target", "Preset → ALL",
+            "Rainbow speed", "Aura shape", "Footprint style", "Pet style", "Pet motion", "Animation FPS cap", "Slot",
+            "Emote", "ID type",
+        },
+        Button = {
+            "Clear Player Selection", "Pick a button by tap", "Save current button", "Clear current pick (unsaved)",
+            "Clear saved buttons", "Reset (restore original)", "Remove manual button pick",
+            "Reset (restore as before)", "Sheriff", "Murderer", "Selected", "Everyone", "Nearest", "Start (list)",
+            "Cancel", "Clear loop", "Clear WL", "Reset bind layout", "Panic", "Clear keys", "Save", "Reload",
+            "Reset config", "Clean duplicates", "Toggle WallHop", "Test Fling", "Test jump FX",
+            "Restore original lighting", "Reset trail colors to style defaults", "Preview on myself",
+            "Random preset → target", "Random preset → ALL", "Reset target colors", "Show effect stats",
+            "Rebuild all active effects", "Unload PrismFlux (remove everything)", "Save settings → slot",
+            "Load settings ← slot", "Reset everything to defaults", "Rainbow ", "Random Preset", "Random Color",
+            "Wave: ", "Speed ", "Reset to Defaults", "Re-scan Crosshair", "Print Telemetry", "Open card browser",
+            "Hide card browser", "Center card browser", "Remove all screen buttons", "Clear search", "Previous page",
+            "Next page", "Add selected to favorites", "Remove selected from favorites", "Refresh catalog",
+            "Play selected", "Stop emote", "Random from results", "Play custom ID", "Reapply / Retry",
+        },
+        Keybind = {
+            "Quick Toggle", "Toggle Keybind", "WallHop Jump Key",
+        },
+        PlayerDropdown = {
+            "Select Player (overrides Murderer)", "Fling player", "Select", "Loop", "Whitelist", "Un-whitelist",
+        },
+        TextBox = {
+            "Search name or ID", "Go to page", "Custom ID",
+        },
+        Label = {
+            "Developer: Noir_Creator | V4 Edition (improved)", "Info", "Change button colors",
+            "Saved buttons keep their color • Reset clears everything", "Bomb Jump+", "Button opacity",
+            "0 = as before • 100 = invisible", "Ultimate Fling • by ", "HUD drag • Binds drag • config saved → ",
+            "Pm-WallHop Script by @Phemtom (Improved)", "ULTRA GLOW+ EDITION v3.7", "PULSE v2 (improved)",
+            "SCALE PULSE v2 (Breathing)", "TRAIL / ECHO (ghost trail)", "SETTINGS", "COLOR PRESETS (",
+            "HOW IT WORKS:", "1. Turn on Enable Glow", "2. Pick a preset / Color / Rainbow",
+            "3. Pulse: waveform + depth", "4. Scale Pulse: breathing amplitude", "5. Trail — ghost crosshair echo",
+            "6. Random — just for fun!", "Credits: Noir_Creator", "About", "Compatibility", "Card browser",
+            "Preparing catalog...", "Page 1", "Selected: none", "Search: ", "Ready — select an emote and press Play",
+            "Playback behavior", "Saved ID: ", "About this port", "Saving",
+            "Inventory Unlimiter V5 • client-side limit only", "What it does", "Initializing...",
+        },
+        Paragraph = {
+            "Info", "Pm-WallHop",
+        },
+    }
+
+    -- ---------------- очистка эмодзи в тексте интерфейса ----------------
+    -- убираем четырёхбайтовые эмодзи и декоративные символы, но сохраняем
+    -- смысловые знаки: звезды, стрелки, буллиты, тире
+    local function cleanText(s)
+        if type(s) ~= "string" or s == "" then return s end
+        local out = s
+        out = out:gsub("\226\152\133", "\001")   -- ★
+        out = out:gsub("\226\152\134", "\002")   -- ☆
+        out = out:gsub("\226\128\162", "\003")   -- •
+        out = out:gsub("\226\128\148", "\004")   -- —
+        out = out:gsub("\226\134\144", "\005")   -- ←
+        out = out:gsub("\226\134\145", "\006")   -- ↑
+        out = out:gsub("\226\134\146", "\007")   -- →
+        out = out:gsub("\226\134\147", "\010")   -- ↓
+        out = out:gsub("[\240-\244][\128-\191][\128-\191][\128-\191]", "")  -- эмодзи U+10000+
+        out = out:gsub("\239\184[\128-\143]", "")           -- variation selectors
+        out = out:gsub("\226\128\141", "")                   -- ZWJ
+        out = out:gsub("\226\134[\148-\191]", "")           -- стрелки U+2194..U+21BF
+        out = out:gsub("\226\135[\128-\191]", "")           -- стрелки U+21C0..U+21FF
+        out = out:gsub("\226[\140-\143][\128-\191]", "")   -- U+2300..U+23FF (⌨ ⏏)
+        out = out:gsub("\226\150[\160-\191]", "")           -- U+25A0..U+25BF (▶ ■)
+        out = out:gsub("\226\151[\128-\132]", "")           -- U+25C0..U+25C4
+        out = out:gsub("\226[\152-\158][\128-\191]", "")   -- U+2600..U+27BF (⚡ ✨ ⚙)
+        out = out:gsub("\226[\172-\175][\128-\191]", "")   -- U+2B00..U+2BFF
+        out = out:gsub("\227\128[\128-\191]", "")           -- U+3000..U+303F (〰)
+        out = out:gsub("[ \t]+", " ")
+        out = out:gsub("^%s+", ""):gsub("%s+$", "")
+        out = out:gsub("\001", "\226\152\133"):gsub("\002", "\226\152\134")
+        out = out:gsub("\003", "\226\128\162"):gsub("\004", "\226\128\148")
+        out = out:gsub("\005", "\226\134\144"):gsub("\006", "\226\134\145")
+        out = out:gsub("\007", "\226\134\146"):gsub("\010", "\226\134\147")
+        return out
+    end
+    Icons.clean = cleanText
+
+    local V2, U2 = Vector2.new, UDim2.new
+    local RECT = V2(48, 48)
+
+    -- иконки не из Lucide (в Lucide нет оружия):
+    --   gun   — белый силуэт пистолета, картинка 129186730 (Creator Store, изображение целиком)
+    --   knife — Phosphor Icons, спрайт 73204759758087 (набор StyearX/Icons), ячейка 26x26
+    Icons.Extra = {
+        ["gun"]   = { image = 129186730 },
+        ["knife"] = { image = 73204759758087, rect = { 26, 26 }, offset = { 866, 525 } },
+    }
+
+    function Icons.has(name)
+        return name ~= nil and (Icons.Data[name] ~= nil or Icons.Extra[name] ~= nil)
+    end
+
+    function Icons.get(name)
+        local d = Icons.Data[name]
+        if d then
+            return {
+                url    = "rbxassetid://" .. tostring(d[1]),
+                size   = RECT,
+                offset = V2(d[2], d[3]),
+            }
+        end
+        local e = Icons.Extra[name]
+        if not e then return nil end
+        return {
+            url    = "rbxassetid://" .. tostring(e.image),
+            size   = e.rect and V2(e.rect[1], e.rect[2]) or V2(0, 0),
+            offset = e.offset and V2(e.offset[1], e.offset[2]) or V2(0, 0),
+        }
+    end
+
+    -- иконка по умолчанию для каждого типа контрола
+    Icons.KindIcons = {
+        Section = "layout-grid", Toggle = "toggle-left", Slider = "sliders-horizontal",
+        Colorpicker = "palette", Dropdown = "list", Button = "mouse-pointer-click",
+        Keybind = "keyboard", PlayerDropdown = "users", TextBox = "text-cursor-input",
+        Label = "info", Paragraph = "align-left", Object = "square-dot",
+        Subtitle = "puzzle",
+    }
+    Icons.KindGlyph = {
+        Section = "•", Toggle = "•", Slider = "•", Colorpicker = "•", Dropdown = "•",
+        Button = "•", Keybind = "•", PlayerDropdown = "•", TextBox = "•",
+        Label = "•", Paragraph = "•", Object = "•",
+    }
+
+    -- точные иконки для заголовков секций
+    Icons.SectionIcons = {
+        ["sky"] = "cloud-sun",
+        ["anya-port fx"] = "wand-2",
+        ["extras"] = "puzzle",
+        ["performance"] = "gauge",
+        ["profiles"] = "save",
+        ["custom emote"] = "smile",
+        ["mm2 aimlock"]                  = "crosshair",
+        ["bindable buttons color"]       = "palette",
+        ["bomb jump+"]                   = "bomb",
+        ["gold bomb jump+"]              = "bomb",
+        ["prismflux"]                    = "sparkles",
+        ["omega"]                        = "gauge",
+        ["emotes"]                       = "smile",
+        ["button transparency"]          = "eye-off",
+        ["ultimate fling"]               = "zap",
+        ["fling"]                        = "zap",
+        ["auto"]                         = "repeat",
+        ["lists"]                        = "list",
+        ["tuning"]                       = "sliders-horizontal",
+        ["binds"]                        = "move",
+        ["keys"]                         = "key-round",
+        ["config"]                       = "settings",
+        ["info"]                         = "info",
+        ["about"]                        = "info",
+        ["pm-wallhop"]                   = "footprints",
+        ["pm-wallhop script by @phemtom (improved)"] = "footprints",
+        ["shiftlock crosshair"]          = "target",
+        ["mobile shiftlock crosshair"] = "target",
+        ["omega auto revert"]            = "gauge",
+        ["card browser"]                 = "images",
+        ["emote library"]                = "music",
+        ["emote playback"]               = "play-circle",
+        ["inventory unlimiter"]          = "backpack",
+    }
+
+    -- точные иконки для конкретных подписей (приоритетнее правил ниже)
+    Icons.LabelIcons = {
+        -- пресеты свечения прицела: аналоги прежних эмодзи
+        ["obsidian"] = "mountain",
+        ["gold"] = "sparkles",
+        ["neon"] = "lightbulb",
+        ["cyber"] = "cpu",
+        ["crimson"] = "heart",
+        ["emerald"] = "gem",
+        ["ocean"] = "waves",
+        ["sunset"] = "sunset",
+        ["platinum"] = "circle",
+        ["ice"] = "snowflake",
+        ["lava"] = "flame",
+        ["dark"] = "moon",
+        ["electric purple"] = "zap",
+        ["monochrome"] = "contrast",
+        ["cosmic red"] = "orbit",
+        ["cosmic blue"] = "orbit",
+        ["amethyst"] = "gem",
+        ["slate gray"] = "square",
+        ["midnight blue"] = "moon-star",
+        ["toxic"] = "radiation",
+        ["mint"] = "leaf",
+        ["rose gold"] = "flower-2",
+        ["aurora"] = "sparkles",
+        ["blood moon"] = "droplet",
+        ["void"] = "circle-dashed",
+        ["select player (overrides murderer)"] = "user-search",
+        ["sheriff"] = "gun", ["murderer"] = "knife", ["nearest"] = "map-pin",
+        ["everyone"] = "users", ["selected"] = "user-check", ["start (list)"] = "play",
+        ["cancel"] = "x-circle", ["panic"] = "siren", ["fling player"] = "user-search",
+        ["clear wl"] = "eraser", ["reset config"] = "rotate-ccw",
+        ["save"] = "save", ["reload"] = "refresh-cw", ["print telemetry"] = "activity",
+        ["open card browser"] = "folder-open", ["hide card browser"] = "eye-off",
+        ["center card browser"] = "focus", ["refresh catalog"] = "refresh-cw",
+        ["search name or id"] = "search", ["clear search"] = "eraser",
+        ["go to page"] = "corner-down-right", ["next page"] = "chevron-right",
+        ["previous page"] = "chevron-left", ["play selected"] = "play",
+        ["play custom id"] = "play", ["stop emote"] = "stop-circle",
+        ["add selected to favorites"] = "star", ["remove selected from favorites"] = "star-off",
+        ["random from results"] = "dices", ["clean duplicates"] = "eraser",
+        ["clear saved buttons"] = "trash-2", ["save current button"] = "save",
+        ["pick a button by tap"] = "mouse-pointer-click",
+        ["remove manual button pick"] = "eraser", ["clear current pick (unsaved)"] = "eraser",
+        ["remove all screen buttons"] = "trash-2", ["reset bind layout"] = "rotate-ccw",
+        ["clear keys"] = "eraser", ["clear loop"] = "eraser",
+        ["unlimit inventory"] = "backpack", ["max items"] = "boxes",
+        ["enable wallhop"] = "footprints", ["wallhop jump key"] = "keyboard",
+        ["toggle keybind"] = "keyboard", ["whitelist"] = "user-check",
+        ["un-whitelist"] = "user-x", ["loop"] = "repeat", ["select"] = "user-search",
+        ["custom id"] = "hash", ["target"] = "target",
+    }
+
+    -- правила: ищем подстроку в подписи (нижний регистр), первое совпадение выигрывает
+    Icons.Rules = {
+        -- оружие и роли MM2 — приоритетнее всего остального
+        { "shoot", "gun" }, { "sheriff", "gun" }, { " gun", "gun" }, { "gun ", "gun" },
+        { "murderer", "knife" }, { "knife", "knife" }, { "murder", "knife" },
+        { "bomb", "bomb" }, { "aimlock", "crosshair" }, { "aim ", "crosshair" },
+        -- высокий приоритет: составные подписи
+        { "clear player", "user-x" }, { "select player", "user-search" },
+        { "save settings", "save" }, { "load settings", "folder-open" },
+        { "window transparency", "eye-off" }, { "window", "monitor" },
+        { "screen particles", "sparkles" }, { "particle aura", "orbit" },
+        { "kill counter", "skull" }, { "random preset", "dices" },
+        { "random style", "dices" }, { "random color", "dices" },
+        { "wave", "waves" },
+        -- обычные правила
+        { "aimlock", "crosshair" }, { "aim", "crosshair" }, { "fov radius", "radar" },
+        { "fov check", "radar" }, { "fov", "aperture" },
+        { "wall check", "brick-wall" }, { "wallhop", "footprints" }, { "wall", "brick-wall" },
+        { "prediction", "compass" }, { "predict", "compass" }, { "smooth", "waves" },
+        { "murderer", "swords" }, { "sheriff", "shield" },
+        { "un-whitelist", "user-x" }, { "whitelist", "shield-check" },
+        { "nearest", "map-pin" }, { "everyone", "users" }, { "cancel", "x-circle" },
+        { "panic", "siren" }, { "флинг", "rocket" }, { "тест", "flask-conical" },
+        { "fling power", "zap" }, { "fling duration", "hourglass" }, { "fling", "rocket" },
+        { "aura trail", "route" }, { "aura radius", "ruler" }, { "aura count", "hash" },
+        { "aura interval", "timer" }, { "aura speed", "gauge" }, { "aura shape", "shapes" },
+        { "aura", "orbit" },
+        { "trail", "route" }, { "echo", "audio-lines" }, { "ghost", "ghost" },
+        { "glow", "sparkles" }, { "bloom", "sun" }, { "halo", "crown" }, { "hat", "hard-hat" },
+        { "wings", "feather" }, { "flapping", "feather" }, { "footprint", "footprints" },
+        { "pet leash", "link" }, { "pet distance", "ruler" }, { "pet height", "move-vertical" },
+        { "pet size", "scaling" }, { "pet speed", "gauge" }, { "pet motion", "move" },
+        { "pet style", "swatch-book" }, { "pet color", "palette" }, { "pet trail", "route" },
+        { "pet reacts", "heart-pulse" }, { "pet", "paw-print" },
+        { "forcefield", "shield" }, { "rainbow", "palette" }, { "color a", "palette" },
+        { "color b", "palette" }, { "stroke", "brush" }, { "color", "palette" },
+        { "pulsate", "heart-pulse" }, { "pulse", "heart-pulse" }, { "scale pulse", "scaling" },
+        { "scale", "scaling" }, { "thumbnail size", "scaling" }, { "size", "scaling" },
+        { "spin", "rotate-cw" }, { "rotate", "rotate-cw" }, { "reverse", "refresh-ccw" },
+        { "skybox", "image" }, { "clouds", "cloud" }, { "weather", "cloud-sun" },
+        { "wind", "wind" }, { "day/night", "sun-moon" }, { "light column", "lightbulb" },
+        { "second head light", "lightbulb" }, { "flash light", "zap" }, { "ground flash", "zap" },
+        { "glow light", "lightbulb" }, { "light", "lightbulb" }, { "shadow", "moon" },
+        { "brightness", "sun" }, { "speed", "gauge" }, { "rate", "gauge" },
+        { "quality", "gauge" }, { "fps", "activity" }, { "cycle speed", "gauge" },
+        { "delay", "timer" }, { "interval", "timer" }, { "cooldown", "timer" },
+        { "ttl", "timer" }, { "duration", "hourglass" }, { "lifetime", "hourglass" },
+        { "detection distance", "radar" }, { "max distance", "ruler" }, { "distance", "ruler" },
+        { "range", "ruler" }, { "radius", "ruler" }, { "height", "move-vertical" },
+        { "width", "move-horizontal" }, { "length", "move-horizontal" },
+        { "tilt", "compass" }, { "droop", "compass" }, { "angle", "compass" },
+        { "opacity", "eye-off" }, { "transparency", "eye-off" }, { "window", "monitor" },
+        { "telemetry", "activity" }, { "stats", "activity" }, { "stat", "activity" },
+        { "notif", "bell" }, { "kill counter", "skull" }, { "counter", "hash" },
+        { "kill", "skull" }, { "combo", "zap" }, { "streak", "zap" },
+        { "mute", "volume-x" }, { "sfx", "volume-2" }, { "sound", "volume-2" },
+        { "audio", "volume-2" }, { "volume", "volume-2" },
+        { "keybind", "keyboard" }, { "quick toggle", "power" }, { "keys", "key-round" },
+        { "key", "key-round" }, { "hud", "monitor" }, { "screen", "smartphone" },
+        { "mobile", "smartphone" }, { "button size", "scaling" }, { "button opacity", "eye-off" },
+        { "buttons", "mouse-pointer-click" }, { "button", "mouse-pointer-click" },
+        { "inventory", "backpack" }, { "max items", "boxes" }, { "items", "boxes" },
+        { "slot", "layers" }, { "preset", "palette" }, { "style", "swatch-book" },
+        { "random", "dices" }, { "favorites", "star" }, { "favourite", "star" },
+        { "search", "search" }, { "clear search", "eraser" }, { "filter", "filter" },
+        { "next page", "chevron-right" }, { "previous page", "chevron-left" },
+        { "go to page", "corner-down-right" }, { "page", "book-open" },
+        { "emote", "music" }, { "play", "play-circle" }, { "stop", "stop-circle" },
+        { "preview", "eye" }, { "loop", "repeat" }, { "unload", "power-off" },
+        { "reset everything", "rotate-ccw" }, { "restore original", "rotate-ccw" },
+        { "restore as before", "rotate-ccw" }, { "reset to defaults", "rotate-ccw" },
+        { "reset target colors", "rotate-ccw" }, { "reset trail colors", "rotate-ccw" },
+        { "reset", "rotate-ccw" }, { "restore", "rotate-ccw" }, { "revert", "rotate-ccw" },
+        { "clean", "sparkles" }, { "clear", "eraser" }, { "remove", "trash-2" },
+        { "delete", "trash-2" }, { "trash", "trash-2" }, { "rebuild", "refresh-cw" },
+        { "re-scan", "refresh-cw" }, { "rescan", "refresh-cw" }, { "refresh", "refresh-cw" },
+        { "reload", "refresh-cw" }, { "reapply", "refresh-cw" }, { "retry", "refresh-cw" },
+        { "save settings", "save" }, { "save", "save" }, { "load settings", "folder-open" },
+        { "load", "folder-open" }, { "open browser", "folder-open" }, { "open", "folder-open" },
+        { "hide", "eye-off" }, { "show", "eye" }, { "center", "focus" },
+        { "teleport", "map-pin" }, { "jump", "chevrons-up" }, { "bounce", "move-vertical" },
+        { "bob", "move-vertical" }, { "satellites", "orbit" }, { "motion", "move" },
+        { "idle", "clock" }, { "health", "heart" }, { " hp", "heart" }, { "follows hp", "heart" },
+        { "force", "shield" }, { "sparks", "sparkles" }, { "spark", "sparkles" },
+        { "dust", "spray-can" }, { "particle", "sparkles" }, { "ring", "circle" },
+        { "leash", "link" }, { "outline", "square-dot" }, { "outline (highlight)", "square-dot" },
+        { "target", "target" }, { "crosshair", "crosshair" }, { "select player", "user-search" },
+        { "player", "users" }, { "user", "users" }, { "credits", "user-round" },
+        { "developer", "user-round" }, { "how it works", "book-open" }, { "settings", "settings" },
+        { "config", "settings" }, { "enable", "power" }, { "auto", "repeat" },
+        { "mood", "smile" }, { "shake", "waves" }, { "wobble", "waves" },
+        { "spin wobble", "waves" }, { "strength", "zap" }, { "power", "zap" },
+    }
+
+    local function norm(s) return tostring(s or ""):lower() end
+
+    function Icons.pick(label, kind)
+        local text = tostring(label or "")
+        local key  = norm(cleanText(text))
+        if kind == "Section" or kind == "Subtitle" then
+            local s = Icons.SectionIcons[key]
+            if Icons.has(s) then return s end
+        end
+        local hit = Icons.LabelIcons[text] or Icons.LabelIcons[key]
+        if Icons.has(hit) then return hit end
+        for i = 1, #Icons.Rules do
+            local r = Icons.Rules[i]
+            if key:find(r[1], 1, true) and Icons.has(r[2]) then return r[2] end
+        end
+        local k = Icons.KindIcons[kind]
+        if Icons.has(k) then return k end
+        return "sparkles"
+    end
+
+    -- ---------------- реестр подписей ----------------
+    local meta, metaNorm, sectionNorm = {}, {}, {}
+    local decorated = setmetatable({}, { __mode = "k" })
+    local knownSet = {}
+    local stats = { registered = 0, decorated = 0, seenTexts = 0, rejectedArea = 0 }
+    local sampleTexts = {}
+    local function normKey(s) return norm(cleanText(s)) end
+
+    function Icons.register(kind, section, label, isStatic, iconFrom)
+        if not Icons.enabled or type(label) ~= "string" or label == "" then return end
+        -- строки, которые SR_Paragraph режет из длинного описания, — без иконок
+        if (tonumber(rawget(_G, "SR_ICON_MUTE")) or 0) > 0 then return end
+        if kind == "Label" then
+            if not Icons.decorateLabels then return end
+            if #label > 64 then return end
+            if not label:find("%w") then return end
+            if label:find("\226\148\129", 1, true) then return end   -- разделители ━━━
+        end
+        local key = normKey(label)
+        if key == "" then return end
+        local rec = metaNorm[key]
+        if not rec then
+            local icon = Icons.pick(iconFrom or label, kind)
+            if iconFrom and iconFrom ~= label and (icon == Icons.KindIcons[kind] or icon == "sparkles") then
+                icon = Icons.pick(label, kind)
+            end
+            rec = { icon = icon, kind = kind, label = label, hits = 0, static = isStatic == true }
+            metaNorm[key] = rec
+            meta[label] = rec
+            stats.registered = stats.registered + 1
+        elseif kind == "Section" and rec.kind ~= "Section" then
+            rec.kind, rec.icon = "Section", Icons.pick(iconFrom or label, "Section")
+        end
+        if kind == "Section" then sectionNorm[key] = true end
+    end
+
+    function Icons.stats() return stats end
+    function Icons.pending()
+        local n = 0
+        for _, rec in pairs(metaNorm) do
+            if rec.hits == 0 and not (rec.static and SR_UI.hostWrapped) then n = n + 1 end
+        end
+        return n
+    end
+
+    -- ---------------- поиск GUI хоста ----------------
+    local roots = nil
+    local function collectRoots()
+        local list, seen = {}, {}
+        local function add(r)
+            if typeof(r) == "Instance" and not seen[r] then seen[r] = true; list[#list + 1] = r end
+        end
+        pcall(function() if type(gethui) == "function" then add(gethui()) end end)
+        pcall(function() if type(getcore) == "function" then add(getcore()) end end)
+        pcall(function() add(SR_UI.service("CoreGui")) end)
+        pcall(function()
+            local pl = SR_UI.service("Players")
+            if pl and pl.LocalPlayer then add(pl.LocalPlayer:FindFirstChildOfClass("PlayerGui")) end
+        end)
+        return SR_Perf.uniqueRoots(list)
+    end
+
+    -- ---------------- отрисовка ----------------
+    local function colorFor(kind)
+        if kind == "Section" then return Color3.fromRGB(150, 180, 255) end
+        return Color3.fromRGB(202, 214, 232)
+    end
+
+    local function rawIndex(obj, key) return obj[key] end
+    local function prop(obj, key)
+        local ok, v = pcall(rawIndex, obj, key)
+        if ok then return v end
+        return nil
+    end
+
+    local function alignOf(node)
+        local a = tostring(prop(node, "TextXAlignment") or "")
+        if a:find("Center") then return "Center" end
+        if a:find("Right") then return "Right" end
+        if a:find("Left") then return "Left" end
+        return "Left"
+    end
+
+    local iconState = setmetatable({}, { __mode = "k" })
+    local iconSizeFor, fitIcon
+    local later
+    -- место под иконку: расширяем левый отступ (UIPadding). UIPadding сдвигает и текст,
+    -- и дочерние объекты, поэтому сама иконка ставится с отрицательным X —
+    -- в освободившуюся полосу слева. Текст подписи не меняется.
+    local function reservePadding(node, size)
+        local pad = node:FindFirstChildOfClass("UIPadding")
+        if not pad then
+            pcall(function()
+                local p = Instance.new("UIPadding")
+                p.Name = "@sr_pad"
+                p.Parent = node
+            end)
+            pad = node:FindFirstChildOfClass("UIPadding")
+        end
+        if not pad then return nil end
+        local base = 0
+        local cur = prop(pad, "PaddingLeft")
+        if cur and tonumber(cur.Offset) then base = cur.Offset end
+        local extra = size + 6
+        local ok = pcall(function() pad.PaddingLeft = UDim.new(cur and cur.Scale or 0, base + extra) end)
+        if not ok then return nil end
+        return pad, extra
+    end
+
+    -- высота текста подписи: у мелкого белого подзаголовка — маленькая иконка
+    local function textHeight(node)
+        local ts = tonumber(prop(node, "TextSize")) or 14
+        if prop(node, "TextScaled") == true then
+            local b = prop(node, "TextBounds")
+            if b and tonumber(b.Y) and b.Y > 0 then return b.Y end
+            local abs = prop(node, "AbsoluteSize")
+            if abs and tonumber(abs.Y) and abs.Y > 0 then return abs.Y * 0.8 end
+        end
+        return ts
+    end
+
+    iconSizeFor = function(node, kind)
+        local th = textHeight(node)
+        local maxSize = (kind == "Section") and Icons.sectionMax or Icons.iconMax
+        local size = math.floor(th * 1.1 + 0.5)
+        if size < 10 then size = 10 elseif size > maxSize then size = maxSize end
+        local abs = prop(node, "AbsoluteSize")
+        if abs and tonumber(abs.Y) and abs.Y >= 8 and abs.Y < size + 2 then
+            size = math.max(10, math.floor(abs.Y - 2))
+        end
+        return size
+    end
+
+    fitIcon = function(node)
+        local st = iconState[node]
+        if not st or not st.img or st.img.Parent ~= node then return end
+        local size = iconSizeFor(node, st.kind)
+        if size == st.size then return end
+        pcall(function()
+            st.img.Size = U2(0, size, 0, size)
+            if st.align == "Left" and st.pad and st.extra then
+                local newExtra = size + 6
+                local cur = st.pad.PaddingLeft
+                st.pad.PaddingLeft = UDim.new(cur.Scale, cur.Offset - st.extra + newExtra)
+                st.extra = newExtra
+                st.img.Position = U2(0, 2 - newExtra, 0.5, 0)
+            end
+            st.size = size
+        end)
+    end
+
+    local function preload(img)
+        if type(task) ~= "table" or type(task.spawn) ~= "function" then return end
+        task.spawn(function()
+            pcall(function() game:GetService("ContentProvider"):PreloadAsync({ img }) end)
+        end)
+    end
+
+    -- иконка слева от текста контрола
+    function Icons.attach(node, iconName, kind)
+        if not Icons.enabled or not node then return false end
+        if node:FindFirstChild("@sr_icon") then return true end
+        local asset = Icons.get(iconName) or Icons.get(Icons.KindIcons[kind] or "sparkles")
+        if not asset then return false end
+        local size = iconSizeFor(node, kind)
+        local align = alignOf(node)
+        local x = 8
+        local pad, extra = nil, nil
+        if align == "Left" then
+            pad, extra = reservePadding(node, size)
+            x = extra and (2 - extra) or 0
+        end
+        local t = prop(node, "Text")
+        if type(t) == "string" then
+            local c = cleanText(t)
+            if c ~= t and c ~= "" then pcall(function() node.Text = c end) end
+        end
+        local ok = pcall(function()
+            local img = Instance.new("ImageLabel")
+            img.Name = "@sr_icon"
+            img.BackgroundTransparency = 1
+            img.BorderSizePixel = 0
+            img.Image = asset.url
+            img.ImageRectSize = asset.size
+            img.ImageRectOffset = asset.offset
+            img.ImageColor3 = colorFor(kind)
+            img.ScaleType = Enum.ScaleType.Fit
+            img.Size = U2(0, size, 0, size)
+            img.AnchorPoint = V2(0, 0.5)
+            img.Position = U2(0, x, 0.5, 0)
+            img.ZIndex = (tonumber(prop(node, "ZIndex")) or 1) + 1
+            img.Parent = node
+            preload(img)
+            iconState[node] = { img = img, pad = pad, extra = extra, size = size, kind = kind, align = align }
+        end)
+        if not ok then return false end
+        -- размер текста хост может выставить позже — подгоняем ещё раз
+        later(0.4, function() fitIcon(node) end)
+        later(2, function() fitIcon(node) end)
+        return true
+    end
+
+    -- иконки круглых экранных кнопок по их id
+    Icons.BindIcons = {
+        aim_toggle = "crosshair",
+        wallhop_toggle = "chevrons-up",
+        bombjump_bind = "bomb", goldbombjump_bind = "bomb",
+        sheriff = "gun", murderer = "knife", selected = "user-check", all = "users",
+        nearest = "map-pin", start = "play-circle", cancel = "x-circle",
+    }
+    function Icons.bindIcon(id, text)
+        local key = norm(id)
+        local icon = Icons.BindIcons[key]
+        if not icon then
+            for k, v in pairs(Icons.BindIcons) do
+                if key:find(k, 1, true) then icon = v; break end
+            end
+        end
+        if not icon then
+            local t = norm(cleanText(text))
+            if t == "bj" or t == "gbj" or key:find("bomb", 1, true) then icon = "bomb"
+            elseif t == "aim" or key:find("aim", 1, true) then icon = "crosshair"
+            elseif t == "sh" then icon = "gun"
+            elseif t == "mur" then icon = "knife"
+            else icon = Icons.pick(text, "Button") end
+        end
+        return icon
+    end
+    function Icons.applyBind(btn, id, text)
+        if not btn then return false end
+        return Icons.applyTo(btn, Icons.bindIcon(id, text), "Bind")
+    end
+
+    -- иконка по центру круглой плавающей кнопки-бинда (текст уезжает вниз)
+    function Icons.applyTo(object, iconName, kind)
+        if not object or not iconName or not Icons.enabled then return false end
+        if object:FindFirstChild("@sr_icon") then return true end
+        local asset = Icons.get(iconName)
+        if not asset then return false end
+        local size = tonumber(Icons.bindSize) or 0.46
+        local ok = pcall(function()
+            local img = Instance.new("ImageLabel")
+            img.Name = "@sr_icon"
+            img.BackgroundTransparency = 1
+            img.BorderSizePixel = 0
+            img.Image = asset.url
+            img.ImageRectSize = asset.size
+            img.ImageRectOffset = asset.offset
+            img.ImageColor3 = Color3.fromRGB(255, 255, 255)
+            img.Size = U2(size, 0, size, 0)
+            img.Position = U2(0.5, 0, 0.34, 0)
+            img.AnchorPoint = V2(0.5, 0.5)
+            img.ZIndex = (tonumber(object.ZIndex) or 1) + 3
+            img.Parent = object
+            preload(img)
+            local txt = object:FindFirstChild("@Text")
+            if txt then
+                txt.Position = U2(0.5, 0, 0.76, 0)
+                txt.Size = U2(0.9, 0, 0.30, 0)
+                txt.TextSize = 9
+                txt.TextScaled = false
+            end
+        end)
+        return ok
+    end
+
+    -- ---------------- только внутри меню плагина ----------------
+    Icons.strictArea = true
+    local areaCache = setmetatable({}, { __mode = "k" })
+    local function clock() return (os and os.clock and os.clock()) or 0 end
+    local function inPluginArea(node)
+        if not Icons.strictArea then return true end
+        local p, depth = prop(node, "Parent"), 0
+        while p and depth < 16 do
+            if p.ClassName == "ScrollingFrame" then
+                local c = areaCache[p]
+                if c == true then return true end
+                if c == nil or clock() - c > 2 then
+                    local found = false
+                    pcall(function()
+                        for _, d in ipairs(p:GetDescendants()) do
+                            local cls = d.ClassName
+                            if cls == "TextLabel" or cls == "TextButton" then
+                                local t = prop(d, "Text")
+                                if type(t) == "string" and sectionNorm[normKey(t)] then found = true; break end
+                            end
+                        end
+                    end)
+                    areaCache[p] = found or clock()
+                    if found then return true end
+                end
+            end
+            p, depth = prop(p, "Parent"), depth + 1
+        end
+        return false
+    end
+
+    -- у заголовка секции хост рисует крупный заголовок и мелкую подпись — берём крупный
+    local function bestSectionNode(node)
+        local parent = prop(node, "Parent")
+        if not parent then return node end
+        local best, bestSize = node, tonumber(prop(node, "TextSize")) or 0
+        local ok, list = pcall(function() return parent:GetDescendants() end)
+        if ok and type(list) == "table" then
+            for _, d in ipairs(list) do
+                if d ~= node and (d.ClassName == "TextLabel" or d.ClassName == "TextButton") then
+                    local sz = tonumber(prop(d, "TextSize")) or 0
+                    local t = prop(d, "Text")
+                    if sz > bestSize + 2 and type(t) == "string" and t:find("%w") then
+                        best, bestSize = d, sz
+                    end
+                end
+            end
+        end
+        return best
+    end
+
+    local function decorateNode(node, rec)
+        local target, icon, kind = node, rec.icon, rec.kind
+        if Icons.attach(target, icon, kind) then
+            if SR_UI.Text then pcall(SR_UI.Text.fontTree, target) end
+            decorated[target] = true
+            decorated[node] = true
+            rec.hits = rec.hits + 1
+            stats.decorated = stats.decorated + 1
+            return true
+        end
+        return false
+    end
+
+    local waitingText = setmetatable({}, { __mode = "k" })
+    local missText = setmetatable({}, { __mode = "k" })
+    local enqueue
+    local function processNode(node, trusted)
+        if not node or decorated[node] then return false end
+        local cls = node.ClassName
+        if cls ~= "TextLabel" and cls ~= "TextButton" then return false end
+        local txt = prop(node, "Text")
+        if type(txt) ~= "string" or txt == "" then
+            if not waitingText[node] then
+                waitingText[node] = true
+                pcall(function()
+                    node:GetPropertyChangedSignal("Text"):Connect(function()
+                        if not decorated[node] and enqueue then enqueue(node) end
+                    end)
+                end)
+            end
+            return false
+        end
+        stats.seenTexts = stats.seenTexts + 1
+        if missText[node] == txt then return false end
+        local TX = SR_UI.Text
+        if TX and TX.styleOf[txt] then
+            -- строки пояснений/подсказок: стиль и шрифт, без иконки
+            if trusted or inPluginArea(node) then TX.applyStyle(node, txt) end
+            if TX.styleOf[txt] ~= "heading" then return false end   -- подзаголовки — со стилем И иконкой
+        end
+        local rec = metaNorm[normKey(txt)]
+        if not rec then missText[node] = txt; return false end
+        if #sampleTexts < 12 then sampleTexts[#sampleTexts + 1] = cleanText(txt) end
+        if not trusted and not inPluginArea(node) then
+            stats.rejectedArea = stats.rejectedArea + 1
+            return false
+        end
+        return decorateNode(node, rec)
+    end
+
+    function Icons.scan()
+        if not Icons.enabled then return 0 end
+        if not roots then roots = collectRoots() end
+        local done = 0
+        local slice = SR_Perf.slicer()
+        for _, root in ipairs(roots) do
+            local ok, list = pcall(function() return root:GetDescendants() end)
+            if ok and type(list) == "table" then
+                for i = 1, #list do
+                    slice()
+                    if processNode(list[i]) then done = done + 1 end
+                end
+            end
+        end
+        return done
+    end
+
+    -- прямая привязка: ищем подпись внутри GUI-объекта, который вернул хост
+    local function decorateIn(gui, label, kind)
+        if not gui or type(label) ~= "string" then return false end
+        local ok, list = pcall(function() return gui:GetDescendants() end)
+        if not ok or type(list) ~= "table" then return false end
+        local want = normKey(label)
+        local rec = metaNorm[want]
+        if not rec then return false end
+        for i = 1, #list do
+            local node = list[i]
+            if node and not decorated[node] and (node.ClassName == "TextLabel" or node.ClassName == "TextButton") then
+                local t = prop(node, "Text")
+                if type(t) == "string" and normKey(t) == want then
+                    return decorateNode(node, rec)
+                end
+            end
+        end
+        return false
+    end
+    Icons.decorateIn = decorateIn
+
+    -- ищем Instance внутри хендла, который вернул хост
+    local function findInstance(obj, depth)
+        if typeof and typeof(obj) == "Instance" then return obj end
+        if type(obj) ~= "table" or (depth or 0) > 2 then return nil end
+        local okEntries, entries = pcall(function()
+            local n, out = 0, {}
+            for _, v in pairs(obj) do
+                n = n + 1
+                if n > 120 then break end
+                out[#out + 1] = v
+            end
+            return out
+        end)
+        if not okEntries then return nil end
+        for _, v in ipairs(entries) do
+            if typeof and typeof(v) == "Instance" then return v end
+        end
+        for _, v in ipairs(entries) do
+            if type(v) == "table" then
+                local found = findInstance(v, (depth or 0) + 1)
+                if found then return found end
+            end
+        end
+        return nil
+    end
+    Icons.findInstance = findInstance
+
+    -- ---------------- планировщик ----------------
+    local started = false
+    later = function(t, fn)
+        if type(task) == "table" and type(task.delay) == "function" then task.delay(t, fn)
+        elseif type(delay) == "function" then delay(t, fn)
+        elseif type(wait) == "function" then coroutine.wrap(function() wait(t) pcall(fn) end)()
+        end
+    end
+
+    -- новые элементы меню обрабатываются пачками, без полного пересканирования
+    local queue, queued, flushPlanned = {}, setmetatable({}, { __mode = "k" }), false
+    local function flush()
+        flushPlanned = false
+        local list = queue
+        queue = {}
+        local slice = SR_Perf.slicer(SR_Perf.budget())
+        for i = 1, #list do
+            local node = list[i]
+            queued[node] = nil
+            slice()
+            pcall(processNode, node)
+        end
+    end
+    enqueue = function(node)
+        if queued[node] or decorated[node] then return end
+        local cls = node.ClassName
+        if cls ~= "TextLabel" and cls ~= "TextButton" then return end
+        queued[node] = true
+        queue[#queue + 1] = node
+        if not flushPlanned then
+            flushPlanned = true
+            later(0.3, flush)
+        end
+    end
+    Icons.flush = flush
+
+    local function log(msg)
+        if type(SR_Log) == "function" then
+            if not pcall(SR_Log, msg) then pcall(print, msg) end
+        else
+            pcall(print, msg)
+        end
+    end
+
+    function Icons.report()
+        local missing, left = {}, 0
+        for _, rec in pairs(metaNorm) do
+            if rec.hits == 0 and not (rec.static and SR_UI.hostWrapped) then
+                left = left + 1
+                if #missing < 10 then missing[#missing + 1] = rec.label end
+            end
+        end
+        log("[Noir_Icons] labels=" .. tostring(stats.registered)
+            .. " icons=" .. tostring(stats.decorated)
+            .. " not-shown-yet=" .. tostring(left)
+            .. " outside-menu=" .. tostring(stats.rejectedArea)
+            .. " strict=" .. tostring(Icons.strictArea))
+        if #missing > 0 then
+            log("[Noir_Icons] not shown yet (tab not opened?): " .. table.concat(missing, " | "))
+        end
+    end
+
+    function Icons.start()
+        if started or not Icons.enabled then return end
+        started = true
+        roots = collectRoots()
+        pcall(Icons.scan)
+        for _, root in ipairs(roots) do
+            pcall(function()
+                root.DescendantAdded:Connect(function(d) enqueue(d) end)
+            end)
+        end
+        for _, d in ipairs({ 1, 3, 6 }) do
+            later(d, function() pcall(Icons.scan) end)
+        end
+        -- страницы хоста могут строиться позже (при открытии вкладки) — редкий дешёвый рескан
+        local ticks = 0
+        local function tick()
+            ticks = ticks + 1
+            pcall(Icons.scan)
+            later((ticks < 30 and 4 or 15) * SR_Perf.slow(), tick)
+        end
+        later(10, tick)
+        -- если хост рисует меню без ScrollingFrame — снимаем ограничение области
+        later(8, function()
+            if stats.decorated == 0 and stats.rejectedArea > 0 then
+                Icons.strictArea = false
+                pcall(Icons.scan)
+            end
+        end)
+        later(10, function() pcall(Icons.report) end)
+    end
+
+    -- ---------------- перехват меню: иконки во ВСЕХ модулях ----------------
+    local CONTROL_KIND = {
+        AddToggle = "Toggle", AddSlider = "Slider", AddColorpicker = "Colorpicker",
+        AddDropdown = "Dropdown", AddButton = "Button", AddKeybind = "Keybind",
+        AddPlayerDropdown = "PlayerDropdown", AddTextBox = "TextBox",
+        AddLabel = "Label", AddParagraph = "Paragraph",
+    }
+
+    local wrappedTabs = setmetatable({}, { __mode = "k" })
+
+    local function wrapSection(raw, name, sectionGui, shownName)
+        if type(raw) ~= "table" then return raw end
+        local TX = SR_UI.Text
+        shownName = shownName or name
+        Icons.register("Section", name, shownName, nil, name)
+        local gui = sectionGui
+        if not gui then
+            gui = findInstance(raw)
+            if gui then
+                decorateIn(gui, shownName, "Section")
+            end
+        end
+        return setmetatable({}, {
+            __index = function(_, k)
+                local v = raw[k]
+                if type(v) ~= "function" then return v end
+                local kind = CONTROL_KIND[k]
+                if kind then
+                    return function(_, label, ...)
+                        local muted = (tonumber(rawget(_G, "SR_ICON_MUTE")) or 0) > 0
+                        local shown = label
+                        if TX and type(label) == "string" and not muted and kind ~= "Paragraph" then
+                            shown = TX.label(name, label)
+                        end
+                        local ok, handle = pcall(v, raw, shown, ...)
+                        if type(label) == "string" then
+                            Icons.register(kind, name, shown, nil, label)
+                            if not decorateIn(gui, shown, kind) then
+                                local hg = findInstance(handle)
+                                if hg then decorateIn(hg, shown, kind) end
+                            end
+                            if ok and TX and not muted and kind ~= "Label" and kind ~= "Paragraph" then
+                                pcall(TX.addHint, raw, name, label, gui)
+                            end
+                        end
+                        if ok then return handle end
+                        return nil
+                    end
+                end
+                return function(_, ...) return v(raw, ...) end
+            end,
+            __newindex = function(_, k, val) raw[k] = val end,
+        })
+    end
+
+    local function wrapTab(raw)
+        if type(raw) ~= "table" then return raw end
+        if wrappedTabs[raw] then return raw end
+        local proxy = setmetatable({}, {
+            __index = function(_, k)
+                local v = raw[k]
+                if type(v) ~= "function" then return v end
+                if k == "AddSection" then
+                    return function(_, name, subtitle, ...)
+                        local TX = SR_UI.Text
+                        local shownName, shownSub = name, subtitle
+                        if TX then
+                            shownName = TX.section(name)
+                            if type(subtitle) == "string" and subtitle ~= "" then shownSub = TX.subtitle(subtitle) end
+                        end
+                        local ok, sec = pcall(v, raw, shownName, shownSub, ...)
+                        if not ok then return nil end
+                        local orig = tostring(name or "")
+                        if type(shownSub) == "string" and shownSub ~= "" then
+                            Icons.register("Subtitle", orig, shownSub, nil, subtitle)
+                        end
+                        local secGui = findInstance(sec)
+                        local wrapped = wrapSection(sec, orig, secGui, tostring(shownName or ""))
+                        if TX and type(sec) == "table" then pcall(TX.addAbout, sec, orig, secGui) end
+                        return wrapped
+                    end
+                end
+                return function(_, ...) return v(raw, ...) end
+            end,
+            __newindex = function(_, k, val) raw[k] = val end,
+        })
+        wrappedTabs[proxy] = true
+        return proxy
+    end
+    Icons.wrapTab = wrapTab
+
+    -- заранее регистрируем все известные подписи: иконки найдутся по тексту
+    -- даже если перехват меню по какой-то причине не сработал
+    Icons.Known.Subtitle = {
+        "MM2 Aimlock", "Bindable Buttons Color", "Bomb Jump+", "Gold Bomb Jump+", "Button Transparency",
+        "ULTIMATE FLING", "PrismFlux", "Shiftlock Crosshair", "Inventory Unlimiter", "Omega", "Emotes",
+        "Pm-WallHop",
+    }
+    for kind, list in pairs(Icons.Known or {}) do
+        for _, label in ipairs(list) do
+            knownSet[label] = true
+            Icons.register(kind, nil, label, true)
+        end
+    end
+
+    -- 1) перехватываем CreateTab у хоста (покрывает модули со своим адаптером ODHX)
+    local host = odh_shared_plugins
+    if type(host) == "table" and type(host.CreateTab) == "function" then
+        local original = host.CreateTab
+        local replacement = function(...)
+            local ok, tab = pcall(original, ...)
+            if not ok then error(tab, 2) end
+            return wrapTab(tab)
+        end
+        if pcall(function() rawset(host, "CreateTab", replacement) end) then
+            SR_UI.hostWrapped = true
+        end
+    end
+
+    -- 2) и сам SR_Tab — на случай защищённой таблицы хоста
+    do
+        local original = SR_Tab
+        SR_Tab = function(title)
+            local ok, tab = pcall(original, title)
+            if not ok then return nil end
+            return wrapTab(tab)
+        end
+    end
 end
 
 local function CreateODHX(id, title, file, replay, external)
@@ -741,7 +3121,7 @@ local function CreateODHX(id, title, file, replay, external)
         local function register(kind,label,callback,default,min,max,items)
             local r={section=name,name=label,kind=kind,callback=callback,default=default,min=min,max=max,items=items,visual=false}
             r.key=key(name,label,kind)
-            r.exclude=(name=="ð Keys")
+            r.exclude=(name=="Keys")
             X.records[#X.records+1]=r; X.byKey[r.key]=r
             local function changed(v)
                 if kind=="Toggle" then r.visual=(v==true) end
@@ -1037,6 +3417,7 @@ do
         TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
         TextLabel.BackgroundTransparency = 1
         TextLabel.Font = Enum.Font.Jura
+        pcall(SR_UI.Text.buttonFont, TextLabel)
         TextLabel.Text = text
         TextLabel.TextColor3 = Color3.new(1, 1, 1)
         TextLabel.TextSize = 10
@@ -1098,6 +3479,7 @@ do
 
         BindableButtons.Buttons[id], BindableButtons.Maids[id] = ImageButton, buttonMaid
         BindableButtons.Count = BindableButtons.Count + 1
+        pcall(function() SR_UI.Icons.applyBind(ImageButton, id, text) end)
         return BindValue
     end
 
@@ -1270,6 +3652,9 @@ do
         return part
     end
 
+    -- один RaycastParams на всё время работы; фильтр меняется только при смене персонажей
+    local AimVis = { params = nil, me = nil, target = nil, part = nil, t = 0, res = true,
+        names = {"Head", "UpperTorso", "Torso", "HumanoidRootPart"}, found = {} }
     local function isVisible(targetPart, targetPlayer)
         if not WallCheck then return true end
         if not targetPart or not targetPlayer then return false end
@@ -1278,35 +3663,53 @@ do
         if not targetChar then return false end
 
         local myChar = LocalPlayer.Character
+        local nowT = os.clock()
+        -- слабое устройство: результат проверки стен живёт 50–100 мс
+        local keep = SR_Perf.pick(0, 0.05, 0.1)
+        if keep > 0 and AimVis.part == targetPart and nowT - AimVis.t < keep then return AimVis.res end
 
-        local filterList = {}
-        if myChar then table.insert(filterList, myChar) end
-        table.insert(filterList, targetChar)
-
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = filterList
-        params.IgnoreWater = true
+        local params = AimVis.params
+        if not params then
+            params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.IgnoreWater = true
+            AimVis.params = params
+        end
+        if AimVis.me ~= myChar or AimVis.target ~= targetChar then
+            local filterList = {}
+            if myChar then table.insert(filterList, myChar) end
+            table.insert(filterList, targetChar)
+            params.FilterDescendantsInstances = filterList
+            AimVis.me, AimVis.target = myChar, targetChar
+        end
 
         local origin = CurrentCamera.CFrame.Position
-        local checkParts = {"Head", "UpperTorso", "Torso", "HumanoidRootPart"}
-        local visiblePoints = 0
+        local found = AimVis.found
         local checked = 0
-
-        for _, partName in ipairs(checkParts) do
+        for _, partName in ipairs(AimVis.names) do
             local part = targetChar:FindFirstChild(partName)
             if part then
                 checked = checked + 1
-                local direction = part.Position - origin
-                local result = Workspace:Raycast(origin, direction, params)
-                if not result then
-                    visiblePoints = visiblePoints + 1
-                end
+                found[checked] = part
             end
         end
 
-        if checked == 0 then return true end
-        return visiblePoints >= (checked > 2 and 2 or 1)
+        local res = true
+        if checked > 0 then
+            local need = checked > 2 and 2 or 1
+            local visiblePoints = 0
+            for i = 1, checked do
+                local result = Workspace:Raycast(origin, found[i].Position - origin, params)
+                if not result then
+                    visiblePoints = visiblePoints + 1
+                    if visiblePoints >= need then break end
+                end
+            end
+            res = visiblePoints >= need
+        end
+        for i = 1, checked do found[i] = nil end
+        AimVis.part, AimVis.t, AimVis.res = targetPart, nowT, res
+        return res
     end
 
     local function isWithinFOV(worldPos)
@@ -1369,7 +3772,7 @@ do
     local function AimLockBody(dt)
         local currentTime = tick()
 
-        if currentTime - LastSearchTime > SearchInterval then
+        if currentTime - LastSearchTime > SearchInterval * SR_Perf.pick(1, 1.5, 2.5) then
             LastSearchTime = currentTime
 
             if SelectedPlayer then
@@ -1509,10 +3912,9 @@ do
         ToggleBindableVisibility()
     end
 
-    section:AddLabel("Developer: Noir_Creator | V4 Edition (improved)")
-    SR_Paragraph(section, "Info", "Mode: HARD LOCK | Auto-Murderer | Wallcheck | Player Select | Smoothing | FOV")
+    section:AddLabel(SR_UI.Text.mark("by Noir_Creator · Aimlock V4", "credit"))
 
-    section:AddToggle("🎯 Enable Aimlock", function(b)
+    section:AddToggle("Enable Aimlock", function(b)
         AimEnabled = b
         if AimEnabled then
             TargetPlayer = findMurderer()
@@ -1524,33 +3926,33 @@ do
         UpdateAimButtonState()
     end)
 
-    section:AddToggle("📱 Show Screen Button", function(b)
+    section:AddToggle("Show Screen Button", function(b)
         ShowBindableButton = b
         ToggleBindableVisibility()
     end)
 
-    section:AddSlider("🔘 Button Size (%)", 5, 25, 11, function(value)
+    section:AddSlider("Button Size (%)", 5, 25, 11, function(value)
         bindButtonSize = value / 100
         ResizeBindButton()
     end)
 
-    section:AddToggle("🧱 Wall Check", function(b)
+    section:AddToggle("Wall Check", function(b)
         WallCheck = b
         shared.Notify("Wall Check: " .. (b and "ENABLED" or "DISABLED"), 2)
     end)
 
-    section:AddToggle("🎯 FOV Check", function(b)
+    section:AddToggle("FOV Check", function(b)
         FOVEnabled = b
         UpdateFOVCircle()
         shared.Notify("FOV Check: " .. (b and "ENABLED" or "DISABLED"), 2)
     end)
 
-    section:AddSlider("🎯 FOV Radius (px)", 50, 800, 250, function(value)
+    section:AddSlider("FOV Radius (px)", 50, 800, 250, function(value)
         FOVRadius = value
         UpdateFOVCircle()
     end)
 
-    section:AddSlider("🌀 Smoothness", 0, 95, 25, function(value)
+    section:AddSlider("Smoothness", 0, 95, 25, function(value)
 
         local pct = value / 100
         if pct <= 0.001 then
@@ -1561,36 +3963,36 @@ do
         Smoothness = pct
     end)
 
-    section:AddToggle("↔️ Horizontal Prediction", function(b)
+    section:AddToggle("Horizontal Prediction", function(b)
         HorizontalPrediction = b
         shared.Notify("Horizontal prediction: " .. (b and "ON (leads strafing)" or "OFF (glued to body)"), 2)
     end)
 
-    section:AddPlayerDropdown("🎯 Select Player (overrides Murderer)", function(player)
+    section:AddPlayerDropdown("Select Player (overrides Murderer)", function(player)
         SelectedPlayer = player
         InvalidateCache()
         shared.Notify("Locked onto: " .. player.Name, 1)
     end)
 
-    section:AddButton("🔄 Clear Player Selection", function()
+    section:AddButton("Clear Player Selection", function()
         SelectedPlayer = nil
         InvalidateCache()
         shared.Notify("Player selection cleared — targeting Murderer", 2)
     end)
 
-    section:AddDropdown("🎯 Target Body Part", {"Head", "HumanoidRootPart"}, function(s)
+    section:AddDropdown("Target Body Part", {"Head", "HumanoidRootPart"}, function(s)
         TargetPart = s
         InvalidateCache()
     end)
 
-    section:AddDropdown("⚡ Prediction", {"Low (0.08)", "Medium (0.145)", "High (0.20)", "Disabled"}, function(s)
+    section:AddDropdown("Prediction", {"Low (0.08)", "Medium (0.145)", "High (0.20)", "Disabled"}, function(s)
         if s:find("Low") then PredictionLevel = 0.08
         elseif s:find("Medium") then PredictionLevel = 0.145
         elseif s:find("High") then PredictionLevel = 0.20
         else PredictionLevel = 0 end
     end)
 
-    section:AddKeybind("⌨️ Quick Toggle", "T", function()
+    section:AddKeybind("Quick Toggle", "T", function()
         ToggleAimLock()
     end)
 
@@ -1669,16 +4071,16 @@ do
     SR_Log("MM2 Aimlock V4 loaded")
     print("MM2 Aimlock V4 — Auto-Murderer + Player Select + Wallcheck + Smoothing + FOV")
 
-    ODHX.Bind("MM2 AIMLOCK", "🎯 Enable Aimlock", "Toggle", function() return AimEnabled end)
-    ODHX.Bind("MM2 AIMLOCK", "📱 Show Screen Button", "Toggle", function() return ShowBindableButton end)
-    ODHX.Bind("MM2 AIMLOCK", "🔘 Button Size (%)", "Slider", function() return bindButtonSize * 100 end)
-    ODHX.Bind("MM2 AIMLOCK", "🧱 Wall Check", "Toggle", function() return WallCheck end)
-    ODHX.Bind("MM2 AIMLOCK", "🎯 FOV Check", "Toggle", function() return FOVEnabled end)
-    ODHX.Bind("MM2 AIMLOCK", "🎯 FOV Radius (px)", "Slider", function() return FOVRadius end)
-    ODHX.Bind("MM2 AIMLOCK", "🌀 Smoothness", "Slider", function() return Smoothness * 100 end)
-    ODHX.Bind("MM2 AIMLOCK", "↔️ Horizontal Prediction", "Toggle", function() return HorizontalPrediction end)
-    ODHX.Bind("MM2 AIMLOCK", "🎯 Target Body Part", "Dropdown", function() return TargetPart end)
-    ODHX.Bind("MM2 AIMLOCK", "⚡ Prediction", "Dropdown", function() return PredictionLevel == 0.08 and "Low (0.08)" or PredictionLevel == 0.145 and "Medium (0.145)" or PredictionLevel == 0.20 and "High (0.20)" or "Disabled" end)
+    ODHX.Bind("MM2 AIMLOCK", "Enable Aimlock", "Toggle", function() return AimEnabled end)
+    ODHX.Bind("MM2 AIMLOCK", "Show Screen Button", "Toggle", function() return ShowBindableButton end)
+    ODHX.Bind("MM2 AIMLOCK", "Button Size (%)", "Slider", function() return bindButtonSize * 100 end)
+    ODHX.Bind("MM2 AIMLOCK", "Wall Check", "Toggle", function() return WallCheck end)
+    ODHX.Bind("MM2 AIMLOCK", "FOV Check", "Toggle", function() return FOVEnabled end)
+    ODHX.Bind("MM2 AIMLOCK", "FOV Radius (px)", "Slider", function() return FOVRadius end)
+    ODHX.Bind("MM2 AIMLOCK", "Smoothness", "Slider", function() return Smoothness * 100 end)
+    ODHX.Bind("MM2 AIMLOCK", "Horizontal Prediction", "Toggle", function() return HorizontalPrediction end)
+    ODHX.Bind("MM2 AIMLOCK", "Target Body Part", "Dropdown", function() return TargetPart end)
+    ODHX.Bind("MM2 AIMLOCK", "Prediction", "Dropdown", function() return PredictionLevel == 0.08 and "Low (0.08)" or PredictionLevel == 0.145 and "Medium (0.145)" or PredictionLevel == 0.20 and "High (0.20)" or "Disabled" end)
     ODHX.cleanup=function() RootMaid:DoCleaning() end
     ODHX.Finish()
 
@@ -1969,6 +4371,7 @@ do
     	pcall(function()
     		add(LocalPlayer:FindFirstChildOfClass("PlayerGui"))
     	end)
+    	roots = SR_Perf.uniqueRoots(roots)
     	RootCache.list = roots
     	return roots
     end
@@ -2100,7 +4503,9 @@ do
     			return root:GetDescendants()
     		end)
     		if ok and all then
+    			local slice = SR_Perf.slicer()
     			for _, inst in ipairs(all) do
+    				slice()
     				local okG, isGui = pcall(function()
     					return inst:IsA("GuiObject")
     				end)
@@ -2177,7 +4582,9 @@ do
     			return gui:GetDescendants()
     		end)
     		if ok and all then
+    			local slice = SR_Perf.slicer()
     			for _, inst in ipairs(all) do
+    				slice()
     				local okG, isGui = pcall(function()
     					return inst:IsA("GuiObject")
     				end)
@@ -2541,9 +4948,11 @@ do
     end
 
     local function connectEvents()
+    	-- новые элементы (например, при открытии меню) — пачками по бюджету кадра
+    	local queuedAdded = SR_Perf.batch(onDescendantAdded)
     	for _, root in ipairs(getRoots()) do
     		pcall(function()
-    			local conn = root.DescendantAdded:Connect(onDescendantAdded)
+    			local conn = root.DescendantAdded:Connect(queuedAdded)
     			table.insert(Connections, conn)
     		end)
     	end
@@ -2578,7 +4987,7 @@ do
     					applyCached()
     				end
     			end)
-    			task.wait(APPLY_INTERVAL)
+    			task.wait(APPLY_INTERVAL * SR_Perf.slow())
     		end
     	end)
     end)
@@ -2595,7 +5004,7 @@ do
     						end
     						applyCached()
     					end)
-    					wait(APPLY_INTERVAL)
+    					wait(APPLY_INTERVAL * SR_Perf.slow())
     				end
     			end)
     		end
@@ -2946,15 +5355,6 @@ do
 
     local section = shared.AddSection("Bindable Buttons Color")
 
-    SR_Paragraph(section, "Change button colors", "The colorpickers paint the small Shoot Murderer bind buttons: " ..
-    	"background, text and stroke. When you press a painted button, " ..
-    	"it flips to the CONTRAST color: a dark button turns light, a " ..
-    	"light button turns dark - the toggle state is always visible. " ..
-    	"The big Shoot Murderer HUD " ..
-    	"button is NOT colored automatically — pick it by tapping. " ..
-    	"Tap-pick a button, then press Save current button to keep " ..
-    	"it: every saved button stays colored. Picking again replaces " ..
-    	"only the UNSAVED pick.")
 
     section:AddColorpicker("Button color (background/icon)", State.BgColor, function(c)
     	local col = toColor3(c)
@@ -3042,7 +5442,6 @@ do
     	hardReset()
     end)
 
-    section:AddLabel("Saved buttons keep their color • Reset clears everything")
 
     SR_Log("Bindable Buttons Color v5 loaded")
 
@@ -3273,6 +5672,7 @@ do
         bb.BackgroundTransparency = 0.9
         bb.BorderSizePixel = 0
         bb.Font = Enum.Font.Jura
+        pcall(SR_UI.Text.buttonFont, bb, "ExtraBold")
         bb.Text = text
         bb.TextSize = 24
         bb.TextColor3 = __RGB(255, 255, 255)
@@ -3483,6 +5883,7 @@ do
         TextLabel.AnchorPoint = __V2(0.5, 0.5)
         TextLabel.BackgroundTransparency = 1
         TextLabel.Font = Enum.Font.Jura
+        pcall(SR_UI.Text.buttonFont, TextLabel)
         TextLabel.Text = text
         TextLabel.TextColor3 = __PCLR(1, 1, 1)
         TextLabel.TextSize = math.floor(buttonSizeY * 90)
@@ -3523,6 +5924,7 @@ do
         BindableButtons.Buttons[id] = ImageButton
         BindableButtons.Maids[id] = buttonMaid
         BindableButtons.Count = BindableButtons.Count + 1
+        pcall(function() SR_UI.Icons.applyBind(ImageButton, id, text) end)
         return ImageButton
     end
 
@@ -3580,7 +5982,7 @@ do
 
     local aboutSection = shared.AddSection("About")
 
-    SR_Paragraph(aboutSection, "Bomb Jump+", "Plugin Made by Noir_Creator")
+    aboutSection:AddLabel(SR_UI.Text.mark("Bomb Jump+ by Noir_Creator", "credit"))
 
     aboutSection:AddToggle("Mute Button SFX", function(bool)
         muteButtonSounds = bool
@@ -3884,12 +6286,11 @@ do
 
         local section = config.section
 
-        section:AddLabel(displayName .. " Options")
-        section:AddToggle("Enable Auto " .. displayName, function(bool)
+        section:AddToggle("Enable Auto" .. displayName, function(bool)
             state.enabled = bool
         end)
 
-        section:AddToggle("Auto-Get " .. bombName, function(bool)
+        section:AddToggle("Auto-Get" .. bombName, function(bool)
             state.autoGetBomb = bool
             if bool then
                 pcall(function()
@@ -3898,7 +6299,7 @@ do
             end
         end)
 
-        section:AddToggle("Enable " .. displayName .. " Big Button", function(e)
+        section:AddToggle("Enable" .. displayName .. " Big Button", function(e)
             state.bigBtnExists = e
             if e then
                 local size = __UD2(0, state.bigButtonSize, 0, state.bigButtonSize * 0.375)
@@ -3916,7 +6317,7 @@ do
             end
         end)
 
-        section:AddToggle("Enable " .. displayName .. " Bind Button", function(e)
+        section:AddToggle("Enable" .. displayName .. " Bind Button", function(e)
             state.bindBtnExists = e
             if e then
                 local shortName = isGold and "GBJ" or "BJ"
@@ -3995,10 +6396,10 @@ do
             end)
         )
 
-        ODHX.Bind(section.Name, "Enable Auto " .. displayName, "Toggle", function() return state.enabled end)
-        ODHX.Bind(section.Name, "Auto-Get " .. bombName, "Toggle", function() return state.autoGetBomb end)
-        ODHX.Bind(section.Name, "Enable " .. displayName .. " Big Button", "Toggle", function() return state.bigBtnExists end)
-        ODHX.Bind(section.Name, "Enable " .. displayName .. " Bind Button", "Toggle", function() return state.bindBtnExists end)
+        ODHX.Bind(section.Name, "Enable Auto" .. displayName, "Toggle", function() return state.enabled end)
+        ODHX.Bind(section.Name, "Auto-Get" .. bombName, "Toggle", function() return state.autoGetBomb end)
+        ODHX.Bind(section.Name, "Enable" .. displayName .. " Big Button", "Toggle", function() return state.bigBtnExists end)
+        ODHX.Bind(section.Name, "Enable" .. displayName .. " Bind Button", "Toggle", function() return state.bindBtnExists end)
         ODHX.Bind(section.Name, displayName .. " Big Button Size", "Slider", function() return state.bigButtonSize end)
         ODHX.Bind(section.Name, displayName .. " Bind Button Size", "Slider", function() return state.bindButtonSize * 100 end)
 
@@ -4351,6 +6752,7 @@ do
     	pcall(function()
     		add(LocalPlayer:FindFirstChildOfClass("PlayerGui"))
     	end)
+    	roots = SR_Perf.uniqueRoots(roots)
     	RootCache.list = roots
     	return roots
     end
@@ -4457,7 +6859,9 @@ do
     			return root:GetDescendants()
     		end)
     		if ok and all then
+    			local slice = SR_Perf.slicer()
     			for _, inst in ipairs(all) do
+    				slice()
     				local okG, isGui = pcall(function()
     					return inst:IsA("GuiObject")
     				end)
@@ -4528,7 +6932,9 @@ do
     			return gui:GetDescendants()
     		end)
     		if ok and all then
+    			local slice = SR_Perf.slicer()
     			for _, inst in ipairs(all) do
+    				slice()
     				local okG, isGui = pcall(function()
     					return inst:IsA("GuiObject")
     				end)
@@ -4716,9 +7122,11 @@ do
     end
 
     local function connectEvents()
+    	-- новые элементы (например, при открытии меню) — пачками по бюджету кадра
+    	local queuedAdded = SR_Perf.batch(onDescendantAdded)
     	for _, root in ipairs(getRoots()) do
     		pcall(function()
-    			local conn = root.DescendantAdded:Connect(onDescendantAdded)
+    			local conn = root.DescendantAdded:Connect(queuedAdded)
     			table.insert(Connections, conn)
     		end)
     	end
@@ -4753,7 +7161,7 @@ do
     					applyCached()
     				end
     			end)
-    			task.wait(APPLY_INTERVAL)
+    			task.wait(APPLY_INTERVAL * SR_Perf.slow())
     		end
     	end)
     end)
@@ -4770,7 +7178,7 @@ do
     						end
     						applyCached()
     					end)
-    					wait(APPLY_INTERVAL)
+    					wait(APPLY_INTERVAL * SR_Perf.slow())
     				end
     			end)
     		end
@@ -5021,9 +7429,6 @@ do
 
     local section = shared.AddSection("Button Transparency")
 
-    SR_Paragraph(section, "Button opacity", "One slider for all Shoot Murderer buttons. 0 = as before, " ..
-    	"100 = invisible, colour unchanged. If the button you need is not " ..
-    	"coloured — pick it by tap.")
 
     section:AddSlider("Button opacity", 0, 100, State.Value, function(v)
     	State.Value = v
@@ -5048,7 +7453,6 @@ do
     	hardReset()
     end)
 
-    section:AddLabel("0 = as before • 100 = invisible")
 
     SR_Log("Button Transparency v6 loaded")
 
@@ -5067,46 +7471,23 @@ end
 end)
 
 SR_UI.tryModule("ULTIMATE_FLING", function()
+-- ── Идентичность плагина (объявлена сразу, до всех блоков) ──
+local AUTHOR             = "K1LAS1K"
+local BRAND              = "ULTIMATE FLING"
+local PLUGIN_ID          = "fling"
+local PLUGIN_NAME        = BRAND .. " • FLING"
+local VERSION            = "V1.1-FIX"
+local VERSION_TAG        = "fling"
+local MARKER_PREFIX      = "@fling_"
+local CONFIG_PATH        = PLUGIN_ID .. ".json"
+local STORAGE_NAME       = "@" .. PLUGIN_ID
+local UNLOAD_GLOBAL      = "__FLING_UNLOAD"
+local LEGACY_STORAGES    = { "@bindstorage_v6", "@bindstorage_v5", "@flingstorage_v1" }
+local CLEAN_LEGACY_MENU  = true
+
 do
     local ODHX = CreateODHX("FLING", "ULTIMATE FLING", "ODH_FLING_settings.json", true, true)
---[[
-    ⚡ ULTIMATE FLING • FLING   —   V1.0
-    Ultimate Fling GUI · Overdrive Hub plugin
-    Author: K1LAS1K (original), adapted to ODH 2026
-    =========================================================================
-    Плагин мульти-таргет флинга: выбор игроков, непрерывный флинг,
-    сохранение позиции, FPDH trick, бинды, хоткеи, HUD, настройка силы/длительности.
-
-    ── ВОЗМОЖНОСТИ ────────────────────────────────────────────────────────────
-      • Ручной флинг: Selected, Everyone, Nearest, Cancel
-        и выбор конкретного игрока из списка.
-      • Авто-режимы: Loop (по списку), Aura (по радиусу), Click (флинг кликом).
-      • Плавающие бинды-кружки: перетаскивание с запоминанием позиции, размер,
-        подсветка активности, общий звук клика.
-      • Хоткеи на все действия: захват клавиши тумблером.
-      • HUD-статус: пульс, имя текущей цели, перетаскивание с сохранением позиции.
-      • Списки: выбор цели, список для Loop, вайтлист.
-      • Сохранение настроек (readfile/writefile + JSON): длительность, сила,
-        размеры и позиции кнопок/HUD, хоткеи, вайтлист.
-
-    ── АРХИТЕКТУРА ────────────────────────────────────────────────────────────
-      • Один RenderStepped-диспетчер, общие обработчики ввода.
-      • Мультитач-совместимый драг, FPDH restore, cleanup + watchdog.
-]]
-
--- ── Идентичность плагина ─────────────────────────
-local AUTHOR            = "K1LAS1K"
-local BRAND             = "ULTIMATE FLING"
-local PLUGIN_ID         = "fling"
-local PLUGIN_NAME       = BRAND .. " • FLING"
-local VERSION           = "V1.0"
-local VERSION_TAG       = "fling"
-local MARKER_PREFIX     = "@fling_"
-local CONFIG_PATH       = PLUGIN_ID .. ".json"
-local STORAGE_NAME      = "@" .. PLUGIN_ID
-local UNLOAD_GLOBAL     = "__FLING_UNLOAD"
-local LEGACY_STORAGES   = { "@bindstorage_v6", "@bindstorage_v5", "@flingstorage_v1" }
-local CLEAN_LEGACY_MENU = true
+--[[ ULTIMATE FLING • FLING — V1.0 Ultimate Fling GUI · Overdrive Hub plugin Author: K1LAS1K (original), adapted to ODH 2026 ========================================================================= Плагин мульти-таргет флинга: выбор игроков, непрерывный флинг, сохранение позиции, FPDH trick, бинды, хоткеи, HUD, настройка силы/длительности. ── ВОЗМОЖНОСТИ ──────────────────────────────────────────────────────────── • Ручной флинг: Selected, Everyone, Nearest, Cancel и выбор конкретного игрока из списка. • Авто-режимы: Loop (по списку), Aura (по радиусу), Click (флинг кликом). • Плавающие бинды-кружки: перетаскивание с запоминанием позиции, размер, подсветка активности, общий звук клика. • Хоткеи на все действия: захват клавиши тумблером. • HUD-статус: пульс, имя текущей цели, перетаскивание с сохранением позиции. • Списки: выбор цели, список для Loop, вайтлист. • Сохранение настроек (readfile/writefile + JSON): длительность, сила, размеры и позиции кнопок/HUD, хоткеи, вайтлист. ── АРХИТЕКТУРА ──────────────────────────────────────────────────────────── • Один RenderStepped-диспетчер, общие обработчики ввода. • Мультитач-совместимый драг, FPDH restore, cleanup + watchdog. ]]
 
 -- ====== Хост-уведомления ======
 local StarterGui = nil
@@ -5125,7 +7506,7 @@ end
 
 local shared = ODHX.shared
 if not shared then
-    hostNotify(BRAND .. " " .. VERSION .. ": Load through Overdrive H plugin menu", 3)
+    hostNotify(tostring(BRAND or "ULTIMATE FLING") .. " " .. tostring(VERSION or "") .. ": Load through Overdrive H plugin menu", 3)
     return
 end
 
@@ -5232,13 +7613,38 @@ local function clearTable(t)
     if table.clear then table.clear(t) else for k in pairs(t) do t[k] = nil end end
 end
 
+-- ====== Иконки: общая система SR_UI.Icons (Lucide 48px) для всех модулей ======
+-- Старый набор Heroicons (SVG/PNG) заменён общей системой: она вешает иконки
+-- на все секции и все контролы — кнопки, тумблеры, слайдеры, бинды и т.д.
+local Heroicons = setmetatable({}, { __index = SR_UI.Icons })
+Heroicons.Names, Heroicons.SVG, Heroicons.RBX, Heroicons.Lucide, Heroicons.PNG_B64 = {}, {}, {}, {}, {}
+Heroicons.SectionMap = {}
+Heroicons.ControlMap = {}
+Heroicons.ActionMap = {
+    ["sheriff"]  = "gun",
+    ["murderer"] = "knife",
+    ["selected"] = "user-check",
+    ["all"]      = "users",
+    ["nearest"]  = "map-pin",
+    ["start"]    = "play-circle",
+    ["cancel"]   = "x-circle",
+}
+function Heroicons.getAsset(name) return SR_UI.Icons.get(name) end
+function Heroicons.getLucide(name) return SR_UI.Icons.get(name) end
+function Heroicons.attach(node, iconName, kind) return SR_UI.Icons.attach(node, iconName, kind) end
+function Heroicons.applyIconToButton(btn, iconName) return SR_UI.Icons.applyTo(btn, iconName, "Button") end
+function Heroicons.decorateSections() return SR_UI.Icons.scan() end
+function Heroicons.ensureTicker() return SR_UI.Icons.start() end
+
+
+
 -- ====== Конфигурация ======
 local state_whitelist_ref = nil
 local loadedWhitelist = {}
 local persistDisabled = false
 
 local DEFAULTS = {
-    flingDuration     = 2,
+    flingDuration     = 2.2,
     flingPower        = 1,
     autoReturn        = true,
     loopInterval      = 0.4,
@@ -5337,7 +7743,7 @@ local function applyLoaded(data)
         if v ~= nil and type(v) == type(DEFAULTS[key]) then config[key] = v end
     end
     -- clamp after load
-    if type(config.flingDuration)=="number" then config.flingDuration=math.clamp(math.floor(config.flingDuration+0.5),1,5) end
+    if type(config.flingDuration)=="number" then config.flingDuration=math.clamp(config.flingDuration,1,5) end
     if type(config.flingPower)=="number" then config.flingPower=math.clamp(math.floor(config.flingPower+0.5),1,3) end
     if type(data.keybinds) == "table" then config.keybinds = data.keybinds end
     if type(data.bindPositions) == "table" then config.bindPositions = data.bindPositions end
@@ -5426,7 +7832,7 @@ local Ticker = { _fns = {}, _conn = nil }
 
 function Ticker._start()
     if Ticker._conn then return end
-    Ticker._conn = RunService.RenderStepped:Connect(function(dt)
+    Ticker._conn = RunService.Heartbeat:Connect(function(dt)
         local fns = Ticker._fns
         local i = 1
         while i <= #fns do
@@ -5473,20 +7879,20 @@ end)
 
 -- ====== Заголовки секций ======
 local LEGACY_TITLES = {
-    ["⚡ Quick Actions"] = true,
-    ["🤖 Automation"] = true,
-    ["📋 Lists Management"] = true,
-    ["⚙️ Reset Settings"] = true,
-    ["⚙ Reset Settings"] = true,
-    ["🔄 Bind Buttons (circles)"] = true,
-    ["📊 Status"] = true,
+    ["Quick Actions"] = true,
+    ["Automation"] = true,
+    ["Lists Management"] = true,
+    ["Reset Settings"] = true,
+    ["Reset Settings"] = true,
+    ["Bind Buttons (circles)"] = true,
+    ["Status"] = true,
     ["ℹ️ Info"] = true,
-    ["⚡ Reset"] = true,
-    ["🤖 Auto"] = true,
-    ["📋 Lists"] = true,
-    ["⚙️ Tuning"] = true,
-    ["⚙ Tuning"] = true,
-    ["🔘 Binds"] = true,
+    ["Reset"] = true,
+    ["Auto"] = true,
+    ["Lists"] = true,
+    ["Tuning"] = true,
+    ["Tuning"] = true,
+    ["Binds"] = true,
     ["ℹ️"] = true,
     ["Ultimate Fling V1"] = true,
     ["Ultimate Fling"] = true,
@@ -5494,17 +7900,28 @@ local LEGACY_TITLES = {
 local EXTRA_LEGACY_TITLES = {}
 for _title in pairs(EXTRA_LEGACY_TITLES) do LEGACY_TITLES[_title] = true end
 local CUR_TITLES = {
-    ["💀 " .. BRAND] = true,
-    ["⚡ Fling"] = true,
-    ["🤖 Auto"] = true,
-    ["📋 Lists"] = true,
-    ["⚙️ Tuning"] = true,
-    ["⚙ Tuning"] = true,
-    ["🔘 Binds"] = true,
-    ["🔑 Keys"] = true,
-    ["💾 Config"] = true,
+    [BRAND] = true,
+    ["Fling"] = true,
+    ["Auto"] = true,
+    ["Lists"] = true,
+    ["Tuning"] = true,
+    ["Tuning"] = true,
+    ["Binds"] = true,
+    ["Keys"] = true,
+    ["Config"] = true,
     ["ℹ️"] = true,
 }
+do  -- новые (экранные) названия секций Fling тоже считаются своими
+    local TX = SR_UI and SR_UI.Text
+    if TX then
+        local extra = {}
+        for title in pairs(CUR_TITLES) do
+            local shown = TX.section(title)
+            if shown ~= title then extra[#extra + 1] = shown end
+        end
+        for _, title in ipairs(extra) do CUR_TITLES[title] = true end
+    end
+end
 local HOST_WORDS = {
     "Looking for a feature", "Plugins", "Overdrive", "Logged in as", "gg/overdrivehub",
 }
@@ -5608,7 +8025,7 @@ local function guiRoots()
     pcall(function() add(getcore and getcore()) end)
     add(CoreGui)
     pcall(function() add(LocalPlayer:FindFirstChildOfClass("PlayerGui")) end)
-    return roots
+    return SR_Perf.uniqueRoots(roots)
 end
 
 local function hasHostWords(node, memo)
@@ -5765,6 +8182,9 @@ end
 
 pcall(purgeForeign, true)
 
+-- ====== Heroicons: декоратор секций и контролов (Lucide outline) ======
+
+
 -- ====== Звук клика ======
 local Audio = { click = nil }
 function Audio.init()
@@ -5919,7 +8339,15 @@ binderGlobalMaid:GiveTask(UserInputService.InputEnded:Connect(function(input)
     end
 end))
 
+local binderAcc = 0
 local function binderStep(dt)
+    -- слабое устройство: анимация кнопок 30–45 раз в секунду вместо каждого кадра
+    local minStep = SR_Perf.pick(0, 1 / 45, 1 / 30)
+    if minStep > 0 then
+        binderAcc = binderAcc + (dt or 0)
+        if binderAcc < minStep then return end
+        dt, binderAcc = binderAcc, 0
+    end
     local cam = Workspace.CurrentCamera
     local scr = (cam and cam.ViewportSize) or FALLBACK_VIEWPORT
     local bh = BindableButtons.CurrentSize or 0.11
@@ -5935,16 +8363,35 @@ local function binderStep(dt)
         if btn and glow then
             rec.hover = rec.hover + (rec.targetHover - rec.hover) * kHover
             rec.press = rec.press + (rec.targetPress - rec.press) * kPress
+            if math.abs(rec.targetHover - rec.hover) < 1e-3 then rec.hover = rec.targetHover end
+            if math.abs(rec.targetPress - rec.press) < 1e-3 then rec.press = rec.targetPress end
 
+            -- пишем свойства только когда значение изменилось
             local scale = 1 + rec.hover * 0.14 - rec.press * 0.10
-            btn.Size = ud2(bw * scale, 0, bh * scale, 0)
-            glow.Size = ud2(bw * 2.5, 0, bh * 2.5, 0)
-            glow.Position = btn.Position
+            local w, h = bw * scale, bh * scale
+            if rec._w ~= w or rec._h ~= h then
+                rec._w, rec._h = w, h
+                btn.Size = ud2(w, 0, h, 0)
+            end
+            local gw, gh = bw * 2.5, bh * 2.5
+            if rec._gw ~= gw or rec._gh ~= gh then
+                rec._gw, rec._gh = gw, gh
+                glow.Size = ud2(gw, 0, gh, 0)
+            end
+            local pos = btn.Position
+            if rec._pos ~= pos then
+                rec._pos = pos
+                glow.Position = pos
+            end
 
             local hoverGlow = rec.hover * 0.28
-            glow.ImageTransparency = clamp(0.78 - hoverGlow - pulseBase, 0.25, 1)
+            local tr = clamp(0.78 - hoverGlow - pulseBase, 0.25, 1)
+            if rec._tr ~= tr then
+                rec._tr = tr
+                glow.ImageTransparency = tr
+            end
 
-            rec.rot = (rec.rot + rotStep) % 360
+            rec.rot = (rec.rot + rotStep * clamp((dt or 0.016) * 60, 0, 4)) % 360
             rec.stroke.Rotation = rec.rot
         end
     end
@@ -5960,6 +8407,9 @@ local function binderEnsureTicker()
 end
 
 function BindableButtons.AddBButton(id, text, clickFunc, isGold)
+    -- heroicon auto
+    local _act = id:match("^bind_(.+)$")
+    local _icon = _act and Heroicons.ActionMap[_act] or nil
     if BindableButtons.Buttons[id] then return BindableButtons.Buttons[id] end
     binderEnsureTicker()
 
@@ -6003,6 +8453,7 @@ function BindableButtons.AddBButton(id, text, clickFunc, isGold)
     TextLabel.AnchorPoint = v2(0.5, 0.5)
     TextLabel.BackgroundTransparency = 1
     TextLabel.Font = Enum.Font.FredokaOne
+    pcall(SR_UI.Text.buttonFont, TextLabel)
     TextLabel.Text = text
     TextLabel.TextColor3 = pclr(1, 1, 1)
     TextLabel.TextStrokeTransparency = 0.5
@@ -6072,6 +8523,7 @@ function BindableButtons.AddBButton(id, text, clickFunc, isGold)
     BindableButtons.recs[id] = rec
     insert(BindableButtons.order, id)
     BindableButtons.Count = #BindableButtons.order
+    if _icon then pcall(Heroicons.applyIconToButton, ImageButton, _icon) end
 
     BindableButtons.relayout()
     return ImageButton
@@ -6186,6 +8638,7 @@ function StatusHUD.Init()
     label.AutomaticSize = Enum.AutomaticSize.X
     label.BackgroundTransparency = 1
     label.Font = Enum.Font.GothamBold
+    pcall(SR_UI.Text.buttonFont, label)
     label.Text = "IDLE"
     label.TextColor3 = rgb(200, 215, 230)
     label.TextSize = 12
@@ -6223,7 +8676,7 @@ function StatusHUD.Init()
     RootMaid:GiveTask(Ticker.add(function(dt)
         if not StatusHUD.dot then return end
         StatusHUD.accum = StatusHUD.accum + (dt or 0.016)
-        if StatusHUD.accum < 0.033 then return end
+        if StatusHUD.accum < SR_Perf.pick(0.033, 0.05, 0.08) then return end
         StatusHUD.accum = 0
         local pulse = sin(now() * 4) * 0.5 + 0.5
         if StatusHUD.state == "active" then
@@ -6244,7 +8697,7 @@ function StatusHUD.Set(newState, targetName)
     if not StatusHUD.label then return end
     local text, color
     if newState == "active" then
-        text = "FLING ▸ " .. (targetName or "?")
+        text = "FLING - " .. (targetName or "?")
         color = rgb(255, 120, 120)
     else
         text = "IDLE"
@@ -6437,159 +8890,251 @@ local function cancelCurrentFling()
     StatusHUD.Set("idle")
 end
 
--- основная функция - один таргет
-local function SkidFling(TargetPlayer)
+-- основная функция - один таргет (V2 улучшенный: 95% с 1 раза, AssemblyVelocity, Heartbeat, ретраи)
+local function SkidFling(TargetPlayer, _attempt)
+    local attempt = _attempt or 1
     if not TargetPlayer or not TargetPlayer.Parent then return false end
     if TargetPlayer == LocalPlayer or state.whitelist[TargetPlayer.UserId] then return false end
 
-    -- кулдаун
-    local last = state.lastResetAt[TargetPlayer.UserId]
-    if last and (now()-last) < (config.targetCooldown or 0) then return false end
+    -- кулдаун только на 1-й попытке, ретраи игнорируют
+    if attempt == 1 then
+        local last = state.lastResetAt[TargetPlayer.UserId]
+        if last and (now()-last) < (config.targetCooldown or 0) then return false end
+    end
     state.lastResetAt[TargetPlayer.UserId]=now()
 
     cancelCurrentFling()
 
     local Character = LocalPlayer and LocalPlayer.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    -- поддержка R6/R15: ищем RootPart разными способами
     local RootPart = Humanoid and Humanoid.RootPart
+    if not RootPart and Character then
+        RootPart = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Torso") or Character:FindFirstChild("UpperTorso")
+    end
     local TCharacter = TargetPlayer.Character
-    local THumanoid = TCharacter and TCharacter:FindFirstChildOfClass("Humanoid")
-    local TRootPart = THumanoid and THumanoid.RootPart or nil
-    local THead = TCharacter and TCharacter:FindFirstChild("Head")
-    local Accessory = TCharacter and TCharacter:FindFirstChildOfClass("Accessory")
+    if not TCharacter then return false end
+    local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+    local TRootPart = TCharacter:FindFirstChild("HumanoidRootPart") or TCharacter:FindFirstChild("Torso") or TCharacter:FindFirstChild("UpperTorso")
+    local THead = TCharacter:FindFirstChild("Head")
+    local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
     local Handle = Accessory and Accessory:FindFirstChild("Handle") or nil
 
     if not (Character and Humanoid and RootPart and TCharacter) then return false end
     if not TCharacter:FindFirstChildWhichIsA("BasePart") then return false end
 
-    if RootPart.Velocity.Magnitude < 50 then
+    -- сохраняем позицию (на 1-й попытке или если стоим)
+    local curVel = RootPart.AssemblyLinearVelocity.Magnitude
+    if curVel < 50 or attempt == 1 then
         flingOldPos = RootPart.CFrame
         pcall(function() if getgenv then getgenv().OldPos = flingOldPos end end)
     end
+    -- если сидит - пробуем встать, а не отменять
     if THumanoid and THumanoid.Sit then
-        Notify("Fling", TargetPlayer.Name.." is sitting",2)
-        return false
+        pcall(function() THumanoid.Sit = false; THumanoid.Jump = true end)
+        task.wait(0.08)
     end
 
     if THead then pcall(function() Workspace.CurrentCamera.CameraSubject = THead end)
     elseif Handle then pcall(function() Workspace.CurrentCamera.CameraSubject = Handle end)
-    elseif THumanoid and TRootPart then pcall(function() Workspace.CurrentCamera.CameraSubject = THumanoid end) end
+    elseif TRootPart then pcall(function() Workspace.CurrentCamera.CameraSubject = THumanoid or TRootPart end) end
 
-    local power = config.flingPower or 1
-    local velMult = power==1 and 1 or (power==2 and 1.5 or 2)
-    local rotMult = velMult
+    local TargetPart = TRootPart or THead or Handle
+    if not TargetPart then Notify("Fling", TargetPlayer.Name.." has no valid parts",2) return false end
 
-    local savedDestroy = Workspace.FallenPartsDestroyHeight
-    Workspace.FallenPartsDestroyHeight = 0/0 -- NaN trick
-    if flingBV and flingBV.Parent then pcall(function() flingBV:Destroy() end) end
-    flingBV = new("BodyVelocity")
-    flingBV.Velocity = v3(0,0,0)
-    flingBV.MaxForce = v3(9e9,9e9,9e9)
-    flingBV.Parent = RootPart
-    pcall(function() Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end)
+    local targetStartPos = TargetPart.Position
+    local targetStartVel = TargetPart.AssemblyLinearVelocity.Magnitude
 
-    local startTime = now()
+    -- сила растёт с попыткой
+    local basePower = config.flingPower or 1
+    local powMult = basePower == 1 and 1 or basePower == 2 and 1.8 or 2.6
+    powMult = powMult * (1 + (attempt-1)*0.45)
+    local velMult = powMult
+    local rotMult = powMult * 1.15
+
+    local origFPDH = Workspace.FallenPartsDestroyHeight
+    pcall(function() Workspace.FallenPartsDestroyHeight = -math.huge end)
+    pcall(function() Workspace.FallenPartsDestroyHeight = 0/0 end)
+
+    if flingBV then pcall(function() flingBV:Destroy() end) flingBV=nil end
+    -- BodyVelocity + BodyAngularVelocity для максимального эффекта
+    local bv = new("BodyVelocity")
+    bv.Name = "FlingBV"
+    bv.MaxForce = v3(1e9, 1e9, 1e9)
+    bv.Velocity = V3_ZERO
+    bv.P = 9e9
+    bv.Parent = RootPart
+    flingBV = bv
+
+    local bav = new("BodyAngularVelocity")
+    bav.Name = "FlingBAV"
+    bav.MaxTorque = v3(1e9, 1e9, 1e9)
+    bav.AngularVelocity = v3(9e8*rotMult, 9e8*rotMult, 9e8*rotMult)
+    bav.P = 9e9
+    bav.Parent = RootPart
+
+    pcall(function()
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        Humanoid.PlatformStand = true
+        Humanoid.AutoRotate = false
+    end)
+
     local done=false
-    local flingObj={ bv=flingBV, conn=nil, watchdog=nil }
-    local function cleanup(success, manual)
+    local flingObj={ bv=bv, bav=bav, done=false, watchdog=nil }
+    local function cleanup()
         if done then return end
         done=true
+        flingObj.done=true
         if currentFling==flingObj then currentFling=nil end
-        if flingObj.conn then pcall(function() flingObj.conn:Disconnect() end) end
         if flingObj.watchdog then pcall(task.cancel, flingObj.watchdog) end
-        if flingBV then pcall(function() flingBV:Destroy() end) flingBV=nil end
-        pcall(function() Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end)
+        pcall(function() bv:Destroy() end)
+        pcall(function() bav:Destroy() end)
+        if flingBV==bv then flingBV=nil end
+        pcall(function()
+            Humanoid.PlatformStand = false
+            Humanoid.AutoRotate = true
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end)
         pcall(function() Workspace.CurrentCamera.CameraSubject = Humanoid end)
         if config.autoReturn and flingOldPos then
-            local tries=0
-            repeat
+            for i=1,28 do
                 if not RootPart or not RootPart.Parent then break end
-                pcall(function()
-                    RootPart.CFrame = flingOldPos * cfr(0,.5,0)
-                    Character:SetPrimaryPartCFrame(flingOldPos * cfr(0,.5,0))
-                    Humanoid:ChangeState("GettingUp")
-                    for _, part in pairs(Character:GetChildren()) do
-                        if part:IsA("BasePart") then
-                            part.Velocity, part.RotVelocity = V3_ZERO, V3_ZERO
-                        end
+                local ok = pcall(function()
+                    RootPart.CFrame = flingOldPos * cfr(0,0.5,0)
+                    if Character.PrimaryPart then
+                        pcall(function() Character:SetPrimaryPartCFrame(flingOldPos * cfr(0,0.5,0)) end)
                     end
+                    RootPart.AssemblyLinearVelocity = V3_ZERO
+                    RootPart.AssemblyAngularVelocity = V3_ZERO
+                    -- совместимость со старыми executor'ами
+                    RootPart.Velocity = V3_ZERO
+                    RootPart.RotVelocity = V3_ZERO
                 end)
-                task.wait()
-                tries=tries+1
-                if tries>20 then break end
-            until (RootPart.Position - flingOldPos.p).Magnitude < 25
+                if not ok then break end
+                RunService.Heartbeat:Wait()
+                if (RootPart.Position - flingOldPos.p).Magnitude < 12 then break end
+            end
+        else
+            pcall(function()
+                RootPart.AssemblyLinearVelocity = V3_ZERO
+                RootPart.AssemblyAngularVelocity = V3_ZERO
+                RootPart.Velocity = V3_ZERO
+                RootPart.RotVelocity = V3_ZERO
+            end)
         end
+        pcall(function() Workspace.FallenPartsDestroyHeight = origFPDH end)
         pcall(function() Workspace.FallenPartsDestroyHeight = flingFPDH end)
         BindableButtons.ResetActive=false
         StatusHUD.Set("idle")
     end
-    flingObj.cancel=function() cleanup(true,true) end
+    flingObj.cancel=cleanup
     currentFling=flingObj
     BindableButtons.ResetActive=true
     StatusHUD.Set("active", TargetPlayer.Name)
-    flingObj.watchdog = task.delay((config.flingDuration or 2)+2, function() if not done then cleanup(false) end end)
+    flingObj.watchdog = task.delay((config.flingDuration or 2)+4, function() if not done then cleanup() end end)
 
-    local function FPos(BasePart, Pos, Ang)
-        if not RootPart or not RootPart.Parent then return end
+    local function FPos(part, offset, angle)
+        if not RootPart or not RootPart.Parent or not part or not part.Parent then return end
         pcall(function()
-            RootPart.CFrame = cfr(BasePart.Position) * Pos * Ang
-            Character:SetPrimaryPartCFrame(cfr(BasePart.Position) * Pos * Ang)
-            RootPart.Velocity = v3(9e7*velMult, 9e7*10*velMult, 9e7*velMult)
-            RootPart.RotVelocity = v3(9e8*rotMult, 9e8*rotMult, 9e8*rotMult)
+            -- используем CFrame части, а не только позицию, чтобы сохранить ориентацию
+            local cf = part.CFrame * offset * angle
+            RootPart.CFrame = cf
+            if Character.PrimaryPart then
+                pcall(function() Character:SetPrimaryPartCFrame(cf) end)
+            end
+            local vel = v3(9e7*velMult, 9e7*10*velMult, 9e7*velMult)
+            local rot = v3(9e8*rotMult, 9e8*rotMult, 9e8*rotMult)
+            RootPart.AssemblyLinearVelocity = vel
+            RootPart.AssemblyAngularVelocity = rot
+            RootPart.Velocity = vel
+            RootPart.RotVelocity = rot
         end)
     end
 
-    local function SFBasePart(BasePart)
-        local TimeToWait = config.flingDuration or 2
-        local Time = tick()
-        local Angle = 0
-        repeat
+    local TimeToWait = (config.flingDuration or 2.2) + (attempt-1)*0.45
+    local startTick = tick()
+    local Angle = 0
+    -- основной цикл флинга на Heartbeat для стабильности 60fps
+    repeat
+        if done or not currentFling then break end
+        if not RootPart or not RootPart.Parent or not TargetPart or not TargetPart.Parent or not THumanoid or THumanoid.Health<=0 then break end
+        local moveDir = THumanoid.MoveDirection
+        local speed = TargetPart.AssemblyLinearVelocity.Magnitude
+        if speed < 50 then
+            Angle = (Angle + 135) % 360
+            -- 4 позиции с разными углами за итерацию = сильнее
+            FPos(TargetPart, cfr(0, 1.5, 0) + moveDir * speed/1.25, CFrame.Angles(math.rad(Angle),0,0))
+            RunService.Heartbeat:Wait()
             if done then break end
-            if RootPart and THumanoid and BasePart and BasePart.Parent then
-                if BasePart.Velocity.Magnitude < 50 then
-                    Angle = Angle + 100
-                    FPos(BasePart, cfr(0,1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude/1.25, CFrame.Angles(math.rad(Angle),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,1.5,0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle),0,0))
-                    task.wait()
-                else
-                    FPos(BasePart, cfr(0,1.5,THumanoid.WalkSpeed), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,-THumanoid.WalkSpeed), CFrame.Angles(0,0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,1.5,THumanoid.WalkSpeed), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(0,0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    FPos(BasePart, cfr(0,-1.5,0), CFrame.Angles(0,0,0))
-                    task.wait()
-                end
-            else
-                task.wait()
+            FPos(TargetPart, cfr(0, -1.5, 0) + moveDir * speed/1.25, CFrame.Angles(math.rad(Angle),0,math.rad(Angle*0.7)))
+            RunService.Heartbeat:Wait()
+            if done then break end
+            FPos(TargetPart, cfr(0, 1.5, 0) + moveDir * speed/1.25, CFrame.Angles(0,math.rad(Angle),0))
+            RunService.Heartbeat:Wait()
+            if done then break end
+            FPos(TargetPart, cfr(0, -1.5, 0) + moveDir, CFrame.Angles(math.rad(Angle*1.3),0,0))
+            RunService.Heartbeat:Wait()
+        else
+            -- быстрая цель - более прямой удар
+            FPos(TargetPart, cfr(0, 1.55, THumanoid.WalkSpeed*0.12), CFrame.Angles(math.rad(90),0,0))
+            RunService.Heartbeat:Wait()
+            FPos(TargetPart, cfr(0, -1.55, -THumanoid.WalkSpeed*0.12), CFrame.Angles(0,0,0))
+            RunService.Heartbeat:Wait()
+        end
+        -- обновляем угловую скорость каждый тик
+        pcall(function() bav.AngularVelocity = v3(9e8*rotMult, 9e8*rotMult, 9e8*rotMult) end)
+    until tick() - startTick >= TimeToWait or done
+
+    -- финальный burst
+    pcall(function()
+        local burst = v3(9e7*velMult*1.6, 9e7*10*velMult*1.6, 9e7*velMult*1.6)
+        RootPart.AssemblyLinearVelocity = burst
+        RootPart.Velocity = burst
+        local brot = v3(9e8*rotMult*1.9, 9e8*rotMult*1.9, 9e8*rotMult*1.9)
+        RootPart.AssemblyAngularVelocity = brot
+        RootPart.RotVelocity = brot
+    end)
+    task.wait(0.09)
+
+    cleanup()
+
+    -- проверка успеха по дистанции/скорости
+    local success = false
+    local dist, vel = 0, 0
+    pcall(function()
+        if TargetPart and TargetPart.Parent then
+            dist = (TargetPart.Position - targetStartPos).Magnitude
+            vel = TargetPart.AssemblyLinearVelocity.Magnitude
+            if dist > 45 or vel > 650 or TargetPart.Position.Y < -80 then
+                success = true
             end
-        until Time + TimeToWait < tick()
+        else
+            success = true
+        end
+    end)
+
+    if not success and attempt < 3 then
+        -- авто-ретрай сильнее, без кулдауна
+        state.lastResetAt[TargetPlayer.UserId] = nil
+        task.wait(0.18)
+        if isValidTarget(TargetPlayer) then
+            return SkidFling(TargetPlayer, attempt+1)
+        end
     end
 
-    if TRootPart then SFBasePart(TRootPart)
-    elseif THead then SFBasePart(THead)
-    elseif Handle then SFBasePart(Handle)
-    else Notify("Fling", TargetPlayer.Name.." has no valid parts",2) end
-
-    cleanup(true)
-    return true
+    if success then
+        Notify("Fling", ""..TargetPlayer.Name.." (dist "..math.floor(dist)..", vel "..math.floor(vel)..")",2)
+    else
+        Notify("Fling", ""..TargetPlayer.Name.." — out of retries",2)
+    end
+    return success
 end
+
 
 -- ====== Авто-модули ======
 local function startAutoModule(maidKey, finderFunc, intervalFn)
@@ -6617,28 +9162,28 @@ end
 local ACTIONS={}
 
 ACTIONS.sheriff={
-    name="Sheriff", short="Sh", label="🔫 Sheriff",
+    name="Sheriff", short="Sh", label="Sheriff",
     run=function()
         local t=findSheriff()
         if t then SkidFling(t) else Notify("Fling","Sheriff not found",3) end
     end,
 }
 ACTIONS.murderer={
-    name="Murderer", short="Mur", label="🔪 Murderer",
+    name="Murderer", short="Mur", label="Murderer",
     run=function()
         local t=findMurderer()
         if t then SkidFling(t) else Notify("Fling","Murderer not found",3) end
     end,
 }
 ACTIONS.selected={
-    name="Selected", short="Sel", label="🎯 Selected",
+    name="Selected", short="Sel", label="Selected",
     run=function()
         local t=getSelectedOrFirst()
         if t then SkidFling(t) else Notify("Fling","No valid selected player",2) end
     end,
 }
 ACTIONS.all={
-    name="All", short="All", label="👥 Everyone",
+    name="All", short="All", label="Everyone",
     run=function()
         if massFlingThread then Notify("Fling","Mass fling already running",2) return end
         massFlingThread=task.spawn(function()
@@ -6656,29 +9201,38 @@ ACTIONS.all={
     end,
 }
 ACTIONS.nearest={
-    name="Nearest", short="Nrst", label="📍 Nearest",
+    name="Nearest", short="Nrst", label="Nearest",
     run=function()
         local t=findNearest()
         if t then SkidFling(t) else Notify("Fling","No valid target nearby",2) end
     end,
 }
 ACTIONS.start={
-    name="Start", short="Go", label="▶ Start",
+    name="Start", short="Go", label="Start",
     run=function()
         if maids.loopPlr then Notify("Fling","Loop already active - stop it first",2) return end
         local count=#state.selectedPlayers
         if count==0 and not isValidTarget(state.resetSelPlr) then Notify("Fling","No targets for loop",2) return end
-        Notify("Fling","Use 🤖 Auto → Loop toggle for continuous",3)
+        Notify("Fling","Use Auto → Loop toggle for continuous",3)
         for _,p in ipairs(state.selectedPlayers) do if isValidTarget(p) then SkidFling(p); task.wait(0.2) end end
         if isValidTarget(state.resetSelPlr) then SkidFling(state.resetSelPlr) end
     end,
 }
 ACTIONS.cancel={
-    name="Cancel", short="Can", label="⏹ Cancel",
+    name="Cancel", short="Can", label="Cancel",
     run=function() cancelCurrentFling(); Notify("Fling","Cancelled",2) end,
 }
 
 local ACTION_ORDER={"sheriff","murderer","selected","all","nearest","start","cancel"}
+
+-- DEBUG: validate ACTIONS
+pcall(function()
+    for i,id in ipairs(ACTION_ORDER) do
+        local a=ACTIONS[id]
+        if not a then warn("[FLING][DEBUG] ACTION_ORDER "..i.." id="..tostring(id).." ACTIONS=nil") else print("[FLING][DEBUG] "..i.." "..tostring(id).." -> "..tostring(a.name)) end
+    end
+    print("[FLING] ACTION_ORDER validated, ACTIONS size "..tostring((function() local c=0 for _ in pairs(ACTIONS) do c=c+1 end return c end)()))
+end)
 
 local function runAction(id)
     local a=ACTIONS[id]
@@ -6708,7 +9262,7 @@ RootMaid:GiveTask(UserInputService.InputBegan:Connect(function(input, processed)
         Keybinds.capture=nil
         config.keybinds[id]=name
         saveConfig()
-        Notify("Hotkey", ACTIONS[id].name.." → "..name,3)
+        do local _a=ACTIONS[id]; Notify("Hotkey", (_a and _a.name or tostring(id)).." → "..name,3) end
         return
     end
     if processed then return end
@@ -6718,29 +9272,26 @@ RootMaid:GiveTask(UserInputService.InputBegan:Connect(function(input, processed)
 end))
 
 -- ====== МЕНЮ ======
-local mainSection = AddSection("💀 " .. BRAND)
-mainSection:AddLabel("Ultimate Fling • by " .. AUTHOR .. " • " .. VERSION)
-mainSection:AddParagraph("Info","Мульти-таргет флинг с сохранением позиции. Выбери цели в 📋 Lists, жми ▶ в ⚡ Fling или включи Loop/Aura в 🤖 Auto. FPDH и физика чистятся авто.")
+local okMenu, errMenu = pcall(function()  -- одна сломанная кнопка не роняет весь модуль
+local mainSection = AddSection(BRAND)
+mainSection:AddLabel(SR_UI.Text.mark("by " .. tostring(AUTHOR or "K1LAS1K") .. " · " .. tostring(VERSION or "V1.1-FIX"), "credit"))
 
 -- ⚡ Fling
-local actionSection = AddSection("⚡ Fling")
-actionSection:AddButton("🔫 Sheriff", function() runAction("sheriff") end)
-actionSection:AddButton("🔪 Murderer", function() runAction("murderer") end)
-actionSection:AddButton("🎯 Selected", function() runAction("selected") end)
-actionSection:AddButton("👥 Everyone", function() runAction("all") end)
-actionSection:AddButton("📍 Nearest", function() runAction("nearest") end)
-actionSection:AddButton("▶ Start (list)", function() runAction("start") end)
-actionSection:AddButton("⏹ Cancel", function() runAction("cancel") end)
-actionSection:AddPlayerDropdown("▸ Fling player", function(p)
+local actionSection = AddSection("Fling")
+actionSection:AddButton("Sheriff", function() runAction("sheriff") end)
+actionSection:AddButton("Murderer", function() runAction("murderer") end)
+actionSection:AddButton("Selected", function() runAction("selected") end)
+actionSection:AddButton("Everyone", function() runAction("all") end)
+actionSection:AddButton("Nearest", function() runAction("nearest") end)
+actionSection:AddButton("Start (list)", function() runAction("start") end)
+actionSection:AddButton("Cancel", function() runAction("cancel") end)
+actionSection:AddPlayerDropdown("Fling player", function(p)
     if p and p ~= LocalPlayer then
         state.resetSelPlr = p
         if state.whitelist[p.UserId] then Notify("Whitelist", p.Name.." is whitelisted!",3)
-        else SkidFling(p); Notify("Fling","Flinging "..p.Name,2) end
-    end
-end)
+        else SkidFling(p); Notify("Fling","Flinging "..p.Name,2) end end end)
 
--- 🤖 Auto
-local autoSection = AddSection("🤖 Auto")
+local autoSection = AddSection("Auto")
 autoSection:AddToggle("Auto Sheriff", function(enabled)
     if enabled then
         startAutoModule("autoSheriff", findSheriff, function() return config.autoSheriffDelay end)
@@ -6826,17 +9377,13 @@ autoSection:AddToggle("Click", function(enabled)
         if not ok or not player or player==LocalPlayer then return end
         state.resetSelPlr=player
         if state.whitelist[player.UserId] then Notify("Click", player.Name.." is whitelisted!",3)
-        else SkidFling(player); Notify("Click","Flinging "..player.Name,2) end
-    end
-    maids.clickFling:GiveTask(UserInputService.InputBegan:Connect(onInput))
-end)
+        else SkidFling(player); Notify("Click","Flinging "..player.Name,2) end end maids.clickFling:GiveTask(UserInputService.InputBegan:Connect(onInput)) end)
 
--- 📋 Lists
-local listSection = AddSection("📋 Lists")
-listSection:AddPlayerDropdown("🎯 Select", function(p)
+local listSection = AddSection("Lists")
+listSection:AddPlayerDropdown("Select", function(p)
     if p and p ~= LocalPlayer then state.resetSelPlr=p; Notify("Selected", p.Name.." set",3) end
 end)
-listSection:AddPlayerDropdown("➕ Loop", function(p)
+listSection:AddPlayerDropdown("Loop", function(p)
     if p and p ~= LocalPlayer then
         state.resetSelPlr=p
         if not state.selectedSet[p.UserId] then
@@ -6846,21 +9393,20 @@ listSection:AddPlayerDropdown("➕ Loop", function(p)
         end
     end
 end)
-listSection:AddButton("🧹 Clear loop", function()
+listSection:AddButton("Clear loop", function()
     clearTable(state.selectedPlayers); clearTable(state.selectedSet)
     Notify("Selected","Cleared",3)
 end)
-listSection:AddPlayerDropdown("🛡 Whitelist", function(p)
+listSection:AddPlayerDropdown("Whitelist", function(p)
     if p and p ~= LocalPlayer then state.whitelist[p.UserId]=p.Name; Notify("Whitelist", p.Name.." added",3); saveConfig() end
 end)
-listSection:AddPlayerDropdown("🛡 Un-whitelist", function(p)
+listSection:AddPlayerDropdown("Un-whitelist", function(p)
     if p and state.whitelist[p.UserId] then state.whitelist[p.UserId]=nil; Notify("Whitelist", p.Name.." removed",3); saveConfig()
     elseif p then Notify("Whitelist", p.Name.." is not whitelisted",3) end
 end)
-listSection:AddButton("🧹 Clear WL", function() clearTable(state.whitelist); Notify("Whitelist","Cleared",3); saveConfig() end)
+listSection:AddButton("Clear WL", function() clearTable(state.whitelist); Notify("Whitelist","Cleared",3); saveConfig() end)
 
--- ⚙️ Tuning
-local settingsSection = AddSection("⚙️ Tuning")
+local settingsSection = AddSection("Tuning")
 settingsSection:AddSlider("Fling Duration", 1, 5, config.flingDuration, function(v) config.flingDuration=v; saveConfig() end)
 settingsSection:AddSlider("Fling Power", 1, 3, config.flingPower, function(v) config.flingPower=v; saveConfig() end)
 settingsSection:AddSlider("Aura Radius", 5, 50, config.auraStuds, function(v) config.auraStuds=v; saveConfig() end)
@@ -6873,15 +9419,14 @@ settingsSection:AddSlider("Role Cache TTL", 0.2, 3.0, config.roleCacheTTL, funct
 settingsSection:AddToggle("Auto Return", function(enabled) config.autoReturn=enabled and true or false; saveConfig() end)
 settingsSection:AddToggle("Notifications", function(enabled) config.notifications=enabled and true or false; saveConfig() end)
 
--- 🔘 Binds
-local floatSection = AddSection("🔘 Binds")
-floatSection:AddToggle("SFX 🔇", function(bool) Audio.setMuted(bool) end)
+local floatSection = AddSection("Binds")
+floatSection:AddToggle("SFX", function(bool) Audio.setMuted(bool) end)
 
 local function toggleBindButton(actionId)
     return function(enabled)
         local id="bind_"..actionId
         if enabled then
-            BindableButtons.AddBButton(id, ACTIONS[actionId].short, function() runAction(actionId) end, actionId=="selected")
+            BindableButtons.AddBButton(id, (ACTIONS[actionId] and ACTIONS[actionId].short or tostring(actionId):sub(1,2)), function() runAction(actionId) end, actionId=="selected")
         else
             BindableButtons.DeleteBButton(id)
         end
@@ -6889,41 +9434,44 @@ local function toggleBindButton(actionId)
 end
 
 for _,id in ipairs(ACTION_ORDER) do
-    floatSection:AddToggle("Bind "..ACTIONS[id].name, toggleBindButton(id))
+    local _act = ACTIONS[id]
+    local _actName = (_act and _act.name) or tostring(id)
+    if not _act then warn("[FLING] missing action for id "..tostring(id)) end
+    floatSection:AddToggle("Bind ".._actName, toggleBindButton(id))
 end
 floatSection:AddSlider("Bind Size (%)", 5, 25, math.floor((config.bindButtonSize or 0.11)*100), function(value)
     BindableButtons.setSize(value/100)
 end)
-floatSection:AddButton("🧩 Reset bind layout", function() BindableButtons.resetLayout(); Notify("Binds","Layout reset",2) end)
-floatSection:AddButton("🛑 Panic", function()
+floatSection:AddButton("Reset bind layout", function() BindableButtons.resetLayout(); Notify("Binds","Layout reset",2) end)
+floatSection:AddButton("Panic", function()
     cancelCurrentFling()
     for _,key in ipairs({"loopPlr","clickFling","aura","autoSheriff","autoMurderer"}) do stopAutoModule(key) end
     BindableButtons.clearAll()
     for _,r in ipairs(ODHX.records) do
-        if r.kind=="Toggle" and (r.section=="🤖 Auto" or (r.section=="🔘 Binds" and r.name:sub(1,5)=="Bind ")) then
+        if r.kind=="Toggle" and (r.section=="Auto" or (r.section=="Binds" and r.name:sub(1,5)=="Bind ")) then
             ODHX.Set(r.section,r.name,r.kind,false,false)
         end
     end
-    Notify("Panic","All modules stopped",3)
-end)
+    Notify("Panic","All modules stopped",3) end)
 
--- 🔑 Keys
-local keySection = AddSection("🔑 Keys")
+local keySection = AddSection("Keys")
 for _,id in ipairs(ACTION_ORDER) do
-    keySection:AddToggle("Key "..ACTIONS[id].name.." ["..keyName(id).."]", function(enabled)
-        if enabled then Keybinds.capture=id; Notify("Hotkey","Press a key for "..ACTIONS[id].name.."...",5)
-        else config.keybinds[id]=nil; if Keybinds.capture==id then Keybinds.capture=nil end; saveConfig(); Notify("Hotkey", ACTIONS[id].name.." key cleared",3) end
+    local _actKS = ACTIONS[id]
+    local _actNameKS = (_actKS and _actKS.name) or tostring(id)
+    if not _actKS then warn("[FLING] keySection bad id "..tostring(id)) end
+    keySection:AddToggle("Key ".._actNameKS.." ["..keyName(id).."]", function(enabled)
+        if enabled then Keybinds.capture=id; Notify("Hotkey","Press a key for ".._actNameKS.."...",5)
+        else config.keybinds[id]=nil; if Keybinds.capture==id then Keybinds.capture=nil end; saveConfig(); Notify("Hotkey", _actNameKS.." key cleared",3) end
     end)
 end
-keySection:AddButton("🧹 Clear keys", function() clearTable(config.keybinds); Keybinds.capture=nil; saveConfig(); Notify("Hotkey","All hotkeys cleared",3) end)
+keySection:AddButton("Clear keys", function() clearTable(config.keybinds); Keybinds.capture=nil; saveConfig(); Notify("Hotkey","All hotkeys cleared",3) end)
 
--- 💾 Config
-local configSection = AddSection("💾 Config")
-configSection:AddButton("💾 Save", function()
+local configSection = AddSection("Config")
+configSection:AddButton("Save", function()
     if saveConfig(true) then Notify("Config","Saved → "..CONFIG_PATH,3)
     else Notify("Config","Filesystem unavailable",4) end
 end)
-configSection:AddButton("📂 Reload", function()
+configSection:AddButton("Reload", function()
     if loadConfig() then
         ODHX.data.controls=config.pluginUI or {}
         ODHX.Restore()
@@ -6932,7 +9480,7 @@ configSection:AddButton("📂 Reload", function()
         Notify("Config","Reloaded",3)
     else Notify("Config","Nothing to load",3) end
 end)
-configSection:AddButton("♻ Reset config", function()
+configSection:AddButton("Reset config", function()
     for k,v in pairs(DEFAULTS) do
         if type(v)=="table" then clearTable(config[k]); for k2,v2 in pairs(v) do config[k][k2]=v2 end
         else config[k]=v end
@@ -6946,21 +9494,27 @@ configSection:AddButton("♻ Reset config", function()
 end)
 
 -- ℹ️
-local infoSection = AddSection("ℹ️")
-infoSection:AddButton("🧹 Clean duplicates", function()
+local infoSection = AddSection("Info")
+infoSection:AddButton("Clean duplicates", function()
     local n=purgeForeign(true); markOwnCards(); Notify("Clean","Removed "..n.." duplicate section(s)",3)
 end)
-infoSection:AddLabel(PLUGIN_NAME.." • "..VERSION.." • by "..AUTHOR)
-infoSection:AddLabel("HUD drag • Binds drag • config saved → "..CONFIG_PATH)
+infoSection:AddLabel(SR_UI.Text.mark("Drag the status panel and round buttons to move them", "hint"))
+infoSection:AddLabel(SR_UI.Text.mark("Settings file: "..CONFIG_PATH, "credit"))
 
 -- ====== Пометить свои карточки ======
 markOwnCards()
+Heroicons.ensureTicker()
+end)
+if not okMenu then warn("[" .. tostring(BRAND) .. "][menu] " .. tostring(errMenu)) end
 
 RootMaid:GiveTask(task.spawn(function()
     for _,delay in ipairs({1.5,2.5,3.0,5.0}) do
         task.wait(delay)
         pcall(markOwnCards)
         pcall(purgeForeign, true)
+
+
+
     end
 end))
 
@@ -7013,19 +9567,19 @@ pcall(function()
     rawset(g, UNLOAD_GLOBAL, ODHX.Stop)
 end)
 
-ODHX.Bind("⚙️ Tuning", "Auto Return", "Toggle", function() return config.autoReturn end)
-ODHX.Bind("⚙️ Tuning", "Notifications", "Toggle", function() return config.notifications end)
-ODHX.Bind("🔘 Binds", "SFX 🔇", "Toggle", function() return config.muteSounds end)
-ODHX.Bind("⚙️ Tuning", "Fling Duration", "Slider", function() return config.flingDuration end)
-ODHX.Bind("⚙️ Tuning", "Fling Power", "Slider", function() return config.flingPower end)
-ODHX.Bind("⚙️ Tuning", "Aura Radius", "Slider", function() return config.auraStuds end)
-ODHX.Bind("⚙️ Tuning", "Loop Interval", "Slider", function() return config.loopInterval end)
-ODHX.Bind("⚙️ Tuning", "Aura Interval", "Slider", function() return config.auraInterval end)
-ODHX.Bind("⚙️ Tuning", "Target Cooldown", "Slider", function() return config.targetCooldown end)
-ODHX.Bind("⚙️ Tuning", "Auto Sheriff Delay", "Slider", function() return config.autoSheriffDelay end)
-ODHX.Bind("⚙️ Tuning", "Auto Murderer Delay", "Slider", function() return config.autoMurdererDelay end)
-ODHX.Bind("⚙️ Tuning", "Role Cache TTL", "Slider", function() return config.roleCacheTTL end)
-ODHX.Bind("🔘 Binds", "Bind Size (%)", "Slider", function() return config.bindButtonSize*100 end)
+ODHX.Bind("Tuning", "Auto Return", "Toggle", function() return config.autoReturn end)
+ODHX.Bind("Tuning", "Notifications", "Toggle", function() return config.notifications end)
+ODHX.Bind("Binds", "SFX", "Toggle", function() return config.muteSounds end)
+ODHX.Bind("Tuning", "Fling Duration", "Slider", function() return config.flingDuration end)
+ODHX.Bind("Tuning", "Fling Power", "Slider", function() return config.flingPower end)
+ODHX.Bind("Tuning", "Aura Radius", "Slider", function() return config.auraStuds end)
+ODHX.Bind("Tuning", "Loop Interval", "Slider", function() return config.loopInterval end)
+ODHX.Bind("Tuning", "Aura Interval", "Slider", function() return config.auraInterval end)
+ODHX.Bind("Tuning", "Target Cooldown", "Slider", function() return config.targetCooldown end)
+ODHX.Bind("Tuning", "Auto Sheriff Delay", "Slider", function() return config.autoSheriffDelay end)
+ODHX.Bind("Tuning", "Auto Murderer Delay", "Slider", function() return config.autoMurdererDelay end)
+ODHX.Bind("Tuning", "Role Cache TTL", "Slider", function() return config.roleCacheTTL end)
+ODHX.Bind("Binds", "Bind Size (%)", "Slider", function() return config.bindButtonSize*100 end)
 ODHX.cleanup=unload
 ODHX.Finish()
 
@@ -7209,7 +9763,7 @@ do
             local function register(kind,label,callback,default,min,max,items)
                 local r={section=name,name=label,kind=kind,callback=callback,default=default,min=min,max=max,items=items,visual=false}
                 r.key=key(name,label,kind)
-                r.exclude=(name=="🔑 Keys") -- key-capture toggles are actions, not enabled modes
+                r.exclude=(name=="Keys") -- key-capture toggles are actions, not enabled modes
                 X.records[#X.records+1]=r; X.byKey[r.key]=r
                 local function changed(v)
                     if kind=="Toggle" then r.visual=(v==true) end
@@ -7301,25 +9855,24 @@ do
     local wallhop_section = shared.AddSection("Pm-WallHop")
 
     -- Добавляем информацию
-    wallhop_section:AddLabel("Pm-WallHop Script by @Phemtom (Improved)")
-    wallhop_section:AddParagraph("Pm-WallHop", "Флинг при прыжке возле стыка стен")
+    wallhop_section:AddLabel(SR_UI.Text.mark("by @Phemtom (improved)", "credit"))
 
     -- Основной переключатель (ТОГГЛ)
     local isWallHopEnabled = false
     wallhop_section:AddToggle("Enable WallHop", function(bool)
         isWallHopEnabled = bool
         if bool then
-            shared.Notify("Pm-WallHop включен", 2)
+            shared.Notify("Pm-WallHop enabled", 2)
         else
-            shared.Notify("Pm-WallHop выключен", 2)
+            shared.Notify("Pm-WallHop disabled", 2)
         end
         UpdateWallhopButtonState()
     end)
 
     -- Кнопка ВКЛ/ВЫКЛ (дополнительная)
-    wallhop_section:AddButton("Вкл/Выкл WallHop", function()
+    wallhop_section:AddButton("Toggle WallHop", function()
         isWallHopEnabled = not isWallHopEnabled
-        shared.Notify(isWallHopEnabled and "Pm-WallHop включен" or "Pm-WallHop выключен", 2)
+        shared.Notify(isWallHopEnabled and "Pm-WallHop enabled" or "Pm-WallHop disabled", 2)
         UpdateWallhopButtonState()
     end)
 
@@ -7327,29 +9880,29 @@ do
     local detectionDistance = 3
     wallhop_section:AddSlider("Detection distance", 1, 6, 3, function(int)
         detectionDistance = int
-        shared.Notify("Дистанция: " .. int, 2)
+        shared.Notify("Distance: " .. int, 2)
     end)
 
     -- Настройка силы флинга
     local flickPower = 50
     wallhop_section:AddSlider("Fling power", 20, 100, 50, function(int)
         flickPower = int
-        shared.Notify("Сила: " .. int, 2)
+        shared.Notify("Power: " .. int, 2)
     end)
 
     -- Кнопка для ручного флинга (тест)
-    wallhop_section:AddButton("Тестовый флинг", function()
+    wallhop_section:AddButton("Test Fling", function()
         if isWallHopEnabled then
             performVideoFlick()
         else
-            shared.Notify("Сначала включите WallHop!", 2)
+            shared.Notify("Enable WallHop first!", 2)
         end
     end)
 
     -- Клавиша для быстрого включения/выключения
     wallhop_section:AddKeybind("Toggle Keybind", "F", function()
         isWallHopEnabled = not isWallHopEnabled
-        shared.Notify(isWallHopEnabled and "Pm-WallHop включен" or "Pm-WallHop выключен", 2)
+        shared.Notify(isWallHopEnabled and "Pm-WallHop enabled" or "Pm-WallHop disabled", 2)
         UpdateWallhopButtonState()
     end)
 
@@ -7358,7 +9911,7 @@ do
         if isWallHopEnabled then
             performWallhop()
         else
-            shared.Notify("WallHop выключен! Нажмите F или кнопку в меню", 2)
+            shared.Notify("WallHop disabled! Press F or the button in the menu", 2)
         end
     end)
 
@@ -7512,6 +10065,7 @@ do
         TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
         TextLabel.BackgroundTransparency = 1
         TextLabel.Font = Enum.Font.Jura
+        pcall(SR_UI.Text.buttonFont, TextLabel)
         TextLabel.Text = text
         TextLabel.TextColor3 = Color3.new(1, 1, 1)
         TextLabel.TextSize = 10
@@ -7563,13 +10117,13 @@ do
         end
 
         MakeDraggable(ImageButton, buttonMaid, ripple, sound, onClick)
-        buttonMaid:GiveTask(ODHX.Connect(game:GetService("RunService").RenderStepped, function()
-            Gradient.Rotation = (Gradient.Rotation + 1) % 360
-        end))
+        -- общий вращатель вместо отдельного RenderStepped на каждую кнопку (60°/с, как раньше)
+        buttonMaid:GiveTask(SR_Rota.Attach(Gradient, nil, 120))
 
         WallhopBindableButtons.Buttons[id] = ImageButton
         WallhopBindableButtons.Maids[id] = buttonMaid
         WallhopBindableButtons.Count = WallhopBindableButtons.Count + 1
+        pcall(function() SR_UI.Icons.applyBind(ImageButton, id, text) end)
         return BindValue
     end
 
@@ -7617,11 +10171,11 @@ do
 
         WallhopBindableButtons.AddBButton("wallhop_toggle", "WH", function()
             isWallHopEnabled = true
-            shared.Notify("Pm-WallHop включен", 2)
+            shared.Notify("Pm-WallHop enabled", 2)
             UpdateWallhopButtonState()
         end, function()
             isWallHopEnabled = false
-            shared.Notify("Pm-WallHop выключен", 2)
+            shared.Notify("Pm-WallHop disabled", 2)
             UpdateWallhopButtonState()
         end)
 
@@ -7630,12 +10184,12 @@ do
     end
 
     -- Добавляем настройки для кнопки
-    wallhop_section:AddToggle("📱 Show on-screen button", function(b)
+    wallhop_section:AddToggle("Show on-screen button", function(b)
         showWallhopButton = b
         ToggleWallhopButtonVisibility()
     end)
 
-    wallhop_section:AddSlider("🔘 Button size (%)", 5, 25, 11, function(value)
+    wallhop_section:AddSlider("Button size (%)", 5, 25, 11, function(value)
         local btnSize = value / 100
         wallhopButtonSize = btnSize
         local btn = WallhopBindableButtons.Buttons["wallhop_toggle"]
@@ -7824,6 +10378,7 @@ do
     -- --- Detect wall seams (Video Flick) ---
     local lastHitInstance = nil
     local currentHitInstance = nil
+    local seamParams, seamChar = nil, nil
 
     ODHX.Connect(RunService.Heartbeat, function()
         if not isWallHopEnabled or isFlicking then return end
@@ -7847,11 +10402,18 @@ do
             return 
         end
 
-        -- Create Raycast with improved filtering
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterDescendantsInstances = {char}
-        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-        raycastParams.IgnoreWater = true
+        -- один RaycastParams, фильтр обновляется только при смене персонажа
+        local raycastParams = seamParams
+        if not raycastParams then
+            raycastParams = RaycastParams.new()
+            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+            raycastParams.IgnoreWater = true
+            seamParams = raycastParams
+        end
+        if seamChar ~= char then
+            seamChar = char
+            raycastParams.FilterDescendantsInstances = {char}
+        end
 
         -- Cast ray in camera direction
         local direction = Camera.CFrame.LookVector * detectionDistance
@@ -7924,8 +10486,8 @@ do
     ODHX.Bind("Pm-WallHop", "Enable WallHop", "Toggle", function() return isWallHopEnabled end)
     ODHX.Bind("Pm-WallHop", "Detection distance", "Slider", function() return detectionDistance end)
     ODHX.Bind("Pm-WallHop", "Fling power", "Slider", function() return flickPower end)
-    ODHX.Bind("Pm-WallHop", "📱 Show on-screen button", "Toggle", function() return showWallhopButton end)
-    ODHX.Bind("Pm-WallHop", "🔘 Button size (%)", "Slider", function() return wallhopButtonSize * 100 end)
+    ODHX.Bind("Pm-WallHop", "Show on-screen button", "Toggle", function() return showWallhopButton end)
+    ODHX.Bind("Pm-WallHop", "Button size (%)", "Slider", function() return wallhopButtonSize * 100 end)
     ODHX.cleanup=function()
         for id in pairs(WallhopBindableButtons.Buttons) do WallhopBindableButtons.DeleteBButton(id) end
     end
@@ -7947,7 +10509,8 @@ do
     local Terrain     = workspace.Terrain
 
     local IS_PHONE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-    local QUALITY  = IS_PHONE and 0.55 or 1
+    -- потолок качества зависит от автопроверки устройства
+    local QUALITY  = math.min(IS_PHONE and 0.55 or 1, SR_Perf.qualityCap())
 
     local function q(n, minimum)
     	return math.max(minimum or 1, math.floor(n * QUALITY + 0.5))
@@ -9511,9 +12074,12 @@ do
     	Tick.users[key] = fn
     	if next(Tick.users) and not Tick.conn then
     		Tick.conn = RunService.Heartbeat:Connect(function(dt)
-    			if Tick.cap > 0 then
+    			local cap = Tick.cap
+    			local autoCap = SR_Perf.animCap()
+    			if autoCap > 0 and (cap <= 0 or autoCap < cap) then cap = autoCap end
+    			if cap > 0 then
     				Tick.acc = Tick.acc + dt
-    				if Tick.acc < 1 / Tick.cap then return end
+    				if Tick.acc < 1 / cap then return end
     				dt = Tick.acc
     				Tick.acc = 0
     			end
@@ -12622,10 +15188,10 @@ do
     			end
     			glint(mycf, pal.bright, 10 + n * 3, 6, 0.5)
     			flashSprite(mycf, { tex = TEX.Star, color = pal.seqGlass, s0 = 1, s1 = 4 + n, life = 0.4, y = 3 })
-    			PF_UI.notify(("🔥 Kill streak ×%d"):format(Kill.streak), 2)
+    			PF_UI.notify(("Kill streak ×%d"):format(Kill.streak), 2)
     		end
     		if S.Kill.Counter then
-    			PF_UI.notify(("☠ Kill FX #%d · %s"):format(Kill.count, tostring(player and player.Name or "?")), 2)
+    			PF_UI.notify(("Kill FX #%d · %s"):format(Kill.count, tostring(player and player.Name or "?")), 2)
     		end
     	end)
     end
@@ -13982,9 +16548,9 @@ do
     	{ name = "Royal Gold",  icon = "👑", p = { P(255, 250, 220), P(255, 200, 60),  P(120, 70, 10)  } },
     }
     local COLOR_TARGETS = { "Wings", "Halo", "Hat", "Jump", "Trails", "Kill", "Pet", "Aura", "Glow", "Foot", "ScreenFX" }
-    local RAINBOW_SPEEDS = { { label = "🐌 Slow", v = 0.05 }, { label = "🚶 Normal", v = 0.12 }, { label = "🏃 Fast", v = 0.3 }, { label = "⚡ Ultra", v = 0.8 } }
+    local RAINBOW_SPEEDS = { { label = "Slow", v = 0.05 }, { label = "Normal", v = 0.12 }, { label = "Fast", v = 0.3 }, { label = "Ultra", v = 0.8 } }
     local Colors = { target = "Wings", presetNames = {}, speedNames = {}, on = {}, hue = {}, speed = 0.12, acc = 0 }
-    for i, p in ipairs(COLOR_PRESETS) do Colors.presetNames[i] = p.icon .. " " .. p.name end
+    for i, p in ipairs(COLOR_PRESETS) do Colors.presetNames[i] = p.name end
     for i, sp in ipairs(RAINBOW_SPEEDS) do Colors.speedNames[i] = sp.label end
 
     local function rebuild(key)
@@ -14002,6 +16568,8 @@ do
     	end)
     end
     local function rebuildAll()
+    	-- во время загрузки эффекты строятся после появления меню
+    	if SR_Perf.booting then return SR_Perf.afterBoot("PrismFlux.rebuildAll", rebuildAll) end
     	for _, m in ipairs(Modules.list) do
     		if m.persistent and m.build then
     			if S[m.key].Enabled then pcall(m.build) else pcall(m.stop) end
@@ -14057,12 +16625,12 @@ do
     end
 
     S.SkyState = { Preset = "Default", Weather = "None", Cycle = false, CycleSpeed = 1, Smooth = true, Intensity = 1, Wind = 0, Skybox = "Preset default", Clouds = "Preset default", Filter = "None", Spin = 0, Gusts = false }
-    S.Perf = { Quality = math.floor(QUALITY * 100 + 0.5), Cap = "Off" }
+    S.Perf = { Quality = (IS_PHONE and 55 or 100), Cap = "Off" }
     DEFAULTS = deepCopy(S)
 
     local Perf = { caps = { "Off", "30 FPS", "45 FPS", "60 FPS" } }
     function Perf.setQuality(pct)
-    	QUALITY = clamp(pct, 20, 100) / 100
+    	QUALITY = math.min(clamp(pct, 20, 100) / 100, SR_Perf.qualityCap())
     	S.Perf.Quality = pct
     	debounce("quality", rebuildAll, 0.4)
     end
@@ -14095,7 +16663,17 @@ do
     	for _ in pairs(Tick.users) do tickUsers = tickUsers + 1 end
     	return ("Beams %d · Particles %d · Trails %d · Lights %d · Highlights %d · Attachments %d · Parts %d | anim %d · tick %d · quality %d%%"):format(
     		n.Beam, n.ParticleEmitter, n.Trail, n.PointLight, n.Highlight, n.Attachment, n.Part, #Timeline.list, tickUsers, math.floor(QUALITY * 100 + 0.5))
+    		.. " | device: " .. SR_Perf.describe()
     end
+    -- устройство стало слабее/сильнее — подстраиваем качество эффектов
+    SR_Perf.onChange(function()
+    	if not S.Perf then return end
+    	local q = math.min(clamp(S.Perf.Quality or 100, 20, 100) / 100, SR_Perf.qualityCap())
+    	if math.abs(q - QUALITY) > 0.001 then
+    		QUALITY = q
+    		debounce("quality", rebuildAll, 0.4)
+    	end
+    end)
 
     local Profiles = { Slots = { "Slot 1", "Slot 2", "Slot 3", "Slot 4" }, slot = "Slot 1", mem = {}, autoload = false }
     local function encodeVal(v)
@@ -14161,7 +16739,7 @@ do
     	return true, "Defaults restored"
     end
     function Profiles.applyState()
-    	QUALITY = clamp(S.Perf.Quality, 20, 100) / 100
+    	QUALITY = math.min(clamp(S.Perf.Quality, 20, 100) / 100, SR_Perf.qualityCap())
     	Perf.setCap(S.Perf.Cap)
     	rebuildAll()
     	if S.Kill.Enabled then Kill.build() else Kill.stop() end
@@ -14314,7 +16892,7 @@ do
     sec:AddToggle("Combo chain (grows on bunny-hops)", function(v) S.Jump.Chain = v end)
     sec:AddToggle("Random style each jump", function(v) S.Jump.Random = v end)
     sec:AddToggle("Mid-air (double jump) ring", function(v) S.Jump.DoubleAir = v end)
-    sec:AddButton("▶ Test jump FX", function() Jump.play(true) end)
+    sec:AddButton("Test jump FX", function() Jump.play(true) end)
 
     sec = PF_UI.section("Wings")
     sec:AddToggle("Enable wings", function(v) S.Wings.Enabled = v rebuild("Wings") end)
@@ -14368,8 +16946,7 @@ do
     sec:AddToggle("Wind gusts (GlobalWind: grass, leaves, smoke)", function(v) S.SkyState.Gusts = v Sky.setGusts(v) end)
     sec:AddToggle("Day/night cycle", function(v) S.SkyState.Cycle = v Sky.setCycle(v) end)
     sec:AddSlider("Cycle speed x10", 1, 50, x10(Sky.cycle.speed), function(v) S.SkyState.CycleSpeed = v / 10 Sky.cycle.speed = v / 10 end)
-    sec:AddButton("↺ Restore original lighting", function() S.SkyState.Preset = "Default" S.SkyState.Skybox = "Preset default" S.SkyState.Clouds = "Preset default" Sky.applyFilter("None") Sky.restore() notify("Lighting restored", 1.5) end)
-    label(sec, "Client-side only: nobody else sees your sky")
+    sec:AddButton("Restore original lighting", function() S.SkyState.Preset = "Default" S.SkyState.Skybox = "Preset default" S.SkyState.Clouds = "Preset default" Sky.applyFilter("None") Sky.restore() notify("Lighting restored", 1.5) end)
 
     sec = PF_UI.section("Trails")
     sec:AddToggle("Enable trails", function(v) S.Trails.Enabled = v rebuild("Trails") end)
@@ -14388,7 +16965,7 @@ do
     sec:AddToggle("Limb trails", function(v) S.Trails.Limbs = v rebuild("Trails") end)
     sec:AddToggle("Speed reactive", function(v) S.Trails.SpeedReactive = v end)
     sec:AddToggle("Sparks", function(v) S.Trails.Sparks = v rebuild("Trails") end)
-    sec:AddButton("↺ Reset trail colors to style defaults", function() S.Trails.Custom = false local sc = Trails.StyleColors[S.Trails.Style] if sc then S.Trails.Color, S.Trails.Color2 = sc[1], sc[2] end S.Trails.Palette = nil rebuild("Trails") end)
+    sec:AddButton("Reset trail colors to style defaults", function() S.Trails.Custom = false local sc = Trails.StyleColors[S.Trails.Style] if sc then S.Trails.Color, S.Trails.Color2 = sc[1], sc[2] end S.Trails.Palette = nil rebuild("Trails") end)
 
     sec = PF_UI.section("MM2 Kill FX")
     sec:AddToggle("Enable kill FX", function(v) S.Kill.Enabled = v if v then Kill.build() else Kill.stop() end end)
@@ -14400,8 +16977,7 @@ do
     sec:AddToggle("Kill counter notify", function(v) S.Kill.Counter = v end)
     sec:AddToggle("Streak rings (2+ kills in 8s)", function(v) S.Kill.Streak = v end)
     sec:AddToggle("Also on my own death", function(v) S.Kill.OnSelf = v end)
-    sec:AddButton("▶ Preview on myself", function() Kill.preview() end)
-    label(sec, "Triggers when any other player's Humanoid dies near you")
+    sec:AddButton("Preview on myself", function() Kill.preview() end)
 
     sec = PF_UI.section("Anya-Port FX")
     sec:AddToggle("Aura trailer (energy wake)", function(v) S.AuraTrailer.Enabled = v rebuild("AuraTrailer") end)
@@ -14442,10 +17018,8 @@ do
     sec:AddSlider("Rate", 5, 90, S.ScreenFX.Rate, function(v) S.ScreenFX.Rate = v end)
     sec:AddSlider("Size x10", 3, 30, x10(S.ScreenFX.Size), function(v) S.ScreenFX.Size = v / 10 end)
     sec:AddSlider("Speed x10", 2, 30, x10(S.ScreenFX.Speed), function(v) S.ScreenFX.Speed = v / 10 end)
-    label(sec, "2D particles on your own screen only (rParticle / UIParticle style):")
-    label(sec, "Sparks, Embers, Snowfall, Rain Streaks, Glitch, Speed Lines")
 
-    sec = PF_UI.section("🎨 Color Presets")
+    sec = PF_UI.section("Color Presets")
     sec:AddDropdown("Target", COLOR_TARGETS, function(v) Colors.target = v end)
     sec:AddDropdown("Preset → target", Colors.presetNames, function(v)
     	for i, nm in ipairs(Colors.presetNames) do
@@ -14457,16 +17031,16 @@ do
     		if nm == v then for _, t in ipairs(COLOR_TARGETS) do Colors.apply(t, COLOR_PRESETS[i]) end notify(nm .. " → ALL", 1.5) break end
     	end
     end)
-    sec:AddButton("🎲 Random preset → target", function() local p = pick(COLOR_PRESETS) Colors.apply(Colors.target, p) notify(p.icon .. " " .. p.name .. " → " .. Colors.target, 1.5) end)
-    sec:AddButton("🎲 Random preset → ALL", function() local p = pick(COLOR_PRESETS) for _, t in ipairs(COLOR_TARGETS) do Colors.apply(t, p) end notify(p.icon .. " " .. p.name .. " → ALL", 1.5) end)
-    sec:AddToggle("🌈 Rainbow on target", function(v) Colors.rainbow(Colors.target, v) end)
-    sec:AddToggle("🌈 Rainbow on ALL", function(v) for _, t in ipairs(COLOR_TARGETS) do Colors.rainbow(t, v) end end)
+    sec:AddButton("Random preset → target", function() local p = pick(COLOR_PRESETS) Colors.apply(Colors.target, p) notify(p.name .. " → " .. Colors.target, 1.5) end)
+    sec:AddButton("Random preset → ALL", function() local p = pick(COLOR_PRESETS) for _, t in ipairs(COLOR_TARGETS) do Colors.apply(t, p) end notify(p.name .. " → ALL", 1.5) end)
+    sec:AddToggle("Rainbow on target", function(v) Colors.rainbow(Colors.target, v) end)
+    sec:AddToggle("Rainbow on ALL", function(v) for _, t in ipairs(COLOR_TARGETS) do Colors.rainbow(t, v) end end)
     sec:AddDropdown("Rainbow speed", Colors.speedNames, function(v)
     	for i, sp in ipairs(RAINBOW_SPEEDS) do if sp.label == v then Colors.speed = sp.v end end
     end)
-    sec:AddButton("↺ Reset target colors", function() Colors.reset(Colors.target) notify("Colors reset: " .. Colors.target, 1.5) end)
+    sec:AddButton("Reset target colors", function() Colors.reset(Colors.target) notify("Colors reset: " .. Colors.target, 1.5) end)
 
-    sec = PF_UI.section("✨ Extras")
+    sec = PF_UI.section("Extras")
     sec:AddToggle("Glow light", function(v) S.Glow.Enabled = v rebuild("Glow") end)
     sec:AddColorpicker("Glow color", S.Glow.Color, function(c) setColor("Glow", c) end)
     sec:AddSlider("Glow range", 4, 40, S.Glow.Range, function(v) S.Glow.Range = v end)
@@ -14506,21 +17080,20 @@ do
     sec:AddToggle("Pet leash (beam to you)", function(v) S.Pet.Leash = v rebuild("Pet") end)
     sec:AddToggle("Pet reacts to events", function(v) S.Pet.React = v end)
 
-    sec = PF_UI.section("⚙️ Performance")
+    sec = PF_UI.section("Performance")
     sec:AddSlider("Quality %", 20, 100, S.Perf.Quality, function(v) Perf.setQuality(v) end)
     sec:AddDropdown("Animation FPS cap", Perf.caps, function(v) Perf.setCap(v) end)
-    sec:AddButton("📊 Show effect stats", function() notify(Perf.stats(), 4) end)
-    sec:AddButton("🧹 Rebuild all active effects", function() rebuildAll() notify("Effects rebuilt", 1.5) end)
-    sec:AddButton("⏏ Unload PrismFlux (remove everything)", function() ODHX.Stop() notify("PrismFlux unloaded", 2) end)
-    label(sec, IS_PHONE and "Phone detected → quality starts at 55%" or "Desktop detected → quality starts at 100%")
+    sec:AddButton("Show effect stats", function() notify(Perf.stats(), 4) end)
+    sec:AddButton("Rebuild all active effects", function() rebuildAll() notify("Effects rebuilt", 1.5) end)
+    sec:AddButton("Unload PrismFlux (remove everything)", function() ODHX.Stop() notify("PrismFlux unloaded", 2) end)
+    label(sec, SR_UI.Text.mark("Weak phones are detected and lightened automatically", "hint"))
 
-    sec = PF_UI.section("💾 Profiles")
+    sec = PF_UI.section("Profiles")
     sec:AddDropdown("Slot", Profiles.Slots, function(v) Profiles.slot = v end)
-    sec:AddButton("💾 Save settings → slot", function() local _, msg = Profiles.save(Profiles.slot) notify(msg, 2) end)
-    sec:AddButton("📂 Load settings ← slot", function() local _, msg = Profiles.load(Profiles.slot) notify(msg, 2) end)
-    sec:AddButton("↺ Reset everything to defaults", function() local _, msg = Profiles.reset() notify(msg, 2) end)
+    sec:AddButton("Save settings → slot", function() local _, msg = Profiles.save(Profiles.slot) notify(msg, 2) end)
+    sec:AddButton("Load settings ← slot", function() local _, msg = Profiles.load(Profiles.slot) notify(msg, 2) end)
+    sec:AddButton("Reset everything to defaults", function() local _, msg = Profiles.reset() notify(msg, 2) end)
     sec:AddToggle("Auto-load this slot on start", function(v) notify(Profiles.setAutoload(v), 2) end)
-    label(sec, "Last-session settings are saved automatically. Manual slots remain independent.")
 
     SR_Log("PrismFlux Zero-Part v4 loaded")
 
@@ -14620,59 +17193,59 @@ do
     ODHX.Bind("Screen FX", "Rate", "Slider", function() return S.ScreenFX.Rate end)
     ODHX.Bind("Screen FX", "Size x10", "Slider", function() return x10(S.ScreenFX.Size) end)
     ODHX.Bind("Screen FX", "Speed x10", "Slider", function() return x10(S.ScreenFX.Speed) end)
-    ODHX.Bind("🎨 Color Presets", "Target", "Dropdown", function() return Colors.target end)
-    ODHX.Bind("✨ Extras", "Glow light", "Toggle", function() return S.Glow.Enabled end)
-    ODHX.Bind("✨ Extras", "Glow color", "Colorpicker", function() return S.Glow.Color end)
-    ODHX.Bind("✨ Extras", "Glow range", "Slider", function() return S.Glow.Range end)
-    ODHX.Bind("✨ Extras", "Glow brightness x10", "Slider", function() return x10(S.Glow.Brightness) end)
-    ODHX.Bind("✨ Extras", "Glow pulse", "Toggle", function() return S.Glow.Pulse end)
-    ODHX.Bind("✨ Extras", "Glow hue drift", "Toggle", function() return S.Glow.Shift end)
-    ODHX.Bind("✨ Extras", "Glow outline (Highlight)", "Toggle", function() return S.Glow.Outline end)
-    ODHX.Bind("✨ Extras", "Glow follows HP", "Toggle", function() return S.Glow.HPLink end)
-    ODHX.Bind("✨ Extras", "Second head light", "Toggle", function() return S.Glow.Second end)
-    ODHX.Bind("✨ Extras", "Glow bloom sprite (soft halo)", "Toggle", function() return S.Glow.Bloom end)
-    ODHX.Bind("✨ Extras", "Glow casts shadows (costly)", "Toggle", function() return S.Glow.Shadows end)
-    ODHX.Bind("✨ Extras", "Aura", "Toggle", function() return S.Aura.Enabled end)
-    ODHX.Bind("✨ Extras", "Aura shape", "Dropdown", function() return S.Aura.Shape end)
-    ODHX.Bind("✨ Extras", "Aura color", "Colorpicker", function() return S.Aura.Color end)
-    ODHX.Bind("✨ Extras", "Aura count", "Slider", function() return S.Aura.Count end)
-    ODHX.Bind("✨ Extras", "Aura radius x10", "Slider", function() return x10(S.Aura.Radius) end)
-    ODHX.Bind("✨ Extras", "Aura speed x10", "Slider", function() return x10(S.Aura.Speed) end)
-    ODHX.Bind("✨ Extras", "Footprints", "Toggle", function() return S.Foot.Enabled end)
-    ODHX.Bind("✨ Extras", "Footprint style", "Dropdown", function() return S.Foot.Style end)
-    ODHX.Bind("✨ Extras", "Footprint color", "Colorpicker", function() return S.Foot.Color end)
-    ODHX.Bind("✨ Extras", "Footprint interval x100", "Slider", function() return math.floor(S.Foot.Interval * 100 + 0.5) end)
-    ODHX.Bind("✨ Extras", "Footprint size x10", "Slider", function() return x10(S.Foot.Size) end)
-    ODHX.Bind("✨ Extras", "Footprint sparks", "Toggle", function() return S.Foot.Sparks end)
-    ODHX.Bind("✨ Extras", "Footprint dust puffs", "Toggle", function() return S.Foot.Dust end)
-    ODHX.Bind("✨ Extras", "Idle spin (halo & hat)", "Toggle", function() return S.Spin.Enabled end)
-    ODHX.Bind("✨ Extras", "Spin speed x10", "Slider", function() return x10(S.Spin.Speed) end)
-    ODHX.Bind("✨ Extras", "Spin wobble", "Toggle", function() return S.Spin.Wobble end)
-    ODHX.Bind("✨ Extras", "Pet", "Toggle", function() return S.Pet.Enabled end)
-    ODHX.Bind("✨ Extras", "Pet style", "Dropdown", function() return S.Pet.Style end)
-    ODHX.Bind("✨ Extras", "Pet motion", "Dropdown", function() return S.Pet.Motion end)
-    ODHX.Bind("✨ Extras", "Pet color", "Colorpicker", function() return S.Pet.Color end)
-    ODHX.Bind("✨ Extras", "Pet size x10", "Slider", function() return x10(S.Pet.Size) end)
-    ODHX.Bind("✨ Extras", "Pet distance x10", "Slider", function() return x10(S.Pet.Distance) end)
-    ODHX.Bind("✨ Extras", "Pet height x10", "Slider", function() return x10(S.Pet.Height) end)
-    ODHX.Bind("✨ Extras", "Pet speed x10", "Slider", function() return x10(S.Pet.Speed) end)
-    ODHX.Bind("✨ Extras", "Pet trail", "Toggle", function() return S.Pet.Trail end)
-    ODHX.Bind("✨ Extras", "Pet leash (beam to you)", "Toggle", function() return S.Pet.Leash end)
-    ODHX.Bind("✨ Extras", "Pet reacts to events", "Toggle", function() return S.Pet.React end)
-    ODHX.Bind("⚙️ Performance", "Quality %", "Slider", function() return S.Perf.Quality end)
-    ODHX.Bind("💾 Profiles", "Slot", "Dropdown", function() return Profiles.slot end)
-    ODHX.Bind("⚙️ Performance", "Animation FPS cap", "Dropdown", function() return S.Perf.Cap end)
-    ODHX.Bind("💾 Profiles", "Auto-load this slot on start", "Toggle", function() return Profiles.autoload end)
+    ODHX.Bind("Color Presets", "Target", "Dropdown", function() return Colors.target end)
+    ODHX.Bind("Extras", "Glow light", "Toggle", function() return S.Glow.Enabled end)
+    ODHX.Bind("Extras", "Glow color", "Colorpicker", function() return S.Glow.Color end)
+    ODHX.Bind("Extras", "Glow range", "Slider", function() return S.Glow.Range end)
+    ODHX.Bind("Extras", "Glow brightness x10", "Slider", function() return x10(S.Glow.Brightness) end)
+    ODHX.Bind("Extras", "Glow pulse", "Toggle", function() return S.Glow.Pulse end)
+    ODHX.Bind("Extras", "Glow hue drift", "Toggle", function() return S.Glow.Shift end)
+    ODHX.Bind("Extras", "Glow outline (Highlight)", "Toggle", function() return S.Glow.Outline end)
+    ODHX.Bind("Extras", "Glow follows HP", "Toggle", function() return S.Glow.HPLink end)
+    ODHX.Bind("Extras", "Second head light", "Toggle", function() return S.Glow.Second end)
+    ODHX.Bind("Extras", "Glow bloom sprite (soft halo)", "Toggle", function() return S.Glow.Bloom end)
+    ODHX.Bind("Extras", "Glow casts shadows (costly)", "Toggle", function() return S.Glow.Shadows end)
+    ODHX.Bind("Extras", "Aura", "Toggle", function() return S.Aura.Enabled end)
+    ODHX.Bind("Extras", "Aura shape", "Dropdown", function() return S.Aura.Shape end)
+    ODHX.Bind("Extras", "Aura color", "Colorpicker", function() return S.Aura.Color end)
+    ODHX.Bind("Extras", "Aura count", "Slider", function() return S.Aura.Count end)
+    ODHX.Bind("Extras", "Aura radius x10", "Slider", function() return x10(S.Aura.Radius) end)
+    ODHX.Bind("Extras", "Aura speed x10", "Slider", function() return x10(S.Aura.Speed) end)
+    ODHX.Bind("Extras", "Footprints", "Toggle", function() return S.Foot.Enabled end)
+    ODHX.Bind("Extras", "Footprint style", "Dropdown", function() return S.Foot.Style end)
+    ODHX.Bind("Extras", "Footprint color", "Colorpicker", function() return S.Foot.Color end)
+    ODHX.Bind("Extras", "Footprint interval x100", "Slider", function() return math.floor(S.Foot.Interval * 100 + 0.5) end)
+    ODHX.Bind("Extras", "Footprint size x10", "Slider", function() return x10(S.Foot.Size) end)
+    ODHX.Bind("Extras", "Footprint sparks", "Toggle", function() return S.Foot.Sparks end)
+    ODHX.Bind("Extras", "Footprint dust puffs", "Toggle", function() return S.Foot.Dust end)
+    ODHX.Bind("Extras", "Idle spin (halo & hat)", "Toggle", function() return S.Spin.Enabled end)
+    ODHX.Bind("Extras", "Spin speed x10", "Slider", function() return x10(S.Spin.Speed) end)
+    ODHX.Bind("Extras", "Spin wobble", "Toggle", function() return S.Spin.Wobble end)
+    ODHX.Bind("Extras", "Pet", "Toggle", function() return S.Pet.Enabled end)
+    ODHX.Bind("Extras", "Pet style", "Dropdown", function() return S.Pet.Style end)
+    ODHX.Bind("Extras", "Pet motion", "Dropdown", function() return S.Pet.Motion end)
+    ODHX.Bind("Extras", "Pet color", "Colorpicker", function() return S.Pet.Color end)
+    ODHX.Bind("Extras", "Pet size x10", "Slider", function() return x10(S.Pet.Size) end)
+    ODHX.Bind("Extras", "Pet distance x10", "Slider", function() return x10(S.Pet.Distance) end)
+    ODHX.Bind("Extras", "Pet height x10", "Slider", function() return x10(S.Pet.Height) end)
+    ODHX.Bind("Extras", "Pet speed x10", "Slider", function() return x10(S.Pet.Speed) end)
+    ODHX.Bind("Extras", "Pet trail", "Toggle", function() return S.Pet.Trail end)
+    ODHX.Bind("Extras", "Pet leash (beam to you)", "Toggle", function() return S.Pet.Leash end)
+    ODHX.Bind("Extras", "Pet reacts to events", "Toggle", function() return S.Pet.React end)
+    ODHX.Bind("Performance", "Quality %", "Slider", function() return S.Perf.Quality end)
+    ODHX.Bind("Profiles", "Slot", "Dropdown", function() return Profiles.slot end)
+    ODHX.Bind("Performance", "Animation FPS cap", "Dropdown", function() return S.Perf.Cap end)
+    ODHX.Bind("Profiles", "Auto-load this slot on start", "Toggle", function() return Profiles.autoload end)
     ODHX.Bind("Sky", "Color filter", "Dropdown", function() return S.SkyState.Filter end)
     ODHX.Bind("Sky", "Wind (0 west · 10 calm · 20 east)", "Slider", function() return S.SkyState.Wind * 10 + 10 end)
     ODHX.Bind("Sky", "Weather intensity x10", "Slider", function() return x10(S.SkyState.Intensity) end)
     ODHX.Bind("Trails", "Style", "Dropdown", function() return S.Trails.Style end)
-    ODHX.Bind("🎨 Color Presets", "🌈 Rainbow on target", "Toggle", function() return Colors.on[Colors.target] == true end)
-    ODHX.Bind("🎨 Color Presets","🌈 Rainbow on ALL","Toggle",function()
+    ODHX.Bind("Color Presets", "Rainbow on target", "Toggle", function() return Colors.on[Colors.target] == true end)
+    ODHX.Bind("Color Presets","Rainbow on ALL","Toggle",function()
         for _,target in ipairs(COLOR_TARGETS) do if not Colors.on[target] then return false end end
         return true
     end)
-    ODHX.Bind("🎨 Color Presets","Rainbow speed","Dropdown",function()
+    ODHX.Bind("Color Presets","Rainbow speed","Dropdown",function()
         for _,sp in ipairs(RAINBOW_SPEEDS) do if sp.v==Colors.speed then return sp.label end end
     end)
     ODHX.cleanup=unloadAll
@@ -14968,45 +17541,45 @@ do
     }
 
     local SPEED_PRESETS = {
-        { label = "🐌 Slow",     value = 0.3 },
-        { label = "🚶 Normal",   value = 0.8 },
-        { label = "🏃 Fast",     value = 2.0 },
-        { label = "⚡ Ultra",    value = 5.0 },
+        { label = "Slow",     value = 0.3 },
+        { label = "Normal",   value = 0.8 },
+        { label = "Fast",     value = 2.0 },
+        { label = "Ultra",    value = 5.0 },
     }
 
     local PULSE_PRESETS = {
-        { label = "🐢 Pulse Slow",   value = 0.8 },
-        { label = "🚶 Pulse Normal", value = 2.0 },
-        { label = "🏃 Pulse Fast",   value = 4.0 },
-        { label = "⚡ Pulse Ultra",  value = 8.0 },
+        { label = "Pulse Slow",   value = 0.8 },
+        { label = "Pulse Normal", value = 2.0 },
+        { label = "Pulse Fast",   value = 4.0 },
+        { label = "Pulse Ultra",  value = 8.0 },
     }
 
     local WAVEFORMS = {
-        { label = "〰️ Sine Wave",      key = "sine" },
-        { label = "💨 Breath (smooth)", key = "breath" },
-        { label = "📐 Triangle",       key = "triangle" },
-        { label = "🟦 Pulse (hard)",   key = "pulse" },
+        { label = "Sine Wave",      key = "sine" },
+        { label = "Breath (smooth)", key = "breath" },
+        { label = "Triangle",       key = "triangle" },
+        { label = "Pulse (hard)",   key = "pulse" },
     }
 
     local SCALE_AMPLITUDE_PRESETS = {
-        { label = "🔸 Subtle Scale (+5%)",   value = 0.05 },
-        { label = "🔸 Light Scale (+10%)",   value = 0.10 },
-        { label = "🔶 Medium Scale (+20%)", value = 0.20 },
-        { label = "🔶 Heavy Scale (+35%)",  value = 0.35 },
+        { label = "Subtle Scale (+5%)",   value = 0.05 },
+        { label = "Light Scale (+10%)",   value = 0.10 },
+        { label = "Medium Scale (+20%)", value = 0.20 },
+        { label = "Heavy Scale (+35%)",  value = 0.35 },
     }
 
     local TRANSPARENCY_DEPTH_PRESETS = {
-        { label = "🔅 Faint Transparency (0.2)", value = 0.2 },
-        { label = "🔆 Light Transparency (0.4)", value = 0.4 },
-        { label = "🔆 Strong Transparency (0.6)", value = 0.6 },
-        { label = "🌑 Deep Transparency (0.85)", value = 0.85 },
+        { label = "Faint Transparency (0.2)", value = 0.2 },
+        { label = "Light Transparency (0.4)", value = 0.4 },
+        { label = "Strong Transparency (0.6)", value = 0.6 },
+        { label = "Deep Transparency (0.85)", value = 0.85 },
     }
 
     local TRAIL_COUNT_PRESETS = {
-        { label = "👻 Trail x1", value = 1 },
-        { label = "👻 Trail x2", value = 2 },
-        { label = "👻 Trail x3", value = 3 },
-        { label = "👻 Trail x5", value = 5 },
+        { label = "Trail x1", value = 1 },
+        { label = "Trail x2", value = 2 },
+        { label = "Trail x3", value = 3 },
+        { label = "Trail x5", value = 5 },
     }
 
     local CROSSHAIR_KEYWORDS = { "crosshair", "прицел", "aim", "reticle", "target", "cursor" }
@@ -15403,7 +17976,7 @@ do
 
     state.targetObjects = findCrosshairObjects()
     if #state.targetObjects == 0 then
-        shared.Notify("❌ Crosshair not found!", 2)
+        shared.Notify("Crosshair not found!", 2)
         return
     end
 
@@ -15488,12 +18061,20 @@ do
             return
         end
 
-        local delta = state.speed * state.direction
+        -- слабое устройство: обновление через кадр, скорость анимации та же
+        state.perfFrames = (state.perfFrames or 0) + 1
+        state.perfDt = (state.perfDt or 0) + (dt or 0)
+        if state.perfFrames < SR_Perf.pick(1, 1, 2) then return end
+        local frames = state.perfFrames
+        dt = state.perfDt
+        state.perfFrames, state.perfDt = 0, 0
+
+        local delta = state.speed * state.direction * frames
         state.rotation = (state.rotation + delta) % 360
         state.offset = (state.offset + delta * 0.002) % 1
 
         if state.rainbowMode then
-            state.rainbowHue = (state.rainbowHue + state.rainbowSpeed * 0.01) % 1
+            state.rainbowHue = (state.rainbowHue + state.rainbowSpeed * 0.01 * frames) % 1
         end
 
         local waveVal = 0
@@ -15568,27 +18149,26 @@ do
 
     end
 
-    local shiftlock_section = shared.AddSection("🎯 Mobile Shiftlock Crosshair")
+    local shiftlock_section = shared.AddSection("Mobile Shiftlock Crosshair")
 
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    shiftlock_section:AddLabel("⚡ ULTRA GLOW+ EDITION v3.7")
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    shiftlock_section:AddLabel(SR_UI.Text.mark("Ultra Glow+ v3.7", "credit"))
 
-    shiftlock_section:AddToggle("🔓 Enable Glow", function(bool)
+    shiftlock_section:AddToggle("Enable Glow", function(bool)
         state.enabled = bool
         if bool then
             startAnimation()
             if #state.targetObjects > 0 then
-                shared.Notify("✅ Glow enabled", 2)
+                shared.Notify("Glow enabled", 2)
             end
         else
             stopAnimation()
-            shared.Notify("❌ Glow disabled", 2)
+            shared.Notify("Glow disabled", 2)
         end
         saveSettings()
     end)
 
-    shiftlock_section:AddColorpicker("🎨 Custom Color", Color3.fromRGB(157, 0, 255), function(color)
+    shiftlock_section:AddLabel(SR_UI.Text.mark("Color", "heading"))
+    shiftlock_section:AddColorpicker("Custom Color", Color3.fromRGB(157, 0, 255), function(color)
         local r, g, b = color.R, color.G, color.B
         state.customColors = {
             Color3.new(r, g, b),
@@ -15602,11 +18182,11 @@ do
         if state.enabled then
             applyColors()
         end
-        shared.Notify("🎨 Custom color applied", 1.5)
+        shared.Notify("Custom color applied", 1.5)
         saveSettings()
     end)
 
-    shiftlock_section:AddToggle("🌈 Rainbow Mode (RGB)", function(bool)
+    shiftlock_section:AddToggle("Rainbow Mode (RGB)", function(bool)
         state.rainbowMode = bool
         if bool then
             state.customColors = nil
@@ -15615,18 +18195,18 @@ do
         if state.enabled then
             applyColors()
         end
-        shared.Notify(bool and "🌈 Rainbow ON" or "🌈 Rainbow OFF", 1.5)
+        shared.Notify(bool and "Rainbow ON" or "Rainbow OFF", 1.5)
         saveSettings()
     end)
 
     for _, preset in ipairs(SPEED_PRESETS) do
-        shiftlock_section:AddButton("🌈 Rainbow " .. preset.label, function()
+        shiftlock_section:AddButton("Rainbow " .. preset.label, function()
             state.rainbowSpeed = preset.value
-            shared.Notify("🌈 Rainbow speed: " .. preset.label, 1.5)
+            shared.Notify("Rainbow speed: " .. preset.label, 1.5)
         end)
     end
 
-    shiftlock_section:AddButton("🎲 Random Preset", function()
+    shiftlock_section:AddButton("Random Preset", function()
         local idx = math.random(1, #GLOW_PRESETS)
         local preset = GLOW_PRESETS[idx]
         state.currentPreset = preset
@@ -15635,11 +18215,11 @@ do
         if state.enabled then
             applyColors()
         end
-        shared.Notify("🎲 " .. preset.icon .. " " .. preset.name, 1.5)
+        shared.Notify("Random preset: " .. preset.name, 1.5)
         saveSettings()
     end)
 
-    shiftlock_section:AddButton("🎲 Random Color", function()
+    shiftlock_section:AddButton("Random Color", function()
         local r = math.random()
         local g = math.random()
         local b = math.random()
@@ -15655,15 +18235,13 @@ do
         if state.enabled then
             applyColors()
         end
-        shared.Notify("🎲 Random color!", 1.5)
+        shared.Notify("Random color!", 1.5)
         saveSettings()
     end)
 
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    shiftlock_section:AddLabel("💗 PULSE v2 (improved)")
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    shiftlock_section:AddLabel(SR_UI.Text.mark("Blinking", "heading"))
 
-    shiftlock_section:AddToggle("💗 Pulsate Transparency", function(bool)
+    shiftlock_section:AddToggle("Pulsate Transparency", function(bool)
         state.pulsate = bool
         if not bool then
             for _, obj in ipairs(state.targetObjects) do
@@ -15672,14 +18250,14 @@ do
                 end)
             end
         end
-        shared.Notify(bool and "💗 Pulsate ON" or "💗 Pulsate OFF", 1.5)
+        shared.Notify(bool and "Pulsate ON" or "Pulsate OFF", 1.5)
         saveSettings()
     end)
 
     for _, wf in ipairs(WAVEFORMS) do
-        shiftlock_section:AddButton("〰️ Wave: " .. wf.label, function()
+        shiftlock_section:AddButton("Wave: " .. wf.label, function()
             state.pulseWaveform = wf.key
-            shared.Notify("〰️ Waveform: " .. wf.label, 1.5)
+            shared.Notify("Waveform: " .. wf.label, 1.5)
             saveSettings()
         end)
     end
@@ -15687,7 +18265,7 @@ do
     for _, preset in ipairs(TRANSPARENCY_DEPTH_PRESETS) do
         shiftlock_section:AddButton(preset.label, function()
             state.pulseDepth = preset.value
-            shared.Notify("🔆 Depth: " .. tostring(preset.value), 1.5)
+            shared.Notify("Depth: " .. tostring(preset.value), 1.5)
             saveSettings()
         end)
     end
@@ -15695,16 +18273,14 @@ do
     for _, preset in ipairs(PULSE_PRESETS) do
         shiftlock_section:AddButton(preset.label, function()
             state.pulseSpeed = preset.value
-            shared.Notify("💗 " .. preset.label, 1.5)
+            shared.Notify("Pulse: " .. preset.label, 1.5)
             saveSettings()
         end)
     end
 
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    shiftlock_section:AddLabel("📐 SCALE PULSE v2 (Breathing)")
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    shiftlock_section:AddLabel(SR_UI.Text.mark("Breathing", "heading"))
 
-    shiftlock_section:AddToggle("📐 Scale Pulse (Breathing)", function(bool)
+    shiftlock_section:AddToggle("Scale Pulse (Breathing)", function(bool)
         state.scalePulse = bool
         if not bool then
             for _, obj in ipairs(state.targetObjects) do
@@ -15718,23 +18294,21 @@ do
                 end)
             end
         end
-        shared.Notify(bool and "📐 Scale pulse ON" or "📐 Scale pulse OFF", 1.5)
+        shared.Notify(bool and "Scale pulse ON" or "Scale pulse OFF", 1.5)
         saveSettings()
     end)
 
     for _, preset in ipairs(SCALE_AMPLITUDE_PRESETS) do
         shiftlock_section:AddButton(preset.label, function()
             state.scaleAmplitude = preset.value
-            shared.Notify("📐 Amplitude: " .. preset.label, 1.5)
+            shared.Notify("Amplitude: " .. preset.label, 1.5)
             saveSettings()
         end)
     end
 
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    shiftlock_section:AddLabel("👻 TRAIL / ECHO (ghost trail)")
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    shiftlock_section:AddLabel(SR_UI.Text.mark("Ghost trail", "heading"))
 
-    shiftlock_section:AddToggle("👻 Enable Trail", function(bool)
+    shiftlock_section:AddToggle("Enable Trail", function(bool)
         state.trailEnabled = bool
         if bool then
             if state.enabled then
@@ -15743,7 +18317,7 @@ do
         else
             clearTrail()
         end
-        shared.Notify(bool and "👻 Trail ON" or "👻 Trail OFF", 1.5)
+        shared.Notify(bool and "Trail ON" or "Trail OFF", 1.5)
         saveSettings()
     end)
 
@@ -15753,31 +18327,29 @@ do
             if state.enabled and state.trailEnabled then
                 buildTrail()
             end
-            shared.Notify("👻 Trail count: " .. tostring(preset.value), 1.5)
+            shared.Notify("Trail count: " .. tostring(preset.value), 1.5)
             saveSettings()
         end)
     end
 
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    shiftlock_section:AddLabel("⚙️ SETTINGS")
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    shiftlock_section:AddLabel(SR_UI.Text.mark("Animation", "heading"))
 
     for _, preset in ipairs(SPEED_PRESETS) do
-        shiftlock_section:AddButton("💨 Speed " .. preset.label, function()
+        shiftlock_section:AddButton("Speed " .. preset.label, function()
             state.speed = preset.value
-            shared.Notify("💨 Speed: " .. preset.label, 1.5)
+            shared.Notify("Speed: " .. preset.label, 1.5)
             saveSettings()
         end)
     end
 
-    shiftlock_section:AddToggle("🔄 Reverse Direction", function(bool)
+    shiftlock_section:AddToggle("Reverse Direction", function(bool)
         state.reversed = bool
         state.direction = bool and -1 or 1
-        shared.Notify(bool and "🔄 Reversed" or "▶️ Forward", 1.5)
+        shared.Notify(bool and "Reversed" or "Forward", 1.5)
         saveSettings()
     end)
 
-    shiftlock_section:AddButton("🔄 Reset to Defaults", function()
+    shiftlock_section:AddButton("Reset to Defaults", function()
         state.enabled = false
         stopAnimation()
         state.customColors = nil
@@ -15796,44 +18368,33 @@ do
         state.trailEnabled = false
         state.trailCount = 2
         pcall(function() _G[SETTINGS_KEY] = nil end)
-        shared.Notify("↩️ Reset to defaults", 2)
+        shared.Notify("Reset to defaults", 2)
     end)
 
-    shiftlock_section:AddButton("🔍 Re-scan Crosshair", function()
+    shiftlock_section:AddButton("Re-scan Crosshair", function()
         refreshObjects()
         if #state.targetObjects > 0 then
-            shared.Notify("🔍 Found " .. #state.targetObjects .. " crosshair(s)", 2)
+            shared.Notify("Found " .. #state.targetObjects .. " crosshair(s)", 2)
         else
-            shared.Notify("❌ Crosshair not found!", 2)
+            shared.Notify("Crosshair not found!", 2)
         end
     end)
 
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    shiftlock_section:AddLabel("✨ COLOR PRESETS (" .. #GLOW_PRESETS .. ")")
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    shiftlock_section:AddLabel(SR_UI.Text.mark("Color presets (" .. #GLOW_PRESETS .. ")", "heading"))
 
     for _, preset in ipairs(GLOW_PRESETS) do
-        shiftlock_section:AddButton(preset.icon .. " " .. preset.name, function()
+        shiftlock_section:AddButton(preset.name, function()
             state.currentPreset = preset
             state.customColors = nil
             state.rainbowMode = false
             if state.enabled then
                 applyColors()
             end
-            shared.Notify(preset.icon .. " " .. preset.name, 1.5)
+            shared.Notify(preset.name, 1.5)
             saveSettings()
         end)
     end
 
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    shiftlock_section:AddLabel("📖 HOW IT WORKS:")
-    shiftlock_section:AddLabel("1. Turn on 🔓 Enable Glow")
-    shiftlock_section:AddLabel("2. Pick a preset / 🎨 Color / 🌈 Rainbow")
-    shiftlock_section:AddLabel("3. 💗 Pulse: waveform + depth")
-    shiftlock_section:AddLabel("4. 📐 Scale Pulse: breathing amplitude")
-    shiftlock_section:AddLabel("5. 👻 Trail — ghost crosshair echo")
-    shiftlock_section:AddLabel("6. 🎲 Random — just for fun!")
-    shiftlock_section:AddLabel("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     local function restoreSettings()
         local saved = loadSettings()
@@ -15876,34 +18437,34 @@ do
                 if #findCrosshairObjects()>0 then startAnimation(); break end
                 task.wait(1)
             end
-            if state.enabled then shared.Notify("💾 Settings restored", 2) end
+            if state.enabled then shared.Notify("Settings restored", 2) end
         end)
     end
 
     end
 
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("🎯 SHIFTLOCK CROSSHAIR v3.5 LOADED")
+    print("SHIFTLOCK CROSSHAIR v3.5 LOADED")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("🌈 Rainbow/RGB mode")
-    print("💗 Pulse v2: 4 waveforms + depth")
-    print("📐 Scale Pulse v2: adjustable amplitude")
-    print("👻 Trail/Echo — ghost trail")
-    print("🎨 Colorpicker + " .. #GLOW_PRESETS .. " color presets")
-    print("🎲 Random Preset / Random Color")
-    print("💾 Settings auto-save")
-    print("🔍 Auto-refresh of crosshair objects")
+    print("Rainbow/RGB mode")
+    print("Pulse v2: 4 waveforms + depth")
+    print("Scale Pulse v2: adjustable amplitude")
+    print("Trail/Echo — ghost trail")
+    print("Colorpicker + " .. #GLOW_PRESETS .. " color presets")
+    print("Random Preset / Random Color")
+    print("Settings auto-save")
+    print("Auto-refresh of crosshair objects")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     restoreSettings()
 
-    ODHX.Bind("🎯 Mobile Shiftlock Crosshair", "🔓 Enable Glow", "Toggle", function() return state.enabled end)
-    ODHX.Bind("🎯 Mobile Shiftlock Crosshair", "🌈 Rainbow Mode (RGB)", "Toggle", function() return state.rainbowMode end)
-    ODHX.Bind("🎯 Mobile Shiftlock Crosshair", "💗 Pulsate Transparency", "Toggle", function() return state.pulsate end)
-    ODHX.Bind("🎯 Mobile Shiftlock Crosshair", "📐 Scale Pulse (Breathing)", "Toggle", function() return state.scalePulse end)
-    ODHX.Bind("🎯 Mobile Shiftlock Crosshair", "👻 Enable Trail", "Toggle", function() return state.trailEnabled end)
-    ODHX.Bind("🎯 Mobile Shiftlock Crosshair", "🔄 Reverse Direction", "Toggle", function() return state.reversed end)
-    ODHX.Bind("🎯 Mobile Shiftlock Crosshair", "🎨 Custom Color", "Colorpicker", function() return state.customColors and state.customColors[1] or Color3.fromRGB(157,0,255) end)
+    ODHX.Bind("Mobile Shiftlock Crosshair", "Enable Glow", "Toggle", function() return state.enabled end)
+    ODHX.Bind("Mobile Shiftlock Crosshair", "Rainbow Mode (RGB)", "Toggle", function() return state.rainbowMode end)
+    ODHX.Bind("Mobile Shiftlock Crosshair", "Pulsate Transparency", "Toggle", function() return state.pulsate end)
+    ODHX.Bind("Mobile Shiftlock Crosshair", "Scale Pulse (Breathing)", "Toggle", function() return state.scalePulse end)
+    ODHX.Bind("Mobile Shiftlock Crosshair", "Enable Trail", "Toggle", function() return state.trailEnabled end)
+    ODHX.Bind("Mobile Shiftlock Crosshair", "Reverse Direction", "Toggle", function() return state.reversed end)
+    ODHX.Bind("Mobile Shiftlock Crosshair", "Custom Color", "Colorpicker", function() return state.customColors and state.customColors[1] or Color3.fromRGB(157,0,255) end)
     ODHX.cleanup=stopAnimation
     ODHX.Finish()
 
@@ -16866,9 +19427,9 @@ if not reuseUI then
     end
 
     local ok, err = pcall(function()
-        ui.section:AddLabel("Credits: Noir_Creator")
-        SR_Paragraph(ui.section, "About", "Adapts MM2_GPL settings to current ping. Adaptive mode interpolates control points; Classic uses profiles A-D. Disabling Auto Revert stops updates; it does not restore MM2 settings.")
-        SR_Paragraph(ui.section, "Compatibility", "The UI uses odh_shared_plugins. Auto Revert additionally requires odh_internal_shared.MM2_GPL from the original CFG.")
+        ui.section:AddLabel(SR_UI.Text.mark("Needs the MM2 settings of Overdrive H to work", "hint"))
+        ui.section:AddLabel(SR_UI.Text.mark("Turning it off keeps the last applied values", "hint"))
+        ui.section:AddLabel(SR_UI.Text.mark("by Noir_Creator", "credit"))
         ui.section:AddButton("Print Telemetry", function()
             local active = ui.runtime
             if active and active.alive and not active.initializing then
@@ -17215,7 +19776,7 @@ local BUILTIN={
     {id=100773414188482,name="Stray Kids Walkin On Water"},
     {id=131544122623505,name="Become A Car!"},
     {id=99005087791705,name="Death Pose"},
-    {id=132384701706046,name="💀MM2 Fake Dead"},
+    {id=132384701706046,name="MM2 Fake Dead"},
     {id=129916107176034,name="Discombobulated"},
     {id=88598010609888,name="Angry Stomp "},
     {id=132508867759412,name="xavier so based emote"},
@@ -17244,13 +19805,13 @@ local BUILTIN={
     {id=137261874619072,name="Sponge Dance"},
     {id=119746055344304,name="Plane"},
     {id=78620443286892,name="Cute Laying Down"},
-    {id=108922782921118,name="📸 Pose for the Pic "},
+    {id=108922782921118,name="Pose for the Pic"},
     {id=131221550165951,name="Heart Hands Pose 3.0"},
     {id=119454955259757,name="Caramel Hip Sway"},
     {id=7202900159,name="Wake Up Call - KSI"},
     {id=79752538807060,name="Griddy"},
     {id=140466682449054,name="head spin"},
-    {id=107899954696611,name="Spongebob Shuffle Dance 🧽"},
+    {id=107899954696611,name="Spongebob Shuffle Dance"},
     {id=96405718067779,name="Cute Sit"},
     {id=4849497510,name="Power Blast"},
     {id=89413575288931,name="Blue Shirt Guy Dancing"},
@@ -17259,7 +19820,7 @@ local BUILTIN={
     {id=102323907950469,name="Space Dance"},
     {id=110521067391235,name="The Old Jitterbug"},
     {id=111304332281521,name="Druski Shuffle"},
-    {id=133600250245899,name="🥤 Soda Pop - Saja Boys"},
+    {id=133600250245899,name="Soda Pop - Saja Boys"},
     {id=133477296392756,name="Rasputin – Boney M."},
     {id=122949892043249,name="[Aura Farm] Sit Idle"},
     {id=82739386299071,name="Jackpot Groove"},
@@ -17854,7 +20415,7 @@ do
             card.star.Text=prefs.favorites[IdText(card.item.id)] and "★" or "☆"
             card.star.TextColor3=prefs.favorites[IdText(card.item.id)] and C.accent or C.white
             card.dot.BackgroundTransparency=prefs.shortcuts[IdText(card.item.id)] and 0 or 1
-            card.play.Text=playing and (UI.compactCards and "■" or "■ Stop") or (UI.compactCards and "▶" or "▶ Play")
+            card.play.Text=playing and (UI.compactCards and "■" or "■ Stop") or (UI.compactCards and "▶" or "Play")
             card.play.TextColor3=playing and C.navy or C.teal
             card.play.BackgroundColor3=playing and C.accent or C.white
         end
@@ -17981,7 +20542,7 @@ do
         UI.settings=Button(UI.root,"Settings",UDim2.new(1,-184,0,10),UDim2.fromOffset(80,36));UI.settings.TextSize=13
         local minimize=Button(UI.root,"—",UDim2.new(1,-96,0,10),UDim2.fromOffset(36,36))
         local close=Button(UI.root,"×",UDim2.new(1,-52,0,10),UDim2.fromOffset(36,36));close.TextSize=24
-        UI.launcher=Button(UI.canvas,"Emotes  ▶",UDim2.new(0,16,.65,0),UDim2.fromOffset(112,42))
+        UI.launcher=Button(UI.canvas,"Emotes",UDim2.new(0,16,.65,0),UDim2.fromOffset(112,42))
         UI.launcher.BackgroundColor3=C.teal;Stroke(UI.launcher,C.accent,.2);UI.launcher.Visible=false
         Connect(minimize.Activated,function() SetVisible(false) end)
         Connect(close.Activated,function() runtime.CloseBrowser() end)
@@ -18197,7 +20758,6 @@ local browserToggle=browserSection:AddToggle("Open browser on load",function(val
     if runtime.initializing or not runtime.alive then return end
     prefs.browserOnLoad=value==true;SaveSettings()
 end)
-SR_Paragraph(browserSection, "Card browser", "Separate window inspired by ODH's emote cards, not an injected native tab. Tap the circle to pin/unpin an on-screen emote button, ▶ to play, ■ to stop, ★ to favorite. Screen buttons appear immediately, even with the browser open; drag them to move. Search, scroll and switch pages; drag the header to move the window. Minus minimizes to an Emotes button. X / Hide hides the entire plugin overlay, including shortcuts; reopen with Open card browser. Native controls below remain available.")
 local alphaSlider=browserSection:AddSlider("Window transparency (%)",0,50,prefs.windowTransparency,function(value)
     if runtime.initializing or not runtime.alive or type(value)~="number" or value~=value then return end
     prefs.windowTransparency=math.clamp(value,0,50);SaveSettings();runtime.ApplyBrowserAppearance()
@@ -18287,7 +20847,6 @@ local speed=playback:AddSlider("Emote speed",0,3,prefs.speed,function(value)
     if runtime.UpdateCardStatus then runtime.UpdateCardStatus() end
     if runtime.track then pcall(function() runtime.track:AdjustSpeed(prefs.speed) end) end
 end)
-SR_Paragraph(playback, "Playback behavior", "Single playback is the default (Loop OFF). Old versions' Loop ON is reset once; you can enable looping manually. Speed 0 pauses the current track. With Keep playing while moving OFF, movement stops the emote. Play is manual: saved settings never start an emote automatically after joining or respawning.")
 
 local custom=tab:AddSection("Custom Emote","Catalog emote asset ID or raw animation ID")
 customLabel=custom:AddLabel("Saved ID: "..(prefs.customId=="" and "(empty)" or prefs.customId),true)
@@ -18307,8 +20866,8 @@ custom:AddButton("Play custom ID",function()
     if not id then Notify("Enter a numeric ID, rbxassetid URL, or Roblox catalog URL.");return end
     Play({id=id,name="Custom "..IdText(id)},prefs.customKind=="Animation ID")
 end)
-SR_Paragraph(custom, "About this port", "Source: 7yd7/Hub Emotes.lua. A separate card window and native ODH controls replace the original wheel, HUD editor and themes. Walk/run animation bundles are not modified. Some assets are restricted or unavailable; visibility to other players depends on the game. Use one emote player at a time. FE Animations full resets will stop a playing emote.")
-SR_Paragraph(custom, "Saving", "Settings, selected emote and favorites: "..FILE..". Catalog cache: "..CACHE..". readfile/writefile are required for cross-session saving. Saved textbox values are shown in the labels because ODH has no documented textbox setter.")
+SR_Paragraph(custom, "Good to know", "Some emotes are blocked by Roblox and will not play. Other players may not see emotes in every game. Favorites and settings are saved in "..FILE..".")
+custom:AddLabel(SR_UI.Text.mark("Port of 7yd7 Hub Emotes", "credit"))
 function runtime.SyncNative()
     local initializing=runtime.initializing
     runtime.initializing=true
@@ -18332,7 +20891,7 @@ runtime.initializing=false
 _G[KEY]=runtime
 Status("Ready — select an emote and press Play")
 
-task.defer(function()
+SR_Perf.afterBoot("Emotes.catalog", function()
     local cache=ReadJSON(CACHE)
     local cachedItems=NormalizeCatalog(cache)
     if not runtime.alive then return end
@@ -18477,7 +21036,10 @@ do
         end
         local target = runtime.maxItems
         local count = 0
+        local gen = runtime.generation
+        local slice = SR_Perf.slicer()
         for _, fn in pairs(objects) do
+            if slice() and (runtime.generation ~= gen or not runtime.alive) then return count end
             if type(fn) == "function" then
                 local known = identified[fn]
                 if known == nil then
@@ -18552,10 +21114,7 @@ do
     ODHX.cleanup = Cleanup
 
     local section = shared.AddSection("Inventory Unlimiter")
-    section:AddLabel("Inventory Unlimiter V5 • client-side limit only")
-    SR_Paragraph(section, "What it does",
-        "Raises the item limit of the game's inventory screen on your client. Nothing is sent to the server, " ..
-        "so server-side limits stay in force. The switch and Max Items are saved automatically and restored on load.")
+    section:AddLabel(SR_UI.Text.mark("Inventory Unlimiter V5", "credit"))
 
     local toggle = section:AddToggle("Unlimit Inventory", function(value)
         if not runtime.ready then return end
@@ -18630,6 +21189,11 @@ do
 end
 end)
 
+pcall(function() if SR_UI.Icons and SR_UI.Icons.start then SR_UI.Icons.start() end end)
+pcall(SR_Perf.finishBoot)
+SR_Log("load time: " .. math.floor((SR_Perf.bootTime or 0) * 1000 + 0.5) .. " ms | " .. table.concat(SR_Perf.times, ", "))
+SR_Log("device: " .. SR_Perf.describe())
+SR_Log("icons: " .. tostring(SR_UI.Icons and SR_UI.Icons.pending and SR_UI.Icons.pending() or 0) .. " elements in the icon queue")
 SR_Log("modules loaded: " .. SR_UI.modulesLoaded .. "/" .. SR_UI.modulesSeen
     .. (#SR_UI.moduleFailures > 0 and (" | failed: " .. table.concat(SR_UI.moduleFailures, "; ")) or ""))
 pcall(SR_BootNotify)
