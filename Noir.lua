@@ -1,3 +1,13 @@
+--[==[
+    Noir + Avatar Copy — combined build (single SteelRework tab)
+    • Noir (SteelRework): all original modules
+    • Pm-WallHop: patched to add its sections into the shared SteelRework tab
+      instead of creating its own "Pm-WallHop" tab
+    • Avatar Copy: added as module "AvatarCopy"; its sections (Copy Avatar,
+      Animations & Emotes, Avatar Options) also go into the SteelRework tab
+    Source repo: mellnikovden968-web/CFG_PM2 (branch main)
+]==]
+
 local SR_UI = {
     separateTabs = false,
     title        = "SteelRework",
@@ -9757,7 +9767,10 @@ do
             end
         end
         function X.shared.AddSection(name,subtitle)
+            -- merged build: sections go into the shared SteelRework tab (like other Noir modules)
+            if not tab then tab=SR_Tab(X.title) end
             if not tab then tab=host.CreateTab(X.title,"/mellnikovden968-web/CFG_PM2/refs/heads/main/icon") end
+            if (subtitle==nil or subtitle=="") and SR_UI.tagSubtitles and not SR_UI.separateTabs then subtitle=X.title end
             local raw=tab:AddSection(name,subtitle or "")
             local section={Name=name,Raw=raw}
             local function register(kind,label,callback,default,min,max,items)
@@ -21187,6 +21200,1375 @@ do
     Log("loaded | settings: ODH_InventoryUnlimiter_settings.json")
 
 end
+end)
+
+
+-- ============================================================================
+--  MODULE: Avatar Copy (merged from Avatar.lua)
+--  Runs through SR_UI.tryModule like every other Noir module, so an error
+--  here cannot break Noir or Pm-WallHop. Its sections are placed into the
+--  shared SteelRework tab (Copy Avatar / Animations & Emotes / Avatar Options).
+-- ============================================================================
+SR_UI.tryModule("AvatarCopy", function()
+-- ============================================================================
+--  Avatar Copy — plugin for the Overdrive H plugin menu
+--  Copies another player's look onto your character: clothes, accessories,
+--  body colors, head and face. The look is local: only you see it.
+--  R6: clothes, accessories, colors, head shape and face are swapped.
+--  R15: the full avatar (body parts, layered clothing, dynamic heads) is
+--  shown on top of your character with its own proportions; every frame
+--  it takes the pose of your character, so it follows your animations.
+--  R15 also gets their movement animations and emotes. Animations played on
+--  your own character are sent to the server, so other players usually see
+--  the animations and emotes too (the look itself stays local).
+--  Search: any Roblox player by name, not only players in this server.
+--  Settings file: AvatarCopy_settings.json
+-- ============================================================================
+
+local PLUGIN_TITLE = "Avatar Copy"
+local PLUGIN_ICON  = "/mellnikovden968-web/CFG_PM2/refs/heads/main/icon"
+local SETTINGS     = "AvatarCopy_settings.json"
+local RECENT_MAX   = 8
+local EMPTY_RECENT = "No recent names yet"
+local TAG          = "AvatarCopy"
+local RIG_NAME     = "AvatarCopyRig"
+local EMPTY_SEARCH = "Type a name to search"
+local NO_RESULTS   = "Nothing found"
+local NO_EMOTES    = "No emotes copied yet"
+
+-- ---------------------------------------------------------------- services
+local function service(name)
+    local ok, s = pcall(function() return game:GetService(name) end)
+    return ok and s or nil
+end
+local Players     = service("Players")
+local HttpService = service("HttpService")
+local RunService  = service("RunService")
+local LocalPlayer = Players and Players.LocalPlayer
+
+-- ---------------------------------------------------------------- restart safety
+local ENV = (type(getgenv) == "function" and getgenv()) or _G
+if type(ENV.AvatarCopyRuntime) == "table" and type(ENV.AvatarCopyRuntime.Cleanup) == "function" then
+    pcall(ENV.AvatarCopyRuntime.Cleanup)
+end
+
+local runtime = {
+    alive = true, busy = false, initializing = true,
+    connections = {}, descCache = {}, cacheOrder = {},
+    target = nil,        -- { id = number, name = string } — look that is active now
+    snapshot = nil,      -- your original look, saved before the first change
+    emotes = {},         -- copied emotes: name -> asset ids
+    emoteTracks = {},    -- emote that is playing now
+}
+ENV.AvatarCopyRuntime = runtime
+
+local prefs = { recent = {}, reapply = false, last = nil, fit = true, anims = true, emotes = true }
+
+-- ---------------------------------------------------------------- small helpers
+local host = rawget(_G, "odh_shared_plugins") or odh_shared_plugins
+
+local function log(text) pcall(print, "[AvatarCopy] " .. tostring(text)) end
+
+local function notify(text, seconds)
+    if host and type(host.Notify) == "function" then
+        if pcall(host.Notify, text, seconds or 3) then return end
+    end
+    log(text)
+end
+
+local statusLabel, recentDropdown, searchDropdown, emoteDropdown
+local function setLabel(control, text)
+    if control then pcall(function() control:SetValue(text) end) end
+end
+local function status(text)
+    runtime.status = text
+    setLabel(statusLabel, "Status: " .. text)
+end
+
+local function trim(s)
+    return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function isa(obj, class)
+    local ok, r = pcall(function() return obj:IsA(class) end)
+    return ok and r == true
+end
+
+local function tag(obj)
+    pcall(function() obj:SetAttribute(TAG, true) end)
+end
+
+local function clone(obj)
+    local ok, c = pcall(function()
+        local was = obj.Archivable
+        obj.Archivable = true
+        local copy = obj:Clone()
+        obj.Archivable = was
+        return copy
+    end)
+    return ok and c or nil
+end
+
+-- ---------------------------------------------------------------- settings
+local canFiles = type(readfile) == "function" and type(writefile) == "function"
+
+local function saveSettings()
+    if not canFiles or not HttpService then return end
+    pcall(function()
+        writefile(SETTINGS, HttpService:JSONEncode({
+            version = 1, recent = prefs.recent, reapply = prefs.reapply, last = prefs.last, fit = prefs.fit,
+            anims = prefs.anims, emotes = prefs.emotes,
+        }))
+    end)
+end
+
+local function loadSettings()
+    if not canFiles or not HttpService then return end
+    local ok, data = pcall(function()
+        if type(isfile) == "function" and not isfile(SETTINGS) then return nil end
+        return HttpService:JSONDecode(readfile(SETTINGS))
+    end)
+    if not ok or type(data) ~= "table" or data.version ~= 1 then return end
+    if type(data.recent) == "table" then
+        for _, name in ipairs(data.recent) do
+            if type(name) == "string" and name ~= "" and #prefs.recent < RECENT_MAX then
+                prefs.recent[#prefs.recent + 1] = name
+            end
+        end
+    end
+    prefs.reapply = data.reapply == true
+    prefs.fit = data.fit ~= false
+    prefs.anims = data.anims ~= false
+    prefs.emotes = data.emotes ~= false
+    if type(data.last) == "table" and tonumber(data.last.id) then
+        prefs.last = { id = tonumber(data.last.id), name = tostring(data.last.name or data.last.id) }
+    end
+end
+
+local function recentItems()
+    if #prefs.recent == 0 then return { EMPTY_RECENT } end
+    local items = {}
+    for i, name in ipairs(prefs.recent) do items[i] = name end
+    return items
+end
+
+local function refreshRecent()
+    if recentDropdown then
+        pcall(function() recentDropdown:ChangeItems(recentItems()) end)
+    end
+end
+
+local function remember(name)
+    if type(name) ~= "string" or name == "" then return end
+    for i = #prefs.recent, 1, -1 do
+        if prefs.recent[i]:lower() == name:lower() then table.remove(prefs.recent, i) end
+    end
+    table.insert(prefs.recent, 1, name)
+    while #prefs.recent > RECENT_MAX do table.remove(prefs.recent) end
+    refreshRecent()
+end
+
+-- ---------------------------------------------------------------- who to copy
+-- accepts a username, a display name of someone in the server, "@name" or a user ID
+local function resolve(input)
+    input = trim(input):gsub("^@", "")
+    if input == "" then return nil, nil, "Type a username first" end
+
+    local asNumber = tonumber(input)
+    if asNumber and asNumber > 0 and asNumber % 1 == 0 then
+        local okName, name = pcall(function() return Players:GetNameFromUserIdAsync(asNumber) end)
+        return asNumber, (okName and name) or tostring(asNumber)
+    end
+
+    local lower = input:lower()
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl.Name:lower() == lower or pl.DisplayName:lower() == lower then
+            return pl.UserId, pl.Name
+        end
+    end
+
+    local ok, id = pcall(function() return Players:GetUserIdFromNameAsync(input) end)
+    if not ok or not id then return nil, nil, "Player \"" .. input .. "\" was not found" end
+    local okName, exact = pcall(function() return Players:GetNameFromUserIdAsync(id) end)
+    return id, (okName and exact) or input
+end
+
+-- any Roblox player: players in this server, the exact username and (when the
+-- executor can send web requests) the Roblox user search with similar names
+local httpRequest = (type(request) == "function" and request)
+    or (type(http_request) == "function" and http_request)
+    or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+    or (type(fluxus) == "table" and type(fluxus.request) == "function" and fluxus.request)
+    or (type(http) == "table" and type(http.request) == "function" and http.request)
+    or nil
+
+local function searchPlayers(keyword)
+    keyword = trim(keyword):gsub("^@", "")
+    local results, seen = {}, {}
+    local function add(id, name, display)
+        id = tonumber(id)
+        if not id or seen[id] or type(name) ~= "string" or #results >= 15 then return end
+        seen[id] = true
+        local label = (type(display) == "string" and display ~= "" and display ~= name)
+            and (display .. " (@" .. name .. ")") or ("@" .. name)
+        results[#results + 1] = { id = id, name = name, label = label }
+    end
+    if keyword == "" then return results end
+    local lower = keyword:lower()
+
+    local asNumber = tonumber(keyword)
+    if asNumber and asNumber > 0 and asNumber % 1 == 0 then
+        local ok, name = pcall(function() return Players:GetNameFromUserIdAsync(asNumber) end)
+        if ok and name then add(asNumber, name) end
+    end
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer and (pl.Name:lower():find(lower, 1, true) or pl.DisplayName:lower():find(lower, 1, true)) then
+            add(pl.UserId, pl.Name, pl.DisplayName)
+        end
+    end
+    local okId, id = pcall(function() return Players:GetUserIdFromNameAsync(keyword) end)
+    if okId and id then
+        local okName, exact = pcall(function() return Players:GetNameFromUserIdAsync(id) end)
+        add(id, (okName and exact) or keyword)
+    end
+    if httpRequest and HttpService and #keyword >= 3 then
+        pcall(function()
+            local url = "https://users.roblox.com/v1/users/search?limit=10&keyword=" .. HttpService:UrlEncode(keyword)
+            local res = httpRequest({ Url = url, Method = "GET" })
+            local code = res and (res.StatusCode or res.Status)
+            if res and (code == 200 or res.Success == true) and type(res.Body) == "string" then
+                local data = HttpService:JSONDecode(res.Body)
+                for _, u in ipairs((type(data) == "table" and data.data) or {}) do
+                    add(u.id, u.name, u.displayName)
+                end
+            end
+        end)
+    end
+    return results
+end
+
+local function getDescription(userId)
+    local cached = runtime.descCache[userId]
+    if cached then return cached end
+    local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserIdAsync(userId) end)
+    if not ok or not desc then return nil, "Could not load the avatar (Roblox did not answer)" end
+    runtime.descCache[userId] = desc
+    table.insert(runtime.cacheOrder, userId)
+    if #runtime.cacheOrder > 20 then
+        runtime.descCache[table.remove(runtime.cacheOrder, 1)] = nil
+    end
+    return desc
+end
+
+-- ---------------------------------------------------------------- look parts
+local LOOK_CLASSES = { "Accessory", "Shirt", "Pants", "ShirtGraphic", "BodyColors", "CharacterMesh" }
+local function isLook(v)
+    for _, class in ipairs(LOOK_CLASSES) do
+        if isa(v, class) then return true end
+    end
+    return false
+end
+
+local function bodyParts(model)
+    local list = {}
+    for _, v in ipairs(model:GetChildren()) do
+        if isa(v, "BasePart") and v.Name ~= "HumanoidRootPart" then list[#list + 1] = v end
+    end
+    return list
+end
+
+local function headMeshes(head)
+    local list = {}
+    if not head then return list end
+    for _, v in ipairs(head:GetChildren()) do
+        if isa(v, "SpecialMesh") or isa(v, "DataModelMesh") then list[#list + 1] = v end
+    end
+    return list
+end
+
+-- your own look is saved once per character, before the first change
+local function takeSnapshot(char)
+    if runtime.snapshot and runtime.snapshot.char == char then return end
+    local snap = { char = char, items = {}, colors = {}, meshes = {}, face = nil, hidden = {}, changed = false }
+    for _, v in ipairs(char:GetChildren()) do
+        if isLook(v) then
+            local c = clone(v)
+            if c then snap.items[#snap.items + 1] = c end
+        end
+    end
+    for _, part in ipairs(bodyParts(char)) do
+        snap.colors[part.Name] = { color = part.Color, material = part.Material }
+    end
+    local head = char:FindFirstChild("Head")
+    for _, m in ipairs(headMeshes(head)) do
+        local c = clone(m)
+        if c then snap.meshes[#snap.meshes + 1] = c end
+    end
+    local face = head and head:FindFirstChild("face")
+    if face then snap.face = face.Texture end
+    runtime.snapshot = snap
+end
+
+local function clearLook(char)
+    for _, v in ipairs(char:GetChildren()) do
+        if isLook(v) then pcall(function() v:Destroy() end) end
+    end
+end
+
+-- attachment point on a body part only (not inside other accessories)
+local function findBodyAttachment(char, name)
+    for _, part in ipairs(bodyParts(char)) do
+        local a = part:FindFirstChild(name)
+        if a and isa(a, "Attachment") then return a end
+    end
+    return nil
+end
+
+-- accessory from the temporary model -> welded to your character
+local function attachAccessory(src, char, fallbackPart)
+    local acc = clone(src)
+    if not acc then return end
+    local handle = acc:FindFirstChild("Handle")
+    if not handle then acc:Destroy() return end
+    -- old welds point to the temporary model — remove them
+    for _, d in ipairs(acc:GetDescendants()) do
+        if isa(d, "JointInstance") or isa(d, "WeldConstraint") then pcall(function() d:Destroy() end) end
+    end
+    for _, d in ipairs(acc:GetDescendants()) do
+        if isa(d, "BasePart") then
+            d.Anchored = false
+            d.CanCollide = false
+            pcall(function() d.CanTouch = false; d.CanQuery = false end)
+            d.Massless = true
+        end
+    end
+    local att = handle:FindFirstChildWhichIsA("Attachment")
+    local target = att and findBodyAttachment(char, att.Name)
+    local part = target and target.Parent or fallbackPart
+    if not part then acc:Destroy() return end
+    if target and part == target.Parent then
+        handle.CFrame = target.WorldCFrame * att.CFrame:Inverse()
+    elseif att then
+        handle.CFrame = part.CFrame * CFrame.new(att.Position)
+    else
+        handle.CFrame = part.CFrame
+    end
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0, weld.Part1 = handle, part
+    weld.Parent = handle
+    for _, d in ipairs(acc:GetDescendants()) do
+        if isa(d, "BasePart") and d ~= handle then
+            local w = Instance.new("WeldConstraint")
+            w.Part0, w.Part1 = d, handle
+            w.Parent = d
+        end
+    end
+    tag(acc)
+    acc.Parent = char
+end
+
+local function applyModel(char, model)
+    local isR6 = char:FindFirstChild("Torso") ~= nil
+    local head = char:FindFirstChild("Head")
+    local fallback = head or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+
+    clearLook(char)
+
+    for _, v in ipairs(model:GetChildren()) do
+        if isa(v, "Accessory") then
+            attachAccessory(v, char, fallback)
+        elseif isLook(v) then
+            local c = clone(v)
+            if c then tag(c); c.Parent = char end
+        end
+    end
+
+    -- body colors and materials, part by part (same names in R6 and R15)
+    for _, src in ipairs(bodyParts(model)) do
+        local dst = char:FindFirstChild(src.Name)
+        if dst and isa(dst, "BasePart") then
+            pcall(function() dst.Color = src.Color; dst.Material = src.Material end)
+        end
+    end
+
+    -- head shape (R6: SpecialMesh) and face
+    local srcHead = model:FindFirstChild("Head")
+    if srcHead and head then
+        if isR6 then
+            for _, m in ipairs(headMeshes(head)) do pcall(function() m:Destroy() end) end
+            for _, m in ipairs(headMeshes(srcHead)) do
+                local c = clone(m)
+                if c then c.Parent = head end
+            end
+        end
+        local face, myFace = srcHead:FindFirstChild("face"), head:FindFirstChild("face")
+        if face then
+            if myFace then myFace.Texture = face.Texture
+            else local c = clone(face); if c then c.Parent = head end end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------- R15: full avatar on top
+-- each body part is welded to yours at its joint, so it follows your animations
+local R15_JOINT = {
+    HumanoidRootPart = "RootRigAttachment", LowerTorso = "RootRigAttachment",
+    UpperTorso = "WaistRigAttachment", Head = "NeckRigAttachment",
+    LeftUpperArm = "LeftShoulderRigAttachment", LeftLowerArm = "LeftElbowRigAttachment", LeftHand = "LeftWristRigAttachment",
+    RightUpperArm = "RightShoulderRigAttachment", RightLowerArm = "RightElbowRigAttachment", RightHand = "RightWristRigAttachment",
+    LeftUpperLeg = "LeftHipRigAttachment", LeftLowerLeg = "LeftKneeRigAttachment", LeftFoot = "LeftAnkleRigAttachment",
+    RightUpperLeg = "RightHipRigAttachment", RightLowerLeg = "RightKneeRigAttachment", RightFoot = "RightAnkleRigAttachment",
+}
+
+local function removeRig(char)
+    local old = char and char:FindFirstChild(RIG_NAME)
+    if old then pcall(function() old:Destroy() end) end
+    runtime.mirror = nil
+end
+
+-- your own body is hidden only on your screen; old values are kept to bring it back
+local function hide(snap, obj, prop)
+    local ok, cur = pcall(function() return obj[prop] end)
+    if not ok then return end
+    if snap.hidden[obj] == nil then snap.hidden[obj] = { prop = prop, value = cur } end
+    pcall(function() obj[prop] = 1 end)
+end
+
+local function hideAccessory(snap, acc)
+    for _, d in ipairs(acc:GetDescendants()) do
+        if isa(d, "BasePart") or isa(d, "Decal") then hide(snap, d, "Transparency") end
+    end
+end
+
+local function hideRealBody(char, snap)
+    -- accessories the game puts on later (while the copy is on) are hidden too
+    if not snap.watch then
+        pcall(function()
+            snap.watch = char.ChildAdded:Connect(function(v)
+                if runtime.snapshot ~= snap or not char:FindFirstChild(RIG_NAME) then return end
+                if isa(v, "Accessory") and not (v.GetAttribute and v:GetAttribute(TAG)) then
+                    task.wait()
+                    hideAccessory(snap, v)
+                end
+            end)
+        end)
+    end
+    for _, v in ipairs(char:GetChildren()) do
+        if isa(v, "BasePart") and v.Name ~= "HumanoidRootPart" then
+            hide(snap, v, "Transparency")
+            for _, d in ipairs(v:GetChildren()) do
+                if isa(d, "Decal") then hide(snap, d, "Transparency") end
+            end
+        elseif isa(v, "Accessory") then
+            for _, d in ipairs(v:GetDescendants()) do
+                if isa(d, "BasePart") or isa(d, "Decal") then hide(snap, d, "Transparency") end
+            end
+        end
+    end
+end
+
+local function unhideRealBody(snap)
+    if snap.watch then pcall(function() snap.watch:Disconnect() end) snap.watch = nil end
+    for obj, info in pairs(snap.hidden) do
+        pcall(function() obj[info.prop] = info.value end)
+    end
+    snap.hidden = {}
+end
+
+-- every frame the model's joints take the pose of your joints (after your animations run)
+local function mirrorStep()
+    local m = runtime.mirror
+    if not m then return end
+    local list = m.pairs
+    for i = 1, #list do
+        local p = list[i]
+        p[2].Transform = p[1].Transform
+    end
+end
+
+local function startMirror()
+    if runtime.mirrorConn or not RunService then return end
+    local ok, conn = pcall(function()
+        return RunService.Stepped:Connect(function()
+            if runtime.mirror and not pcall(mirrorStep) then runtime.mirror = nil end
+        end)
+    end)
+    if ok and conn then
+        runtime.mirrorConn = conn
+        runtime.connections[#runtime.connections + 1] = conn
+    end
+end
+
+local function motorKey(m)
+    local p1 = m.Part1
+    return m.Name .. "|" .. tostring(p1 and p1.Name)
+end
+
+-- height of the root above the feet: the copy stands on the ground with its own legs
+local function rootLift(char, model)
+    local ok, lift = pcall(function()
+        local visRoot, realRoot = model:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("HumanoidRootPart")
+        local realHum = char:FindFirstChildOfClass("Humanoid")
+        local lowest
+        for _, n in ipairs({ "LeftFoot", "RightFoot" }) do
+            local f = model:FindFirstChild(n)
+            if f then
+                local y = f.Position.Y - f.Size.Y / 2
+                if not lowest or y < lowest then lowest = y end
+            end
+        end
+        if not (visRoot and realRoot and realHum and lowest) then return 0 end
+        local visGround = visRoot.Position.Y - lowest
+        local realGround = realHum.HipHeight + realRoot.Size.Y / 2
+        local d = visGround - realGround
+        if d ~= d or math.abs(d) > 20 then return 0 end
+        return d
+    end)
+    return (ok and type(lift) == "number") and lift or 0
+end
+
+-- the copy keeps its own joints; they repeat your pose (right proportions, head on its own neck)
+local function mirrorPairs(char, model)
+    local real = {}
+    for _, d in ipairs(char:GetDescendants()) do
+        if isa(d, "Motor6D") and d.Part1 and d.Part1.Parent == char then real[motorKey(d)] = d end
+    end
+    local list = {}
+    for _, d in ipairs(model:GetDescendants()) do
+        if isa(d, "Motor6D") then
+            local r = real[motorKey(d)]
+            if r then list[#list + 1] = { r, d } end
+        end
+    end
+    return list
+end
+
+local function applyR15(char, model, snap)
+    local pairsList = mirrorPairs(char, model)
+    local realRoot, visRoot = char:FindFirstChild("HumanoidRootPart"), model:FindFirstChild("HumanoidRootPart")
+    local mirrored = realRoot ~= nil and visRoot ~= nil and #pairsList >= 5
+    if not mirrored then
+        -- old way: each part welded to yours; the model's own motors would fight the welds
+        for _, d in ipairs(model:GetDescendants()) do
+            if isa(d, "Motor6D") then pcall(function() d:Destroy() end) end
+        end
+    end
+    for _, d in ipairs(model:GetDescendants()) do
+        if isa(d, "BasePart") then
+            d.Anchored = false
+            d.CanCollide = false
+            pcall(function() d.CanTouch = false; d.CanQuery = false end)
+            d.Massless = true
+        end
+    end
+    -- the model's Humanoid only draws clothes: no physics, no name tag, no death
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum.EvaluateStateMachine = false end)
+        pcall(function() hum.RequiresNeck = false end)
+        pcall(function() hum.BreakJointsOnDeath = false end)
+        pcall(function() hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end)
+        pcall(function() hum.NameDisplayDistance = 0; hum.HealthDisplayDistance = 0 end)
+        -- its own Animator would reset the joints we set
+        local animator = hum:FindFirstChildOfClass("Animator")
+        if animator then pcall(function() animator:Destroy() end) end
+    end
+
+    if mirrored then
+        local lift = rootLift(char, model)
+        local c0 = CFrame.new(0, lift, 0)
+        visRoot.CFrame = realRoot.CFrame * c0
+        local weld = Instance.new("Weld")
+        weld.Name = "AvatarCopyWeld"
+        weld.Part0, weld.Part1, weld.C0 = realRoot, visRoot, c0
+        weld.Parent = visRoot
+        visRoot.Transparency = 1
+        model.Name = RIG_NAME
+        tag(model)
+        removeRig(char)
+        model.Parent = char
+        hideRealBody(char, snap)
+        runtime.mirror = { char = char, pairs = pairsList }
+        mirrorStep()
+        startMirror()
+        return
+    end
+
+    local welded = 0
+    for _, vis in ipairs(model:GetChildren()) do
+        if isa(vis, "BasePart") then
+            local real = char:FindFirstChild(vis.Name)
+            if real and isa(real, "BasePart") then
+                local attName = R15_JOINT[vis.Name]
+                local ra = attName and real:FindFirstChild(attName)
+                local va = attName and vis:FindFirstChild(attName)
+                local c0 = (ra and va) and (ra.CFrame * va.CFrame:Inverse()) or CFrame.new()
+                vis.CFrame = real.CFrame * c0
+                local weld = Instance.new("Weld")
+                weld.Name = "AvatarCopyWeld"
+                weld.Part0, weld.Part1, weld.C0 = real, vis, c0
+                weld.Parent = vis
+                if vis.Name == "HumanoidRootPart" then vis.Transparency = 1 else welded = welded + 1 end
+            else
+                pcall(function() vis:Destroy() end)   -- a part your rig does not have
+            end
+        end
+    end
+    if welded == 0 then error("no matching body parts") end
+
+    model.Name = RIG_NAME
+    tag(model)
+    removeRig(char)
+    model.Parent = char
+    hideRealBody(char, snap)
+end
+
+-- your body proportions are used, so hands and feet stay where your animations put them
+local function fitDescription(desc, hum)
+    if not prefs.fit then return desc end
+    local ok, fitted = pcall(function()
+        local mine = hum:GetAppliedDescription()
+        local copy = desc:Clone()
+        for _, key in ipairs({ "HeightScale", "WidthScale", "DepthScale", "HeadScale", "BodyTypeScale", "ProportionScale" }) do
+            copy[key] = mine[key]
+        end
+        return copy
+    end)
+    return (ok and fitted) or desc
+end
+
+-- ---------------------------------------------------------------- animations and emotes (R15)
+-- scripts inside the temporary model would run in your character — remove them
+local function stripScripts(model)
+    for _, d in ipairs(model:GetDescendants()) do
+        if isa(d, "LuaSourceContainer") then pcall(function() d:Destroy() end) end
+    end
+end
+
+-- movement animation sets of the Animate script
+local ANIM_SLOTS = { idle = true, walk = true, run = true, jump = true, fall = true, climb = true,
+    swim = true, swimidle = true, mood = true }
+local DESC_ANIMS = { "IdleAnimation", "WalkAnimation", "RunAnimation", "JumpAnimation",
+    "FallAnimation", "ClimbAnimation", "SwimAnimation", "MoodAnimation" }
+
+local function readAnimSet(animate)
+    local set = {}
+    if not animate then return set end
+    for _, slot in ipairs(animate:GetChildren()) do
+        if ANIM_SLOTS[slot.Name] then
+            local list = {}
+            for _, a in ipairs(slot:GetChildren()) do
+                if isa(a, "Animation") then
+                    local c = clone(a)
+                    if c then list[#list + 1] = c end
+                end
+            end
+            if #list > 0 then set[slot.Name] = list end
+        end
+    end
+    return set
+end
+
+-- if the model had no Animate script: load the animation packages from the catalog
+local function loadAnimPackages(desc, set)
+    for _, prop in ipairs(DESC_ANIMS) do
+        local okId, id = pcall(function() return desc[prop] end)
+        id = okId and tonumber(id) or 0
+        if id > 0 then
+            local ok, objs = pcall(function() return game:GetObjects("rbxassetid://" .. id) end)
+            if ok and type(objs) == "table" then
+                for _, obj in ipairs(objs) do
+                    local list = obj:GetDescendants()
+                    for _, a in ipairs(list) do
+                        local slot = a.Parent and tostring(a.Parent.Name):lower()
+                        if isa(a, "Animation") and slot and ANIM_SLOTS[slot] and not set[slot] then
+                            set[slot] = {}
+                        end
+                        if isa(a, "Animation") and slot and ANIM_SLOTS[slot] and set[slot] then
+                            local c = clone(a)
+                            if c then table.insert(set[slot], c) end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return set
+end
+
+local function animatorOf(char)
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    return hum and hum:FindFirstChildOfClass("Animator"), hum
+end
+
+-- Animate script restarts with the new animations; only its own tracks are stopped
+local function restartAnimate(char, oldIds)
+    local animate = char:FindFirstChild("Animate")
+    local animator = animatorOf(char)
+    if animate then pcall(function() animate.Disabled = true end) end
+    if animator and oldIds then
+        pcall(function()
+            for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+                local id = t.Animation and t.Animation.AnimationId
+                if id and oldIds[id] then t:Stop(0) end
+            end
+        end)
+    end
+    if animate then
+        task.wait()
+        pcall(function() animate.Disabled = false end)
+    end
+end
+
+local function slotIds(animate)
+    local ids = {}
+    if not animate then return ids end
+    for _, slot in ipairs(animate:GetChildren()) do
+        if ANIM_SLOTS[slot.Name] then
+            for _, a in ipairs(slot:GetChildren()) do
+                if isa(a, "Animation") then ids[a.AnimationId] = true end
+            end
+        end
+    end
+    return ids
+end
+
+local function applyAnimations(char, set, snap)
+    local animate = char:FindFirstChild("Animate")
+    if not animate or not next(set) then return 0 end
+    snap.anims = snap.anims or {}
+    local oldIds = slotIds(animate)
+    local n = 0
+    for slotName, list in pairs(set) do
+        local slot = animate:FindFirstChild(slotName)
+        if not slot then
+            slot = Instance.new("StringValue")
+            slot.Name = slotName
+            slot.Parent = animate
+        end
+        if snap.anims[slotName] == nil then
+            local orig = {}
+            for _, a in ipairs(slot:GetChildren()) do
+                if isa(a, "Animation") then orig[#orig + 1] = clone(a) end
+            end
+            snap.anims[slotName] = orig
+        end
+        for _, a in ipairs(slot:GetChildren()) do
+            if isa(a, "Animation") then pcall(function() a:Destroy() end) end
+        end
+        for _, a in ipairs(list) do
+            local c = clone(a)
+            if c then c.Parent = slot end
+        end
+        n = n + 1
+    end
+    restartAnimate(char, oldIds)
+    return n
+end
+
+local function restoreAnimations(char, snap)
+    if not snap or not snap.anims or not next(snap.anims) then return end
+    local animate = char:FindFirstChild("Animate")
+    if not animate then snap.anims = nil return end
+    local oldIds = slotIds(animate)
+    for slotName, orig in pairs(snap.anims) do
+        local slot = animate:FindFirstChild(slotName)
+        if slot then
+            for _, a in ipairs(slot:GetChildren()) do
+                if isa(a, "Animation") then pcall(function() a:Destroy() end) end
+            end
+            for _, a in ipairs(orig) do
+                local c = clone(a)
+                if c then c.Parent = slot end
+            end
+        end
+    end
+    snap.anims = nil
+    restartAnimate(char, oldIds)
+end
+
+-- emotes: written into your own HumanoidDescription, so they show up in the emote wheel
+local function sortedNames(map)
+    local names = {}
+    for name in pairs(map or {}) do names[#names + 1] = name end
+    table.sort(names, function(a, b) return a:lower() < b:lower() end)
+    return names
+end
+
+-- a game's own emote menu (MM2 "Avatar Emotes") reads your emotes once, when the
+-- character appears; its character handler is run again so it reads the copied ones
+local function isEmoteMenuHandler(fn)
+    local src = ""
+    pcall(function()
+        local env = getfenv(fn)
+        local scr = type(env) == "table" and rawget(env, "script")
+        if scr then src = scr:GetFullName() end
+    end)
+    if src == "" then pcall(function() src = tostring(debug.info(fn, "s")) end) end
+    return src:find("Emote") ~= nil and src:find("AvatarCopy") == nil
+end
+
+local function refreshGameEmoteMenu()
+    local char = LocalPlayer and LocalPlayer.Character
+    if not char or type(getconnections) ~= "function" then return 0 end
+    local ok, conns = pcall(getconnections, LocalPlayer.CharacterAdded)
+    if not ok or type(conns) ~= "table" then return 0 end
+    local n = 0
+    for _, c in ipairs(conns) do
+        local okF, fn = pcall(function() return c.Function end)
+        if okF and type(fn) == "function" and isEmoteMenuHandler(fn) then
+            task.spawn(pcall, fn, char)
+            n = n + 1
+        end
+    end
+    return n
+end
+
+-- menus that ask Humanoid:GetAppliedDescription() get the copied emotes too
+-- (only for your own Humanoid; turn off with _G.AVATARCOPY_NO_HOOK = true)
+local function installEmoteHook()
+    local state = ENV.AvatarCopyEmoteState
+    if type(state) ~= "table" then state = {} ENV.AvatarCopyEmoteState = state end
+    state.runtime = runtime
+    if state.hooked or rawget(_G, "AVATARCOPY_NO_HOOK") then return end
+    if type(hookmetamethod) ~= "function" or type(getnamecallmethod) ~= "function" then return end
+    local old
+    local function handler(self, ...)
+        local rt = state.runtime
+        if rt and rt.alive and rt.emoteHum ~= nil and self == rt.emoteHum
+            and not (type(checkcaller) == "function" and checkcaller())
+            and getnamecallmethod() == "GetAppliedDescription" and rt.emotes and next(rt.emotes) then
+            local desc = old(self, ...)
+            if desc then
+                pcall(function()
+                    desc:SetEquippedEmotes({})
+                    desc:SetEmotes(rt.emotes)
+                    desc:SetEquippedEmotes(rt.equipped or {})
+                end)
+            end
+            return desc
+        end
+        return old(self, ...)
+    end
+    local wrapped = (type(newcclosure) == "function" and newcclosure(handler)) or handler
+    local ok, prev = pcall(hookmetamethod, game, "__namecall", wrapped)
+    if ok and type(prev) == "function" then
+        old = prev
+        state.hooked = true
+    end
+end
+
+-- equipped emotes in slot order (Roblox gives { Slot, Name } rows, but takes only names)
+local function equippedNames(list, emotes)
+    local rows, names, seen = {}, {}, {}
+    for i, e in ipairs(type(list) == "table" and list or {}) do
+        if type(e) == "string" then
+            rows[#rows + 1] = { slot = i, name = e }
+        elseif type(e) == "table" and type(e.Name) == "string" then
+            rows[#rows + 1] = { slot = tonumber(e.Slot) or i, name = e.Name }
+        end
+    end
+    table.sort(rows, function(a, b) return a.slot < b.slot end)
+    for _, r in ipairs(rows) do
+        if emotes[r.name] and not seen[r.name] and #names < 8 then
+            seen[r.name] = true
+            names[#names + 1] = r.name
+        end
+    end
+    -- nothing equipped: the first 8 of their emotes fill the menu
+    if #names == 0 then
+        for _, n in ipairs(sortedNames(emotes)) do
+            if #names < 8 then names[#names + 1] = n end
+        end
+    end
+    return names
+end
+
+local function refreshEmotes()
+    if not emoteDropdown then return end
+    -- equipped ones first (same order as the emote menu), then the rest
+    local names, seen = {}, {}
+    for _, n in ipairs(runtime.equipped or {}) do names[#names + 1] = n; seen[n] = true end
+    for _, n in ipairs(sortedNames(runtime.emotes)) do
+        if not seen[n] then names[#names + 1] = n end
+    end
+    if #names == 0 then names = { NO_EMOTES } end
+    pcall(function() emoteDropdown:ChangeItems(names) end)
+end
+
+local function applyEmotes(hum, desc, snap)
+    local okE, emotes = pcall(function() return desc:GetEmotes() end)
+    if not okE or type(emotes) ~= "table" or not next(emotes) then return 0 end
+    local okQ, equipped = pcall(function() return desc:GetEquippedEmotes() end)
+    local mine = hum:FindFirstChildOfClass("HumanoidDescription")
+    if not mine then
+        mine = Instance.new("HumanoidDescription")
+        mine.Parent = hum
+        snap.createdDesc = mine
+    end
+    if snap.emotes == nil then
+        local ok1, e = pcall(function() return mine:GetEmotes() end)
+        local ok2, q = pcall(function() return mine:GetEquippedEmotes() end)
+        snap.emotes = (ok1 and type(e) == "table") and e or {}
+        snap.equipped = (ok2 and type(q) == "table") and q or {}
+        snap.descOwner = mine
+    end
+    local names = equippedNames(okQ and equipped or nil, emotes)
+    -- empty the menu first, so old names never point to emotes that are gone
+    pcall(function() mine:SetEquippedEmotes({}) end)
+    local okSet, why = pcall(function() mine:SetEmotes(emotes) end)
+    if not okSet then log("SetEmotes failed: " .. tostring(why)) end
+    local okEq, why2 = pcall(function() mine:SetEquippedEmotes(names) end)
+    if not okEq then log("SetEquippedEmotes failed: " .. tostring(why2)) end
+    runtime.emotes = emotes
+    runtime.equipped = names
+    runtime.emoteHum = hum
+    refreshEmotes()
+    pcall(installEmoteHook)
+    local menus = refreshGameEmoteMenu()
+    if menus > 0 then log("emote menu refreshed (" .. menus .. ")") end
+    local n = 0
+    for _ in pairs(emotes) do n = n + 1 end
+    return n
+end
+
+local function restoreEmotes(snap)
+    local had = runtime.emoteHum ~= nil
+    runtime.emotes, runtime.equipped, runtime.emoteHum = {}, {}, nil
+    refreshEmotes()
+    if not snap then return end
+    if snap.createdDesc then
+        pcall(function() snap.createdDesc:Destroy() end)
+    elseif snap.descOwner and snap.emotes then
+        local names = next(snap.emotes) and equippedNames(snap.equipped, snap.emotes) or {}
+        pcall(function() snap.descOwner:SetEquippedEmotes({}) end)
+        pcall(function() snap.descOwner:SetEmotes(snap.emotes) end)
+        pcall(function() snap.descOwner:SetEquippedEmotes(names) end)
+    end
+    snap.emotes, snap.equipped, snap.descOwner, snap.createdDesc = nil, nil, nil, nil
+    if had then refreshGameEmoteMenu() end
+end
+
+-- the emote animation, if Humanoid:PlayEmote is blocked in this game
+local emoteAnimCache = {}
+local function emoteAnimation(assetId)
+    assetId = tonumber(assetId)
+    if not assetId then return nil end
+    if emoteAnimCache[assetId] then return emoteAnimCache[assetId] end
+    local ok, objs = pcall(function() return game:GetObjects("rbxassetid://" .. assetId) end)
+    if not ok or type(objs) ~= "table" then return nil end
+    for _, obj in ipairs(objs) do
+        if isa(obj, "Animation") then emoteAnimCache[assetId] = obj return obj end
+        for _, d in ipairs(obj:GetDescendants()) do
+            if isa(d, "Animation") then emoteAnimCache[assetId] = d return d end
+        end
+    end
+    return nil
+end
+
+local function stopEmote()
+    local list = runtime.emoteTracks or {}
+    runtime.emoteTracks = {}
+    for _, t in ipairs(list) do pcall(function() t:Stop(0.2) end) end
+    if runtime.emoteMoveConn then pcall(function() runtime.emoteMoveConn:Disconnect() end) runtime.emoteMoveConn = nil end
+    return #list
+end
+
+local function playEmote(name)
+    local char = LocalPlayer and LocalPlayer.Character
+    local animator, hum = animatorOf(char)
+    if not hum or hum.Health <= 0 then status("Your character is not loaded yet") return end
+    if not (runtime.emotes and runtime.emotes[name]) then status("Copy someone with emotes first") return end
+    stopEmote()
+    -- tracks that start now are the emote (so "Stop emote" stops only them)
+    local before = {}
+    if animator then
+        pcall(function() for _, t in ipairs(animator:GetPlayingAnimationTracks()) do before[t] = true end end)
+    end
+    local ok, played = pcall(function() return hum:PlayEmote(name) end)
+    if ok and played then
+        task.wait(0.1)
+        local tracks = {}
+        if animator then
+            pcall(function()
+                for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+                    if not before[t] then tracks[#tracks + 1] = t end
+                end
+            end)
+        end
+        runtime.emoteTracks = tracks
+        status("Emote: " .. name)
+        return
+    end
+    local ids = runtime.emotes[name]
+    local anim = emoteAnimation(type(ids) == "table" and ids[1] or ids)
+    if not (anim and animator) then status("This game blocks emotes") return end
+    local okT, track = pcall(function() return animator:LoadAnimation(anim) end)
+    if not okT or not track then status("This game blocks emotes") return end
+    pcall(function() track.Priority = Enum.AnimationPriority.Action end)
+    track:Play(0.2)
+    runtime.emoteTracks = { track }
+    -- like normal emotes: moving stops it
+    pcall(function()
+        runtime.emoteMoveConn = hum:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+            if hum.MoveDirection.Magnitude > 0.1 then stopEmote() end
+        end)
+    end)
+    status("Emote: " .. name)
+end
+
+-- ---------------------------------------------------------------- main actions
+local function currentCharacter()
+    local char = LocalPlayer and LocalPlayer.Character
+    if not char or not char.Parent then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return nil end
+    return char, hum
+end
+
+local function copyNow(userId, name, silent)
+    local char, hum = currentCharacter()
+    if not char then return false, "Your character is not loaded yet" end
+    local desc, why = getDescription(userId)
+    if not desc then return false, why end
+    local isR15 = char:FindFirstChild("UpperTorso") ~= nil
+    local rig = isR15 and Enum.HumanoidRigType.R15 or Enum.HumanoidRigType.R6
+    local useDesc = isR15 and fitDescription(desc, hum) or desc
+    local okModel, model = pcall(function() return Players:CreateHumanoidModelFromDescriptionAsync(useDesc, rig) end)
+    if not okModel or not model then return false, "Could not build the avatar model" end
+    if not runtime.alive or LocalPlayer.Character ~= char then
+        pcall(function() model:Destroy() end)
+        return false, "Character changed while loading — try again"
+    end
+    -- their movement animations come from the model's Animate script; then all its scripts go
+    local animSet = isR15 and prefs.anims and readAnimSet(model:FindFirstChild("Animate")) or {}
+    if isR15 and prefs.anims and not next(animSet) then animSet = loadAnimPackages(desc, animSet) end
+    stripScripts(model)
+    takeSnapshot(char)
+    local snap = runtime.snapshot
+    local okApply, err = false, nil
+    if isR15 then
+        okApply, err = pcall(applyR15, char, model, snap)
+        if not okApply then
+            -- fallback: swap clothes, accessories, colors and face like on R6
+            log("R15 full avatar failed (" .. tostring(err) .. "), using the simple copy")
+            pcall(function() model:Destroy() end)
+            removeRig(char)
+            unhideRealBody(snap)
+            local okAgain, again = pcall(function() return Players:CreateHumanoidModelFromDescriptionAsync(useDesc, rig) end)
+            if okAgain and again then
+                stripScripts(again)
+                snap.changed = true
+                okApply, err = pcall(applyModel, char, again)
+                pcall(function() again:Destroy() end)
+            end
+        end
+    else
+        snap.changed = true
+        okApply, err = pcall(applyModel, char, model)
+        pcall(function() model:Destroy() end)
+    end
+    if not okApply then return false, "Copy failed: " .. tostring(err) end
+    runtime.target = { id = userId, name = name }
+    prefs.last = { id = userId, name = name }
+    local extras = {}
+    if isR15 and prefs.anims then
+        local okA, n = pcall(applyAnimations, char, animSet, snap)
+        if okA and n > 0 then extras[#extras + 1] = "animations" end
+    end
+    if prefs.emotes then
+        local okE, n = pcall(applyEmotes, hum, desc, snap)
+        if okE and n > 0 then extras[#extras + 1] = n .. " emotes" end
+    end
+    return true, extras
+end
+
+local function copyAvatar(input, userId, knownName)
+    if not runtime.alive then return end
+    if runtime.busy then notify("Avatar Copy: still loading, please wait", 2) return end
+    runtime.busy = true
+    status("Loading " .. tostring(knownName or input) .. "...")
+    task.spawn(function()
+        local ok, err = pcall(function()
+            local id, name, why = userId, knownName, nil
+            if not id then id, name, why = resolve(input) end
+            if not id then
+                status(why); notify("Avatar Copy: " .. why, 3)
+                return
+            end
+            local done, reason = copyNow(id, name)
+            if done then
+                remember(name)
+                saveSettings()
+                local extra = (type(reason) == "table" and #reason > 0) and (" + " .. table.concat(reason, ", ")) or ""
+                status("Wearing " .. name .. "'s avatar" .. extra)
+                notify("Avatar Copy: now wearing " .. name, 2)
+            else
+                status(reason); notify("Avatar Copy: " .. reason, 3)
+            end
+        end)
+        if not ok then status("Error: " .. tostring(err)) end
+        runtime.busy = false
+    end)
+end
+
+local function restoreAvatar()
+    if runtime.busy then notify("Avatar Copy: still loading, please wait", 2) return end
+    local char = currentCharacter()
+    if not char then status("Your character is not loaded yet") return end
+    local snap = runtime.snapshot
+    runtime.target = nil
+    prefs.last = nil
+    saveSettings()
+    if not snap or snap.char ~= char then
+        status("Your own avatar is already on")
+        return
+    end
+    stopEmote()
+    pcall(restoreAnimations, char, snap)
+    pcall(restoreEmotes, snap)
+    removeRig(char)
+    unhideRealBody(snap)
+    if not snap.changed then
+        status("Your own avatar is back")
+        notify("Avatar Copy: your avatar is back", 2)
+        return
+    end
+    clearLook(char)
+    for _, v in ipairs(snap.items) do
+        local c = clone(v)
+        if c then c.Parent = char end
+    end
+    for name, info in pairs(snap.colors) do
+        local part = char:FindFirstChild(name)
+        if part and isa(part, "BasePart") then
+            pcall(function() part.Color = info.color; part.Material = info.material end)
+        end
+    end
+    local head = char:FindFirstChild("Head")
+    if head and char:FindFirstChild("Torso") then
+        for _, m in ipairs(headMeshes(head)) do pcall(function() m:Destroy() end) end
+        for _, m in ipairs(snap.meshes) do
+            local c = clone(m)
+            if c then c.Parent = head end
+        end
+    end
+    local face = head and head:FindFirstChild("face")
+    if face and snap.face then face.Texture = snap.face end
+    status("Your own avatar is back")
+    notify("Avatar Copy: your avatar is back", 2)
+end
+
+-- re-apply after respawn
+local function onCharacterAdded(char)
+    if runtime.snapshot and runtime.snapshot.watch then pcall(function() runtime.snapshot.watch:Disconnect() end) end
+    runtime.snapshot = nil
+    runtime.mirror = nil
+    stopEmote()
+    runtime.emotes, runtime.equipped, runtime.emoteHum = {}, {}, nil
+    refreshEmotes()
+    if not (prefs.reapply and runtime.target) then
+        if runtime.target then status("Respawned — your own avatar is on") end
+        runtime.target = nil
+        return
+    end
+    local target = runtime.target
+    task.spawn(function()
+        char:WaitForChild("Humanoid", 10)
+        local waited = 0
+        while runtime.alive and waited < 3 and not LocalPlayer:HasAppearanceLoaded() do
+            task.wait(0.25); waited = waited + 0.25
+        end
+        task.wait(0.3)
+        if runtime.alive and LocalPlayer.Character == char then
+            copyAvatar(target.name, target.id, target.name)
+        end
+    end)
+end
+
+function runtime.Cleanup()
+    runtime.alive = false
+    runtime.mirror = nil
+    for _, c in ipairs(runtime.connections) do pcall(function() c:Disconnect() end) end
+    runtime.connections = {}
+end
+
+-- ---------------------------------------------------------------- menu
+loadSettings()
+
+local function createTab()
+    -- merged build: sections go into the shared SteelRework tab (like other Noir modules)
+    local okShared, sharedTab = pcall(SR_Tab, PLUGIN_TITLE)
+    if okShared and type(sharedTab) == "table" and type(sharedTab.AddSection) == "function" then return sharedTab end
+    if not (host and type(host.CreateTab) == "function") then return nil end
+    local ok, tab = pcall(host.CreateTab, PLUGIN_TITLE, PLUGIN_ICON)
+    if not ok or type(tab) ~= "table" then ok, tab = pcall(host.CreateTab, PLUGIN_TITLE) end
+    if ok and type(tab) == "table" and type(tab.AddSection) == "function" then return tab end
+    return nil
+end
+
+local tab = createTab()
+if not tab then
+    log("load this file through the Overdrive H plugin menu (odh_shared_plugins is missing)")
+else
+    local pendingName = ""
+
+    local searchMap, searchToken = {}, 0
+    local function runSearch(text)
+        searchToken = searchToken + 1
+        local token = searchToken
+        if text == "" then
+            searchMap = {}
+            pcall(function() searchDropdown:ChangeItems({ EMPTY_SEARCH }) end)
+            return
+        end
+        task.delay(0.5, function()          -- waits until you stop typing
+            if token ~= searchToken or not runtime.alive then return end
+            status("Searching \"" .. text .. "\"...")
+            local ok, results = pcall(searchPlayers, text)
+            if token ~= searchToken then return end
+            searchMap = {}
+            local items = {}
+            for _, r in ipairs((ok and results) or {}) do
+                searchMap[r.label] = r
+                items[#items + 1] = r.label
+            end
+            if #items == 0 then items = { NO_RESULTS } end
+            pcall(function() searchDropdown:ChangeItems(items) end)
+            status(#items == 1 and items[1] == NO_RESULTS and ("Nobody found for \"" .. text .. "\"")
+                or ("Found " .. #items .. " — pick one in Search results"))
+        end)
+    end
+
+    local main = tab:AddSection("Copy Avatar", "Any Roblox player • body, animations, emotes")
+    main:AddLabel("What it does: puts another player's clothes,")
+    main:AddLabel("accessories, body, animations and emotes on you.")
+    main:AddLabel("The look: only you see it. Animations and emotes:")
+    main:AddLabel("other players usually see them too (R15).")
+
+    main:AddTextBox("Search any player", function(text)
+        pendingName = trim(text)
+        runSearch(pendingName)
+    end)
+    main:AddLabel("Type a name: players from all of Roblox appear below")
+    searchDropdown = main:AddDropdown("Search results", { EMPTY_SEARCH }, function(label)
+        if runtime.initializing then return end
+        local r = searchMap[label]
+        if r then copyAvatar(r.name, r.id, r.name) end
+    end)
+    main:AddButton("Copy avatar", function()
+        if pendingName == "" then
+            status("Type a username first"); notify("Avatar Copy: type a username first", 2)
+            return
+        end
+        copyAvatar(pendingName)
+    end)
+    main:AddLabel("Copies the exact name you typed (or a user ID)")
+    main:AddPlayerDropdown("Copy a player from this server", function(player)
+        if runtime.initializing or not player then return end
+        copyAvatar(player.Name, player.UserId, player.Name)
+    end)
+    recentDropdown = main:AddDropdown("Recent names", recentItems(), function(name)
+        if runtime.initializing or type(name) ~= "string" or name == EMPTY_RECENT then return end
+        copyAvatar(name)
+    end)
+    main:AddButton("Restore my avatar", restoreAvatar)
+    statusLabel = main:AddLabel("Status: Ready")
+
+    local fx = tab:AddSection("Animations & Emotes", "Other players usually see them")
+    local animToggle = fx:AddToggle("Copy movement animations", function(value)
+        if runtime.initializing then return end
+        prefs.anims = value == true
+        saveSettings()
+        local char = currentCharacter()
+        if not prefs.anims and char then
+            pcall(restoreAnimations, char, runtime.snapshot)
+        elseif prefs.anims and runtime.target and not runtime.busy then
+            copyAvatar(runtime.target.name, runtime.target.id, runtime.target.name)
+        end
+    end)
+    fx:AddLabel("Walk, run, jump, idle, fall, climb, swim (R15)")
+    local emoteToggle = fx:AddToggle("Copy emotes", function(value)
+        if runtime.initializing then return end
+        prefs.emotes = value == true
+        saveSettings()
+        if not prefs.emotes then
+            stopEmote()
+            pcall(restoreEmotes, runtime.snapshot)
+        elseif runtime.target and not runtime.busy then
+            copyAvatar(runtime.target.name, runtime.target.id, runtime.target.name)
+        end
+    end)
+    fx:AddLabel("Replaces your emotes in the emote menu")
+    fx:AddLabel("MM2: shown in Avatar Emotes (reopen the menu)")
+    emoteDropdown = fx:AddDropdown("Play copied emote", { NO_EMOTES }, function(name)
+        if runtime.initializing or type(name) ~= "string" or name == NO_EMOTES then return end
+        task.spawn(playEmote, name)
+    end)
+    fx:AddButton("Stop emote", function()
+        local n = stopEmote()
+        status(n > 0 and "Emote stopped" or "No emote is playing")
+    end)
+    fx:AddLabel("Moving also stops the emote")
+
+    local opts = tab:AddSection("Avatar Options", "Respawn • saved names")
+    local reapplyToggle = opts:AddToggle("Re-apply after respawn", function(value)
+        if runtime.initializing then return end
+        prefs.reapply = value == true
+        saveSettings()
+    end)
+    opts:AddLabel("Puts the same look back after respawn and on start")
+    opts:AddButton("Clear recent names", function()
+        prefs.recent = {}
+        refreshRecent()
+        saveSettings()
+        status("Recent names cleared")
+    end)
+    local fitToggle = opts:AddToggle("Match my body size (R15)", function(value)
+        if runtime.initializing then return end
+        prefs.fit = value == true
+        saveSettings()
+        if runtime.target and not runtime.busy then
+            copyAvatar(runtime.target.name, runtime.target.id, runtime.target.name)
+        end
+    end)
+    opts:AddLabel("Keeps hands and feet in place during animations")
+    opts:AddLabel("Works on R6 and R15 (on R15 the whole body too)")
+
+    -- saved toggle state (the host toggle starts off; flip it once if needed)
+    if prefs.reapply and type(reapplyToggle) == "function" then pcall(reapplyToggle) end
+    if prefs.fit and type(fitToggle) == "function" then pcall(fitToggle) end
+    if prefs.anims and type(animToggle) == "function" then pcall(animToggle) end
+    if prefs.emotes and type(emoteToggle) == "function" then pcall(emoteToggle) end
+    runtime.initializing = false
+end
+runtime.initializing = false
+
+-- a look left by an older version may still carry its own scripts (Animate errors) — remove them
+pcall(function()
+    local old = LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(RIG_NAME)
+    if old then stripScripts(old) end
+end)
+
+if LocalPlayer then
+    runtime.connections[#runtime.connections + 1] = LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+end
+
+-- last look comes back on start when "Re-apply after respawn" is on
+if prefs.reapply and prefs.last then
+    runtime.target = prefs.last
+    task.delay(1, function()
+        if runtime.alive and runtime.target then
+            copyAvatar(runtime.target.name, runtime.target.id, runtime.target.name)
+        end
+    end)
+end
+
+log("loaded | settings: " .. SETTINGS)
+
+-- script API (kept from the original: require/loadstring returns a function)
+return function(username) copyAvatar(username) end
+
 end)
 
 pcall(function() if SR_UI.Icons and SR_UI.Icons.start then SR_UI.Icons.start() end end)
