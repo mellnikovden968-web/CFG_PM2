@@ -251,314 +251,719 @@ do
         combatAim:AddToggle("Show Shoot Murder Button", setShootButtonVisible)
         combatAim:AddToggle("Lock Shoot Murder Button", function(v) config.lockShootButton=v==true end)
 
-        -- ===== BULLET TRACER (KITI Gun Beam port) — SILENT AIM ====
-        -- Вставлен рядом с функцией silent aim внутри секции SILENT AIM.
-        -- Логика целиком из KITI (Gun Beam): fn68-fn73 + DescendantAdded, адаптирована под Noir переменные.
-        combatAim:AddLabel("BULLET TRACER  •  KITI Gun Beam")
-        combatAim:AddParagraph("Bullet Tracer", "Визуальный трейсер пули. Тип Default = выкл. Neon Fat / Nuke / Zigzag Light / Orbital Strike / Black Hole / Rainbow RGB добавляют неоновый цилиндр вдоль Beam и эффекты на точке попадания. Работает для любого выстрела FireServer — включая Silent Aim и Piercer Bullet.")
-        local noirTracer = { BeamType = "Default", BeamColor = Color3.fromRGB(0, 240, 255) }
+        -- ===== BULLET TRACER — PULSE HUB port (заменяет KITI) — SILENT AIM ====
+        -- Вставлен рядом с silent aim, стиль как в Pulse Hub: Energy/Laser/Lightning/Plasma/Fire/Smoke/Stardust
+        combatAim:AddLabel("BULLET TRACER  •  PULSE")
+        combatAim:AddParagraph("Bullet Tracer", "Пульсовский трейсер пули. Classic = прямая, Path Finder = обход стен через Pathfinding. Стили задают текстуры/ширину/прозрачность как в Pulse. Работает для Silent Aim (через fireGunAt) и для любых выстрелов других игроков если включишь Show Other Shots.")
         do
-            local ok, v = pcall(function() return NoirPersistence and NoirPersistence.data and NoirPersistence.data.dropdowns and NoirPersistence.data.dropdowns["SILENT AIM::Bullet Tracer Type"] end)
-            if ok and type(v) == "string" and v ~= "" then noirTracer.BeamType = v end
-            local ok2, c = pcall(function() return NoirPersistence and NoirPersistence.data and NoirPersistence.data.colors and NoirPersistence.data.colors["SILENT AIM::Bullet Tracer Color"] end)
-            if ok2 and typeof(c) == "Color3" then noirTracer.BeamColor = c end
-        end
-        -- expose globally for debugging / future persistence
-        do pcall(function() NoirGenv().__NoirBulletTracer = noirTracer end) end
-
-        local function noirDrawCylinder(v2, v3, v4, color)
-            local magnitude = (v3 - v2).Magnitude
-            if not (magnitude < 1) then
-                local part = Instance.new("Part")
-                part.Anchored = true
-                part.CanCollide = false
-                part.Material = Enum.Material.Neon
-                if not color then color = noirTracer.BeamColor end
-                part.Color = color
-                part.Shape = Enum.PartType.Cylinder
-                part.Size = Vector3.new(magnitude, v4, v4)
-                local value2 = CFrame.lookAt(v2, v3) * CFrame.new(0, 0, -magnitude / 2)
-                local angles3 = CFrame.Angles
-                part.CFrame = value2 * angles3(0, 1.5707963267948966, 0)
-                part.Parent = Workspace.Terrain
-                TweenService:Create(part, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = Vector3.new(magnitude, 0, 0), Transparency = 1}):Play()
-                task.delay(0.25, function() part:Destroy() end)
-            end
-        end
-
-        local function noirFxNuke(position, v2, color)
-            local part = Instance.new("Part")
-            part.Shape = Enum.PartType.Ball
-            part.Material = Enum.Material.Neon
-            part.Color = color
-            part.Size = Vector3.new(0.4, 0.4, 0.4)
-            part.Position = position
-            part.Anchored = true
-            part.CanCollide = false
-            part.Parent = Workspace.Terrain
-            local part2 = Instance.new("Part")
-            part2.Shape = Enum.PartType.Cylinder
-            part2.Material = Enum.Material.Neon
-            part2.Color = Color3.fromRGB(255, 255, 255)
-            part2.Size = Vector3.new(0.1, 0.4, 0.4)
-            local cframe = CFrame.lookAt(position, position + v2)
-            local angles3 = CFrame.Angles
-            part2.CFrame = cframe * angles3(0, 1.5707963267948966, 0)
-            part2.Anchored = true
-            part2.CanCollide = false
-            part2.Parent = Workspace.Terrain
-            local pointLight = Instance.new("PointLight")
-            pointLight.Color = color
-            pointLight.Range = 16
-            pointLight.Brightness = 3.5
-            pointLight.Parent = part
-            local tweenInfo = TweenInfo.new(1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
-            local v3 = TweenService
-            local create = v3.Create
-            local tbl6 = {}
-            tbl6.Size = Vector3.new(8, 8, 8)
-            tbl6.Transparency = 1
-            create(v3, part, tweenInfo, tbl6):Play()
-            local v4 = TweenService
-            local create2 = v4.Create
-            local tbl7 = {}
-            tbl7.Size = Vector3.new(0.1, 15, 15)
-            tbl7.Transparency = 1
-            create2(v4, part2, tweenInfo, tbl7):Play()
-            TweenService:Create(pointLight, tweenInfo, {Brightness = 0, Range = 0}):Play()
-            task.delay(1.2, function()
-                part:Destroy()
-                part2:Destroy()
+            -- состояние как в Pulse
+            local G = {
+                on = false,
+                method = "Classic",
+                style = "Energy",
+                col = Color3.fromRGB(110, 190, 255),
+                col2 = Color3.fromRGB(255, 90, 210),
+                rainbow = false,
+                width = 100,
+                speed = 520,
+                life = 1.2,
+                impact = true,
+                muzzle = true,
+                others = false,
+                live = {},
+                pool = {},
+                made = {},
+                log = {},
+            }
+            -- expose
+            pcall(function()
+                NoirGenv().__pulseTracers = G
+                getgenv().__pulseTracers = G
+                NoirGenv().__PulseTracer = G
             end)
-        end
 
-        local function noirFxZigzag(v2, v3, color)
-            local magnitude = (v3 - v2).Magnitude
-            local value2 = math.clamp(math.floor(magnitude / 6), 4, 12)
-            local n2 = 1
-            local v4 = v2
-            for i = 1, value2 + 0, n2 + 0 do
-                local v5 = v2:Lerp(v3, i / value2)
-                if i < value2 then
-                    n2 = v5 + Vector3.new(math.random(-2, 2), math.random(-2, 2), math.random(-2, 2))
-                else
-                    n2 = v5
+            local RunService = game:GetService("RunService")
+            local Players = game:GetService("Players")
+            local PathService = game:GetService("PathfindingService")
+            local Workspace_local = game:GetService("Workspace")
+            local Terrain = Workspace_local.Terrain
+            local TweenSvc = game:GetService("TweenService")
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local LocalPlayer = Players.LocalPlayer
+
+            -- текстуры Pulse
+            local Tex = {
+                glow = "rbxassetid://12781803086",
+                energy = "rbxassetid://12781800668",
+                core = "rbxassetid://12781750620",
+                bolt = "rbxassetid://12781757438",
+                earth = "rbxassetid://12781803991",
+                fire = "rbxassetid://12781855685",
+                smoke = "rbxassetid://12781879045",
+                helix = "rbxassetid://7071778278",
+                dust = "rbxassetid://1851669703",
+                dot = "rbxassetid://16512006463",
+                star = "rbxassetid://14590086212",
+                ring = "rbxassetid://12403112662",
+                soft = "rbxassetid://1075864321",
+            }
+            -- стили Pulse (c)
+            local Styles = {
+                Energy = {
+                    { tex = "core", w = 4, spd = 4, br = 1.6, a = 0.35, mix = 0 },
+                    { tex = "energy", w = 3.2, spd = 4, br = 3, a = 1, mix = 0.2, wrap = 7 },
+                    { tex = "core", w = 1, spd = 4, br = 3, a = 1, mix = 0.75 },
+                },
+                Laser = {
+                    { tex = "core", w = 4.5, spd = 4, br = 1.6, a = 0.4, mix = 0 },
+                    { tex = "core", w = 1.8, spd = 4, br = 2.4, a = 0.85, mix = 0.2 },
+                    { tex = "core", w = 0.7, spd = 4, br = 3.5, a = 1, mix = 0.85 },
+                },
+                Lightning = {
+                    { tex = "core", w = 4, spd = 4, br = 1.6, a = 0.3, mix = 0 },
+                    { tex = "bolt", w = 3.4, spd = 5, br = 4, a = 1, mix = 0.3, wrap = 9 },
+                    { tex = "core", w = 0.8, spd = 4, br = 3, a = 1, mix = 0.8 },
+                },
+                Plasma = {
+                    { tex = "core", w = 4, spd = 3, br = 1.6, a = 0.35, mix = 0 },
+                    { tex = "helix", w = 2.8, spd = 3, br = 3, a = 1, mix = 0.2, wrap = 6 },
+                    { tex = "core", w = 0.9, spd = 3, br = 3, a = 1, mix = 0.7 },
+                },
+                Fire = {
+                    { tex = "core", w = 4, spd = 4, br = 1.8, a = 0.4, mix = 0 },
+                    { tex = "fire", w = 3.2, spd = 5, br = 3.5, a = 1, mix = 0.1, wrap = 7 },
+                    { tex = "core", w = 0.9, spd = 4, br = 3, a = 1, mix = 0.6 },
+                },
+                Smoke = {
+                    { tex = "smoke", w = 3.4, spd = 3, br = 1.2, a = 0.8, mix = 0.6, wrap = 9 },
+                    { tex = "core", w = 0.6, spd = 4, br = 2.6, a = 1, mix = 0.85 },
+                },
+                Stardust = {
+                    { tex = "core", w = 4, spd = 3, br = 1.6, a = 0.3, mix = 0 },
+                    { tex = "dust", w = 3.2, spd = 3, br = 3.5, a = 1, mix = 0.3, wrap = 5 },
+                    { tex = "core", w = 0.8, spd = 3, br = 3, a = 1, mix = 0.75 },
+                },
+            }
+            local StyleList = {"Energy","Laser","Lightning","Plasma","Fire","Smoke","Stardust"}
+
+            -- helpers
+            local function logPulse(msg)
+                G.log[#G.log+1] = string.format("%.2f %s", os.clock(), msg)
+                if #G.log>30 then table.remove(G.log,1) end
+            end
+
+            -- stretch compensation (Pulse X.ui.stretch)
+            local function stretchLog() return 0 end
+            local function stretchMul() return 1 end
+            -- preload textures
+            task.spawn(function()
+                local arr = {}
+                for _,v in pairs(Tex) do
+                    local d = Instance.new("Decal")
+                    d.Texture = v
+                    arr[#arr+1]=d
                 end
-                local magnitude2 = (n2 - v4).Magnitude
-                local part = Instance.new("Part")
-                part.Material = Enum.Material.Neon
-                part.Color = color
-                part.Shape = Enum.PartType.Cylinder
-                part.Size = Vector3.new(magnitude2, 0.4, 0.4)
-                local value3 = CFrame.lookAt(v4, n2) * CFrame.new(0, 0, -magnitude2 / 2)
-                local angles3 = CFrame.Angles
-                part.CFrame = value3 * angles3(0, 1.5707963267948966, 0)
-                part.Anchored = true
-                part.CanCollide = false
-                part.Parent = Workspace.Terrain
-                TweenService:Create(part, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = Vector3.new(magnitude2, 0, 0), Transparency = 1}):Play()
-                task.delay(0.28, function() part:Destroy() end)
-                v4 = n2
-            end
-        end
-
-        local function noirFxOrbital(v2, color)
-            local value2 = v2 + Vector3.new(0, 100, 0)
-            local part = Instance.new("Part")
-            part.Shape = Enum.PartType.Cylinder
-            part.Material = Enum.Material.Neon
-            part.Color = color
-            part.Size = Vector3.new(100, 2.5, 2.5)
-            local value3 = CFrame.lookAt(value2, v2) * CFrame.new(0, 0, -50)
-            local angles3 = CFrame.Angles
-            part.CFrame = value3 * angles3(0, 1.5707963267948966, 0)
-            part.Anchored = true
-            part.CanCollide = false
-            part.Parent = Workspace.Terrain
-            local pointLight = Instance.new("PointLight")
-            pointLight.Color = color
-            pointLight.Range = 25
-            pointLight.Brightness = 5
-            pointLight.Parent = part
-            local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            local v3 = TweenService
-            local create = v3.Create
-            local tbl6 = {}
-            tbl6.Size = Vector3.new(100, 0, 0)
-            tbl6.Transparency = 1
-            create(v3, part, tweenInfo, tbl6):Play()
-            TweenService:Create(pointLight, tweenInfo, {Brightness = 0, Range = 0}):Play()
-            task.delay(0.42, function() part:Destroy() end)
-        end
-
-        local function noirFxBlackHole(position)
-            local part = Instance.new("Part")
-            part.Shape = Enum.PartType.Ball
-            part.Material = Enum.Material.SmoothPlastic
-            part.Color = Color3.fromRGB(10, 10, 15)
-            part.Size = Vector3.new(0.2, 0.2, 0.2)
-            part.Position = position
-            part.Anchored = true
-            part.CanCollide = false
-            part.Parent = Workspace.Terrain
-            local parent = Instance.new("Part")
-            parent.Shape = Enum.PartType.Ball
-            parent.Material = Enum.Material.Neon
-            parent.Color = noirTracer.BeamColor
-            parent.Size = Vector3.new(0.3, 0.3, 0.3)
-            parent.Position = position
-            parent.Anchored = true
-            parent.CanCollide = false
-            parent.Parent = Workspace.Terrain
-            local pointLight = Instance.new("PointLight")
-            pointLight.Color = noirTracer.BeamColor
-            pointLight.Range = 14
-            pointLight.Brightness = 3
-            pointLight.Parent = parent
-            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-            local tweenInfo2 = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-            local v2 = TweenService
-            local create = v2.Create
-            local tbl6 = {}
-            tbl6.Size = Vector3.new(4, 4, 4)
-            create(v2, part, tweenInfo, tbl6):Play()
-            local v3 = TweenService
-            local create2 = v3.Create
-            local tbl7 = {}
-            tbl7.Size = Vector3.new(5.5, 5.5, 5.5)
-            create2(v3, parent, tweenInfo, tbl7):Play()
-            task.delay(0.3, function()
-                local v4 = TweenService
-                local create3 = v4.Create
-                local tbl8 = {}
-                tbl8.Size = Vector3.new(0, 0, 0)
-                tbl8.Transparency = 1
-                create3(v4, part, tweenInfo2, tbl8):Play()
-                local v5 = TweenService
-                local create4 = v5.Create
-                local tbl9 = {}
-                tbl9.Size = Vector3.new(0, 0, 0)
-                tbl9.Transparency = 1
-                create4(v5, parent, tweenInfo2, tbl9):Play()
-                TweenService:Create(pointLight, tweenInfo2, {Brightness = 0, Range = 0}):Play()
-                task.delay(0.52, function()
-                    part:Destroy()
-                    parent:Destroy()
-                end)
+                pcall(function() game:GetService("ContentProvider"):PreloadAsync(arr) end)
+                for _,v in ipairs(arr) do pcall(function() v:Destroy() end) end
             end)
-        end
 
-        local function noirHandleBeam(instance)
-            if instance:IsA("Beam") then
-                if noirTracer.BeamType ~= "Default" then
-                    local worldPosition = nil
-                    local v2 = nil
-                    if instance.Attachment0 and instance.Attachment1 then
-                        local worldPosition2 = instance.Attachment0.WorldPosition
-                        worldPosition = instance.Attachment1.WorldPosition
-                        v2 = worldPosition2
+            -- pooling beams
+            local function acquireBeam()
+                local V = table.remove(G.pool)
+                if V and V.b.Parent and V.a0.Parent and V.a1.Parent then
+                    return V
+                end
+                local a0 = Instance.new("Attachment")
+                a0.Name = "PulseTracerA"
+                a0.Parent = Terrain
+                local a1 = Instance.new("Attachment")
+                a1.Name = "PulseTracerB"
+                a1.Parent = Terrain
+                local beam = Instance.new("Beam")
+                beam.Name = "PulseTracer"
+                beam.Attachment0, beam.Attachment1 = a0, a1
+                beam.FaceCamera = true
+                beam.LightEmission, beam.LightInfluence = 1, 0
+                beam.Enabled = false
+                beam.Parent = Terrain
+                V = {a0=a0, a1=a1, b=beam}
+                G.made[#G.made+1]=V
+                return V
+            end
+            local function releaseBeam(V)
+                if not V then return end
+                pcall(function() V.b.Enabled = false end)
+                if #G.pool < 160 then
+                    G.pool[#G.pool+1]=V
+                else
+                    pcall(function() V.b:Destroy(); V.a0:Destroy(); V.a1:Destroy() end)
+                end
+            end
+
+            -- raycast helper
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            pcall(function() rayParams.RespectCanCollide = true end)
+            local rayUpdate = 0
+            local function getRayParams()
+                if os.clock() - rayUpdate > 1 then
+                    rayUpdate = os.clock()
+                    local list = {}
+                    for _,pl in ipairs(Players:GetPlayers()) do
+                        if pl.Character then list[#list+1]=pl.Character end
                     end
-                    if not (not v2 or not worldPosition) then
-                        local unit = (worldPosition - v2).Unit
-                        if noirTracer.BeamType == "Neon Fat" then
-                            instance.Width0 = 1.8
-                            instance.Width1 = 1.2
-                            instance.Color = ColorSequence.new({
-                                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                                ColorSequenceKeypoint.new(0.2, noirTracer.BeamColor),
-                                ColorSequenceKeypoint.new(1, noirTracer.BeamColor),
-                            })
-                            noirDrawCylinder(v2, worldPosition, 1, nil)
-                        elseif noirTracer.BeamType == "Nuke" then
-                            instance.Width0 = 1.4
-                            instance.Width1 = 0.8
-                            instance.Color = ColorSequence.new({
-                                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                                ColorSequenceKeypoint.new(0.1, noirTracer.BeamColor),
-                                ColorSequenceKeypoint.new(1, noirTracer.BeamColor),
-                            })
-                            noirDrawCylinder(v2, worldPosition, 0.8, nil)
-                            noirFxNuke(worldPosition, unit, noirTracer.BeamColor)
-                        elseif noirTracer.BeamType == "Zigzag Light" then
-                            instance.Width0 = 0.1
-                            instance.Width1 = 0.1
-                            noirFxZigzag(v2, worldPosition, noirTracer.BeamColor)
-                        elseif noirTracer.BeamType == "Orbital Strike" then
-                            instance.Width0 = 1.5
-                            instance.Width1 = 0.8
-                            instance.Color = ColorSequence.new({
-                                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                                ColorSequenceKeypoint.new(0.2, noirTracer.BeamColor),
-                                ColorSequenceKeypoint.new(1, noirTracer.BeamColor),
-                            })
-                            noirDrawCylinder(v2, worldPosition, 0.8, nil)
-                            noirFxOrbital(worldPosition, noirTracer.BeamColor)
-                        elseif noirTracer.BeamType == "Black Hole" then
-                            instance.Width0 = 1.2
-                            instance.Width1 = 0.6
-                            instance.Color = ColorSequence.new({
-                                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                                ColorSequenceKeypoint.new(0.2, noirTracer.BeamColor),
-                                ColorSequenceKeypoint.new(1, noirTracer.BeamColor),
-                            })
-                            noirDrawCylinder(v2, worldPosition, 0.7, nil)
-                            noirFxBlackHole(worldPosition)
-                        elseif noirTracer.BeamType == "Rainbow RGB" then
-                            instance.Width0 = 1.8
-                            instance.Width1 = 1.2
-                            instance.Color = ColorSequence.new({
-                                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-                                ColorSequenceKeypoint.new(0.25, Color3.fromRGB(255, 255, 0)),
-                                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 0)),
-                                ColorSequenceKeypoint.new(0.75, Color3.fromRGB(0, 255, 255)),
-                                ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 255)),
-                            })
-                            noirDrawCylinder(v2, worldPosition, 1, Color3.fromRGB(255, 255, 255))
+                    local cam = Workspace_local.CurrentCamera
+                    if cam then list[#list+1]=cam end
+                    rayParams.FilterDescendantsInstances = list
+                end
+                return rayParams
+            end
+            local function isObstructed(a,b)
+                local dir = b - a
+                if dir.Magnitude < 0.05 then return nil end
+                -- try single ray, allow transparent parts
+                local cur = a
+                for i=1,5 do
+                    local hit = Workspace_local:Raycast(cur, b - cur, getRayParams())
+                    if not hit then return nil end
+                    local transp = 0
+                    pcall(function() transp = hit.Instance.Transparency end)
+                    if transp < 0.85 then return hit end
+                    cur = hit.Position + dir.Unit * 0.05
+                    if (b - cur):Dot(dir.Unit) <= 0 then return nil end
+                end
+                return nil
+            end
+
+            -- path finder wrapper (Pulse r)
+            local function buildPathfinder(s, e)
+                local ok, pts = pcall(function()
+                    local path = PathService:CreatePath({AgentRadius=1.5, AgentHeight=5, AgentCanJump=true, AgentCanClimb=true, WaypointSpacing=6})
+                    path:ComputeAsync(s - Vector3.new(0,2.5,0), e - Vector3.new(0,2.5,0))
+                    if path.Status ~= Enum.PathStatus.Success then return nil end
+                    local arr = {s}
+                    for _,wp in ipairs(path:GetWaypoints()) do
+                        arr[#arr+1]= wp.Position + Vector3.new(0,3,0)
+                    end
+                    arr[#arr+1]= e
+                    return arr
+                end)
+                if not ok or type(pts)~="table" then return nil end
+                local len=0
+                for i=1,#pts-1 do len += (pts[i+1]-pts[i]).Magnitude end
+                if len > (e-s).Magnitude*4+40 then return nil end
+                return pts
+            end
+
+            -- smoothing like Pulse u (catmull)
+            local function smoothPoints(pts)
+                if #pts<=2 then return pts end
+                local out = {pts[1]}
+                local total=0
+                for i=1,#pts-1 do total += (pts[i+1]-pts[i]).Magnitude end
+                local step = math.max(2.2, total/44)
+                for i=1,#pts-1 do
+                    local p0 = pts[math.max(1,i-1)]
+                    local p1 = pts[i]
+                    local p2 = pts[i+1]
+                    local p3 = pts[math.min(#pts,i+2)]
+                    local segLen = (p2-p1).Magnitude
+                    local cnt = math.clamp(math.floor(segLen/step+0.5),2,16)
+                    for j=1,cnt do
+                        local t=j/cnt
+                        local t2=t*t
+                        local t3=t2*t
+                        local pt = 0.5*(2*p1 + (p2-p0)*t + (2*p0-5*p1+4*p2-p3)*t2 + (3*p1-p0-3*p2+p3)*t3)
+                        out[#out+1]=pt
+                    end
+                end
+                out[#out]=pts[#pts]
+                return out
+            end
+
+            -- FX helpers (Pulse B, s, h)
+            local function newAttachment(pos)
+                local a=Instance.new("Attachment")
+                a.Name="PulseTracerFx"
+                a.WorldPosition=pos
+                a.Parent=Terrain
+                return a
+            end
+            local function makeEmitter(parent, props)
+                local em=Instance.new("ParticleEmitter")
+                em.Rate=0
+                em.LightEmission, em.LightInfluence =1,0
+                em.Speed=NumberRange.new(0)
+                em.Rotation=NumberRange.new(0)
+                em.RotSpeed=NumberRange.new(0)
+                for k,v in pairs(props) do pcall(function() em[k]=v end) end
+                em.Parent=parent
+                return em
+            end
+            local function spawnMuzzle(pos, col)
+                local a=newAttachment(pos)
+                local cs=ColorSequence.new(col:Lerp(Color3.new(1,1,1),0.55), col)
+                makeEmitter(a,{Texture=Tex.star, Color=cs, Size=NumberSequence.new({NumberSequenceKeypoint.new(0,2.4),NumberSequenceKeypoint.new(1,0)}), Lifetime=NumberRange.new(0.1), Brightness=4, ZOffset=1}):Emit(1)
+                makeEmitter(a,{Texture=Tex.soft, Color=cs, Size=NumberSequence.new({NumberSequenceKeypoint.new(0,1.8),NumberSequenceKeypoint.new(1,0.4)}), Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.2),NumberSequenceKeypoint.new(1,1)}), Lifetime=NumberRange.new(0.14), Brightness=3}):Emit(1)
+                local light=Instance.new("PointLight")
+                light.Color, light.Range, light.Brightness = col, 9, 3.5
+                light.Parent=a
+                pcall(function() TweenSvc:Create(light, TweenInfo.new(0.12,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Brightness=0}):Play() end)
+                task.delay(0.5,function() pcall(function() a:Destroy() end) end)
+            end
+            local function spawnImpact(pos, col)
+                local a=newAttachment(pos)
+                local cs=ColorSequence.new(col:Lerp(Color3.new(1,1,1),0.6), col)
+                makeEmitter(a,{Texture=Tex.star, Color=cs, Size=NumberSequence.new({NumberSequenceKeypoint.new(0,3.6),NumberSequenceKeypoint.new(1,0)}), Lifetime=NumberRange.new(0.2), Brightness=4, ZOffset=1}):Emit(1)
+                makeEmitter(a,{Texture=Tex.ring, Color=cs, Size=NumberSequence.new({NumberSequenceKeypoint.new(0,0.4),NumberSequenceKeypoint.new(1,5.5)}), Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}), Lifetime=NumberRange.new(0.35), Brightness=3}):Emit(1)
+                makeEmitter(a,{Texture=Tex.dot, Color=cs, Size=NumberSequence.new({NumberSequenceKeypoint.new(0,0.45),NumberSequenceKeypoint.new(1,0)}), Speed=NumberRange.new(12,30), SpreadAngle=Vector2.new(180,180), Acceleration=Vector3.new(0,-45,0), Drag=3, Lifetime=NumberRange.new(0.3,0.6), Brightness=3}):Emit(18)
+                makeEmitter(a,{Texture=Tex.soft, Color=cs, Size=NumberSequence.new({NumberSequenceKeypoint.new(0,2.6),NumberSequenceKeypoint.new(1,0.6)}), Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.3),NumberSequenceKeypoint.new(1,1)}), Lifetime=NumberRange.new(0.25), Brightness=2}):Emit(1)
+                local light=Instance.new("PointLight")
+                light.Color, light.Range, light.Brightness = col,12,3.5
+                light.Parent=a
+                pcall(function() TweenSvc:Create(light, TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Brightness=0}):Play() end)
+                task.delay(1.2,function() pcall(function() a:Destroy() end) end)
+            end
+            local function getColors(opts)
+                local rainbow = opts.rainbow
+                if rainbow==nil then rainbow = G.rainbow end
+                if rainbow then
+                    local h=os.clock()*0.18%1
+                    return Color3.fromHSV(h,0.7,1), Color3.fromHSV((h+0.18)%1,0.75,1)
+                end
+                return opts.col or G.col, opts.col2 or G.col2
+            end
+
+            -- core builder (Pulse l)
+            local function buildTracer(pts, opts)
+                opts = opts or {}
+                if #pts < 2 then return end
+                while #G.live >= 8 do
+                    local old = table.remove(G.live,1)
+                    for _,row in ipairs(old.rows) do for _,b in ipairs(row) do releaseBeam(b) end end
+                    if old.head then pcall(function() old.head:Destroy() end) end
+                end
+                -- cumulative lengths
+                local cum = {0}
+                for i=2,#pts do cum[i]= cum[i-1]+(pts[i]-pts[i-1]).Magnitude end
+                local total=cum[#cum]
+                if total <0.5 then return end
+                local style = Styles[opts.style or G.style] or Styles.Energy
+                local col, col2 = getColors(opts)
+                local wk = (opts.width or G.width or 100)/100
+                -- wk scaled by stretch
+                -- build rows
+                local rows = {}
+                for li, layer in ipairs(style) do
+                    local row={}
+                    for i=1,#pts-1 do
+                        local b = acquireBeam()
+                        local beam=b.b
+                        beam.Texture = Tex[layer.tex]
+                        if layer.wrap then
+                            beam.TextureMode = Enum.TextureMode.Wrap
+                            beam.TextureLength = layer.wrap * wk
+                        else
+                            beam.TextureMode = Enum.TextureMode.Stretch
+                            beam.TextureLength = 1
+                        end
+                        beam.TextureSpeed = layer.spd
+                        beam.Brightness = layer.br
+                        beam.Segments = (#pts==2 and 24 or 4)
+                        beam.ZOffset = li*0.05
+                        b.a0.WorldPosition = pts[i]
+                        b.a1.WorldPosition = pts[i+1]
+                        beam.Enabled=false
+                        row[i]=b
+                    end
+                    rows[li]=row
+                end
+                local tracer = {
+                    pts=pts, cum=cum, L=total, t0=os.clock(), rows=rows, style=style, col=col, col2=col2, wk=wk,
+                    speed= math.max(40, opts.speed or G.speed or 520),
+                    life= math.max(0.2, opts.life or G.life or 1.2),
+                    impact = opts.impact,
+                    landed=false,
+                }
+                tracer.tail = opts.tail or math.clamp(total*0.45, 8, 60)
+                tracer.clearHead = opts.clearHead
+                if opts.muzzle then pcall(spawnMuzzle, pts[1], col) end
+                -- head fx
+                local head = newAttachment(pts[1])
+                makeEmitter(head,{Texture=Tex.dot, Color=ColorSequence.new(col:Lerp(Color3.new(1,1,1),0.5)), Size=NumberSequence.new(2.8*wk), Lifetime=NumberRange.new(total/tracer.speed+0.05), LockedToPart=true, Brightness=5, ZOffset=1}):Emit(1)
+                makeEmitter(head,{Texture=Tex.star, Color=ColorSequence.new(col:Lerp(Color3.new(1,1,1),0.35)), Size=NumberSequence.new(3.4*wk), Lifetime=NumberRange.new(total/tracer.speed+0.05), LockedToPart=true, Brightness=4, ZOffset=1.1}):Emit(1)
+                tracer.trail = makeEmitter(head,{Texture=Tex.dot, Color=ColorSequence.new(col:Lerp(Color3.new(1,1,1),0.3), col2), Size=NumberSequence.new({NumberSequenceKeypoint.new(0,0.32*wk),NumberSequenceKeypoint.new(1,0)}), Speed=NumberRange.new(1.5,5), SpreadAngle=Vector2.new(180,180), Drag=4, Lifetime=NumberRange.new(0.2,0.42), Rate=70, Brightness=3})
+                tracer.head = head
+                G.live[#G.live+1]=tracer
+                if opts.cb then task.spawn(opts.cb, tracer) end
+                return tracer
+            end
+
+            local function pointOnPath(tr, dist)
+                local cum, pts = tr.cum, tr.pts
+                if dist <=0 then return pts[1],1 end
+                if dist >= tr.L then return pts[#pts], #pts-1 end
+                local lo,hi=1,#cum
+                while hi-lo>1 do
+                    local mid=(lo+hi)//2
+                    if cum[mid]<=dist then lo=mid else hi=mid end
+                end
+                local segLen = cum[lo+1]-cum[lo]
+                local t = segLen>0 and (dist-cum[lo])/segLen or 0
+                return pts[lo]:Lerp(pts[lo+1], t), lo
+            end
+
+            -- heartbeat updater (Pulse U)
+            local function updateTracers()
+                if #G.live==0 then return end
+                local now=os.clock()
+                local i=1
+                while i <= #G.live do
+                    local tr = G.live[i]
+                    local elapsed = now - tr.t0
+                    local total, speed = tr.L, tr.speed
+                    local headDist = math.min(total, elapsed*speed)
+                    local tailDist = elapsed*speed - tr.tail
+                    local totalTime = total/speed
+                    if not tr.landed and headDist >= total then
+                        tr.landed=true
+                        if tr.trail then tr.trail.Rate=0 end
+                        if tr.clearHead and tr.head then
+                            for _,ch in ipairs(tr.head:GetChildren()) do
+                                if ch:IsA("ParticleEmitter") and ch~=tr.trail then pcall(function() ch:Clear() end) end
+                            end
+                        end
+                        if tr.impact then pcall(spawnImpact, tr.pts[#tr.pts], tr.col) end
+                    end
+                    local fade = 0.38
+                    if elapsed > totalTime then
+                        fade = 0.38 * math.clamp(1-(elapsed-totalTime)/tr.life,0,1)^1.5
+                    end
+                    local shouldRemove = elapsed > totalTime + tr.life and tailDist >= total
+                    if shouldRemove then
+                        for _,row in ipairs(tr.rows) do for _,b in ipairs(row) do releaseBeam(b) end end
+                        pcall(function() tr.head:Destroy() end)
+                        table.remove(G.live,i)
+                    else
+                        local headPos = pointOnPath(tr, headDist)
+                        if tr.head then tr.head.WorldPosition = headPos end
+                        local visibleTail = math.max(tailDist,0.01)
+                        local function alphaAt(d)
+                            if d>=tailDist and d<=headDist+0.001 then
+                                return ((d-tailDist)/math.max(headDist-tailDist,0.01))^1.4
+                            end
+                            return 0
+                        end
+                        local isStraight = #tr.pts==2
+                        for li, row in ipairs(tr.rows) do
+                            local layer = tr.style[li]
+                            local baseA = layer.a
+                            for segIdx, b in ipairs(row) do
+                                local segStart = tr.cum[segIdx]
+                                local segEnd = tr.cum[segIdx+1]
+                                if segStart >= headDist or (fade<=0.004 and segEnd <= tailDist) then
+                                    if b.b.Enabled then b.b.Enabled=false end
+                                else
+                                    local segTail = math.min(segEnd, headDist)
+                                    -- update attachments
+                                    if segEnd > headDist then
+                                        b.a1.WorldPosition = headPos
+                                    else
+                                        b.a1.WorldPosition = tr.pts[segIdx+1]
+                                    end
+                                    local segLen = segTail - segStart
+                                    -- transparency keys
+                                    local keys={}
+                                    local steps = isStraight and 9 or 2
+                                    for s=0,steps-1 do
+                                        local t = steps==1 and 0 or s/(steps-1)
+                                        local dist = segStart + (segEnd-segStart)*t
+                                        -- clamp to visible segment
+                                        if dist < tailDist then dist = tailDist end
+                                        if dist > segTail then dist = segTail end
+                                        keys[#keys+1]= NumberSequenceKeypoint.new(t, math.clamp(1 - alphaAt(dist)*baseA,0,1))
+                                    end
+                                    -- if straight need more keys
+                                    if not isStraight and #keys==2 then
+                                        -- keep 2 keys
+                                    end
+                                    b.b.Transparency = NumberSequence.new(keys)
+                                    local a0 = math.max(alphaAt(segStart),0)
+                                    local a1 = math.max(alphaAt(segEnd),0)
+                                    local w0 = 0.9*layer.w*tr.wk*(0.55+0.45*a0)
+                                    local w1 = 0.9*layer.w*tr.wk*(0.55+0.45*a1)
+                                    b.b.Width0, b.b.Width1 = w0, w1
+                                    local colA = tr.col2:Lerp(tr.col, segStart/total):Lerp(Color3.new(1,1,1), layer.mix)
+                                    local colB = tr.col2:Lerp(tr.col, segEnd/total):Lerp(Color3.new(1,1,1), layer.mix)
+                                    b.b.Color = ColorSequence.new(colA, colB)
+                                    if not b.b.Enabled then b.b.Enabled=true end
+                                end
+                            end
+                        end
+                        i+=1
+                    end
+                end
+            end
+            RunService.Heartbeat:Connect(function() pcall(updateTracers) end)
+
+            -- path builder wrapper (Pulse B)
+            local function spawnFromTo(a, b, impact, muzzle, extra)
+                extra = extra or {}
+                local opts = {impact=impact, muzzle=muzzle, speed=extra.speed, life=extra.life, cb=extra.cb}
+                if (b-a).Magnitude > 700 then b = a + (b-a).Unit*700 end
+                if G.method == "Path Finder" then
+                    local startTime=os.clock()
+                    -- try direct first
+                    local directPts, reason
+                    -- simplified: try to use isObstructed
+                    if not isObstructed(a,b) then
+                        directPts, reason = {a,b}, "direct"
+                    else
+                        -- try simple waypoint offset sampling like Pulse Y (simplified placeholder)
+                        directPts = nil
+                    end
+                    if directPts then
+                        local pts = smoothPoints(directPts)
+                        logPulse(string.format("PF %s pts=%d %.1fms", reason or "?", #pts, (os.clock()-startTime)*1000))
+                        return buildTracer(pts, opts)
+                    end
+                    -- fallback to pathfinder async
+                    task.spawn(function()
+                        local st=os.clock()
+                        local pts = buildPathfinder(a,b)
+                        if pts then
+                            pts = smoothPoints(pts)
+                            logPulse(string.format("PF nav pts=%d %.1fms", #pts, (os.clock()-st)*1000))
+                            buildTracer(pts, opts)
+                        else
+                            logPulse("PF fallback straight")
+                            buildTracer({a,b}, opts)
+                        end
+                    end)
+                    return
+                end
+                return buildTracer({a,b}, opts)
+            end
+
+            G.build = spawnFromTo
+            -- helper to find origin from character/gun like Pulse U
+            local function findOrigin(char, part, vec)
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local att = hrp and hrp:FindFirstChild("GunRaycastAttachment")
+                if att then return att.WorldPosition end
+                if typeof(part)=="Instance" and part:IsA("BasePart") then return part.Position end
+                if typeof(vec)=="Vector3" then return vec end
+                return nil
+            end
+
+            -- hook firing: wrap fireGunAt after it exists + listen to GunFired event
+            local function hookFireGunAt()
+                task.spawn(function()
+                    local tries=0
+                    local orig
+                    while tries < 80 do
+                        tries+=1
+                        orig = rawget(getgenv(), "fireGunAt") or _G.fireGunAt or getgenv().fireGunAt
+                        if typeof(orig)=="function" then break end
+                        task.wait(0.25)
+                    end
+                    if typeof(orig)~="function" then
+                        -- also try NoirGenv
+                        local ok, env = pcall(NoirGenv)
+                        if ok and type(env)=="table" then orig = env.fireGunAt end
+                    end
+                    if typeof(orig)~="function" then return end
+                    if orig.__pulseWrapped then return end
+                    local wrapped = function(plr, usePred)
+                        local ok, res = pcall(orig, plr, usePred)
+                        if G.on and plr and typeof(plr)=="Instance" then
+                            pcall(function()
+                                local myChar = LocalPlayer.Character
+                                local handle=nil
+                                if myChar then
+                                    local gun=myChar:FindFirstChild("Gun")
+                                    if not gun then
+                                        local bp=LocalPlayer:FindFirstChild("Backpack")
+                                        if bp then gun=bp:FindFirstChild("Gun") end
+                                    end
+                                    if gun then handle=gun:FindFirstChild("Handle",true) end
+                                end
+                                local origin = handle and handle.Position or (myChar and myChar:GetPivot().Position) or nil
+                                local targetPart = nil
+                                if plr.Character then
+                                    targetPart = plr.Character:FindFirstChild("HumanoidRootPart") or plr.Character:FindFirstChild("Head")
+                                end
+                                local dest = targetPart and targetPart.Position or nil
+                                if origin and dest then
+                                    spawnFromTo(origin, dest, G.impact, G.muzzle)
+                                end
+                            end)
+                        end
+                        return ok and res or false
+                    end
+                    wrapped.__pulseWrapped=true
+                    _G.fireGunAt = wrapped
+                    getgenv().fireGunAt = wrapped
+                    pcall(function() NoirGenv().fireGunAt = wrapped end)
+                    logPulse("hooked fireGunAt")
+                end)
+            end
+            hookFireGunAt()
+
+            -- GunFired hook (Pulse style) for other shots
+            task.spawn(function()
+                local ok, obj = pcall(function() return ReplicatedStorage:WaitForChild("ClientServices",5) end)
+                local ws = ok and obj and obj:FindFirstChild("WeaponService")
+                local ev = ws and ws:FindFirstChild("GunFired")
+                if not (ev and ev:IsA("RemoteEvent")) then
+                    -- also try MM2 path: ReplicatedStorage.Remotes
+                    local ok2, rem = pcall(function() return ReplicatedStorage:FindFirstChild("Remotes") end)
+                    if rem then
+                        -- listen to any ChildAdded Shoot events as fallback via DescendantAdded handled by fireGunAt hook
+                    end
+                    return
+                end
+                -- simple connection helper
+                ev.OnClientEvent:Connect(function(...)
+                    local args={...}
+                    task.spawn(function()
+                        pcall(function()
+                            -- Pulse M logic simplified: args[1]=shooter char/instance?, args[3]=target Vector3
+                            -- try to extract Vector3 target
+                            local target=nil
+                            for _,v in ipairs(args) do if typeof(v)=="Vector3" then target=v end end
+                            if not target or not G.on then return end
+                            local shooter = args[1]
+                            local originPart = args[2]
+                            local isMe = false
+                            local char = typeof(shooter)=="Instance" and shooter or nil
+                            while char and not (char:IsA("Model") and char:FindFirstChildOfClass("Humanoid")) do char=char.Parent end
+                            if char and char==LocalPlayer.Character then isMe=true end
+                            if not isMe and not G.others then return end
+                            local origin = findOrigin(char, originPart, nil)
+                            if not origin then
+                                local myChar=LocalPlayer.Character
+                                origin = myChar and myChar:GetPivot().Position or target
+                            end
+                            spawnFromTo(origin, target, G.impact, G.muzzle)
+                        end)
+                    end)
+                end)
+                logPulse("GunFired hook armed")
+            end)
+
+            -- preview helper
+            G.preview = function(vec, extra)
+                if G.previewing then return end
+                local myChar = LocalPlayer.Character
+                local hrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local cam = Workspace_local.CurrentCamera
+                if not (hrp and cam) then return end
+                G.previewing=true
+                local origin = (myChar:GetPivot() * CFrame.new(1.4,1.25,-3.45)).Position
+                local target
+                if typeof(vec)=="Vector3" then
+                    target=vec
+                else
+                    -- find nearest around
+                    local best, bestDist=nil, 1e9
+                    for _,pl in ipairs(Players:GetPlayers()) do
+                        if pl~=LocalPlayer and pl.Character then
+                            local hr = pl.Character:FindFirstChild("HumanoidRootPart")
+                            local hum = pl.Character:FindFirstChildOfClass("Humanoid")
+                            if hr and hum and hum.Health>0 then
+                                local d=(hr.Position-origin).Magnitude
+                                if d>12 and d<260 and d<bestDist then best, bestDist = hr.Position, d end
+                            end
                         end
                     end
+                    if best then target=best else
+                        local dir = cam.CFrame.LookVector
+                        local flat = Vector3.new(dir.X,0,dir.Z)
+                        flat = flat.Magnitude>0.1 and flat.Unit or cam.CFrame.LookVector
+                        local hit = Workspace_local:Raycast(origin, flat*140+Vector3.new(0,2,0), getRayParams())
+                        target = hit and hit.Position or origin+flat*140
+                    end
                 end
-            end
-        end
-
-        do
-            Workspace.DescendantAdded:Connect(function(descendant)
-                if descendant:IsA("Beam") and noirTracer.BeamType ~= "Default" then
-                    task.wait()
-                    pcall(noirHandleBeam, descendant)
-                end
-            end)
-            local packed = table.pack(Workspace:GetDescendants())
-            local n2 = packed.n
-            packed.n = 1 + n2 - 1
-            table.move(packed, 1, n2, 1, packed)
-            for _, value2 in ipairs(table.unpack(packed, 1, packed.n)) do
-                if value2:IsA("Beam") and noirTracer.BeamType ~= "Default" then
-                    task.wait()
-                    pcall(noirHandleBeam, value2)
-                end
-            end
-        end
-
-        -- UI рядом с Silent Aim: тип и цвет трассы
-        do
-            local ok, ctrl = pcall(function()
-                return combatAim:AddDropdown("Bullet Tracer Type",
-                    {"Default","Neon Fat","Nuke","Zigzag Light","Orbital Strike","Black Hole","Rainbow RGB"},
-                    function(v) noirTracer.BeamType = v == nil and "Default" or tostring(v) end)
-            end)
-            if not ok then warn("[Bullet Tracer] dropdown failed: "..tostring(ctrl)) end
-            -- set initial value without firing callback twice
-            pcall(function() if ctrl and ctrl.SetValue then ctrl:SetValue(noirTracer.BeamType) end end)
-        end
-        do
-            local ok, ctrl = pcall(function()
-                return combatAim:AddColorpicker("Bullet Tracer Color", noirTracer.BeamColor, function(c)
-                    if typeof(c) == "Color3" then noirTracer.BeamColor = c end
+                extra = extra or {}
+                extra.cb = function(tr) G._lastPreview=tr end
+                spawnFromTo(origin, target, true, true, extra)
+                local start=os.clock()
+                while not G._lastPreview and os.clock()-start<2 do task.wait() end
+                local tr=G._lastPreview; G._lastPreview=nil
+                if not tr then G.previewing=false; return end
+                -- camera chase (simplified)
+                local startCam=cam.CFrame.Position
+                local dir=(target-origin).Unit
+                local endPos=target
+                cam.CameraType=Enum.CameraType.Scriptable
+                local ok=pcall(function()
+                    local conn
+                    conn=RunService:BindToRenderStep("PulseTracerCam", Enum.RenderPriority.Camera.Value+2, function(dt)
+                        if not G.previewing then return end
+                        local elapsed=os.clock()-tr.t0
+                        local headDist=math.min(tr.L, elapsed*tr.speed)
+                        local headPos, _ = pointOnPath(tr, headDist)
+                        local t = headPos - origin
+                        if t.Magnitude>0.05 then dir=t.Unit end
+                        local off = Vector3.new(0,2.4,0) + dir:Cross(Vector3.yAxis).Unit*5
+                        if off.Magnitude<0.1 then off=Vector3.new(5,2.4,0) end
+                        local camPos = headDist<tr.L and (headPos - dir*5.5 + Vector3.new(0,2.4,0)) or (endPos + Vector3.new(9,3,0))
+                        local look = headDist<tr.L and (headPos + dir*2.5) or endPos
+                        startCam = startCam:Lerp(camPos, 1-math.exp(-(dt or 0.016)*14))
+                        cam.CFrame = CFrame.lookAt(startCam, look)
+                    end)
                 end)
+                local dur = tr.L/tr.speed
+                local endT=os.clock()
+                while os.clock()-endT < math.min(dur+1.5,9) and G.previewing do task.wait() end
+                pcall(function() RunService:UnbindFromRenderStep("PulseTracerCam") end)
+                pcall(function() cam.CameraType=Enum.CameraType.Custom; cam.CameraSubject = myChar:FindFirstChildOfClass("Humanoid") end)
+                G.previewing=false
+            end
+
+            -- UI рядом с Silent Aim
+            pcall(function()
+                combatAim:AddToggle("Bullet Tracers", function(v) G.on = v==true end)
             end)
-            if not ok then warn("[Bullet Tracer] colorpicker failed: "..tostring(ctrl)) end
+            pcall(function()
+                combatAim:AddDropdown("Tracer Method", {"Classic","Path Finder"}, function(v) if v=="Classic" or v=="Path Finder" then G.method=v end end)
+            end)
+            pcall(function()
+                combatAim:AddDropdown("Tracer Style", StyleList, function(v) if Styles[v] then G.style=v end end)
+            end)
+            pcall(function()
+                combatAim:AddColorpicker("Tracer Color", G.col, function(c) if typeof(c)=="Color3" then G.col=c end end)
+            end)
+            pcall(function()
+                combatAim:AddColorpicker("Tail Color", G.col2, function(c) if typeof(c)=="Color3" then G.col2=c end end)
+            end)
+            pcall(function()
+                combatAim:AddToggle("Rainbow Tracers", function(v) G.rainbow = v==true end)
+            end)
+            pcall(function()
+                combatAim:AddSlider("Tracer Width", 40, 250, 100, function(v) G.width = tonumber(v) or 100 end)
+            end)
+            pcall(function()
+                combatAim:AddSlider("Tracer Speed", 150, 1500, 520, function(v) G.speed = tonumber(v) or 520 end)
+            end)
+            pcall(function()
+                combatAim:AddSlider("Tracer Duration", 3, 40, 12, function(v) G.life = (tonumber(v) or 12)/10 end)
+            end)
+            pcall(function()
+                combatAim:AddToggle("Impact Effect", function(v) G.impact = v==true end)
+            end)
+            pcall(function()
+                combatAim:AddToggle("Muzzle Flash", function(v) G.muzzle = v==true end)
+            end)
+            pcall(function()
+                combatAim:AddToggle("Show Other Shots", function(v) G.others = v==true end)
+            end)
+            pcall(function()
+                combatAim:AddButton("Preview Tracer", function() task.spawn(function() pcall(G.preview) end) end)
+            end)
+            combatAim:AddLabel("Pulse-стиль: Energy/Laser/Lightning/Plasma/Fire/Smoke/Stardust. Preview — камера преследует трейсер.")
         end
-        combatAim:AddLabel("Трейсер рисует неоновый цилиндр + эффекты на конце луча. Default = без трейсера.")
 
          
         do
