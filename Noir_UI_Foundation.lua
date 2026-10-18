@@ -1,8 +1,8 @@
 --[[
-    NOIR UI — UI ONLY
-    Standalone Roblox LocalScript for Roblox Studio.
-    Contains no game-affecting features: only interface, navigation, animations,
-    demo toggles/sliders, and UI notifications.
+    NOIR x KITI — UI FOUNDATION (UI ONLY)
+    Inspired by the compact KITI sidebar and Noir's dark, restrained visual style.
+    No gameplay functions, remotes, executor APIs, external assets, or HTTP requests.
+    Put this LocalScript in StarterPlayerScripts or run it in a compatible client environment.
 ]]
 
 local Players = game:GetService("Players")
@@ -12,732 +12,759 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Remove an older copy of this UI.
-local old = playerGui:FindFirstChild("NoirUI")
-if old then old:Destroy() end
+local previous = playerGui:FindFirstChild("NoirKitiUI")
+if previous then previous:Destroy() end
 
 local Theme = {
-    Background = Color3.fromRGB(10, 11, 16),
-    Panel = Color3.fromRGB(17, 19, 27),
-    Panel2 = Color3.fromRGB(22, 25, 35),
-    PanelHover = Color3.fromRGB(30, 34, 47),
-    Stroke = Color3.fromRGB(48, 53, 70),
-    Text = Color3.fromRGB(240, 242, 250),
-    Muted = Color3.fromRGB(145, 151, 171),
-    Accent = Color3.fromRGB(151, 105, 255),
-    Accent2 = Color3.fromRGB(90, 194, 255),
-    Success = Color3.fromRGB(105, 225, 170),
-    Danger = Color3.fromRGB(255, 105, 130),
+    bg = Color3.fromRGB(8, 10, 11),
+    shell = Color3.fromRGB(12, 14, 16),
+    panel = Color3.fromRGB(16, 19, 21),
+    card = Color3.fromRGB(19, 22, 24),
+    raised = Color3.fromRGB(25, 29, 31),
+    hover = Color3.fromRGB(31, 36, 37),
+    border = Color3.fromRGB(48, 55, 54),
+    text = Color3.fromRGB(235, 239, 235),
+    muted = Color3.fromRGB(135, 145, 140),
+    dim = Color3.fromRGB(88, 99, 93),
+    accent = Color3.fromRGB(103, 190, 112),
+    accentBright = Color3.fromRGB(145, 222, 150),
+    accentDark = Color3.fromRGB(29, 57, 35),
+    red = Color3.fromRGB(225, 91, 103),
+    blue = Color3.fromRGB(115, 177, 218),
 }
 
-local function tween(object, duration, properties, style, direction)
-    local info = TweenInfo.new(
-        duration,
-        style or Enum.EasingStyle.Quint,
-        direction or Enum.EasingDirection.Out
-    )
-    local animation = TweenService:Create(object, info, properties)
+local function tw(instance, duration, goal, style, direction)
+    if not instance or not instance.Parent then return nil end
+    local info = TweenInfo.new(duration, style or Enum.EasingStyle.Quart, direction or Enum.EasingDirection.Out)
+    local animation = TweenService:Create(instance, info, goal)
     animation:Play()
     return animation
 end
 
-local function corner(parent, radius)
-    local item = Instance.new("UICorner")
-    item.CornerRadius = UDim.new(0, radius or 10)
-    item.Parent = parent
-    return item
-end
-
-local function stroke(parent, color, transparency, thickness)
-    local item = Instance.new("UIStroke")
-    item.Color = color or Theme.Stroke
-    item.Transparency = transparency or 0
-    item.Thickness = thickness or 1
-    item.Parent = parent
-    return item
-end
-
-local function padding(parent, left, right, top, bottom)
-    local item = Instance.new("UIPadding")
-    item.PaddingLeft = UDim.new(0, left or 0)
-    item.PaddingRight = UDim.new(0, right or 0)
-    item.PaddingTop = UDim.new(0, top or 0)
-    item.PaddingBottom = UDim.new(0, bottom or 0)
-    item.Parent = parent
-    return item
-end
-
-local function make(className, properties, parent)
+local function new(className, props, parent)
     local object = Instance.new(className)
-    for key, value in pairs(properties or {}) do
-        object[key] = value
-    end
+    for key, value in pairs(props or {}) do object[key] = value end
     object.Parent = parent
     return object
 end
 
-local function label(parent, text, size, color, font)
-    return make("TextLabel", {
-        BackgroundTransparency = 1,
-        Text = text or "",
-        TextColor3 = color or Theme.Text,
-        TextSize = size or 14,
-        Font = font or Enum.Font.Gotham,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        BorderSizePixel = 0,
-        AutomaticSize = Enum.AutomaticSize.None,
+local function round(parent, radius)
+    return new("UICorner", {CornerRadius = UDim.new(0, radius or 8)}, parent)
+end
+
+local function outline(parent, color, transparency, thickness)
+    return new("UIStroke", {
+        Color = color or Theme.border,
+        Transparency = transparency == nil and 0 or transparency,
+        Thickness = thickness or 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
     }, parent)
 end
 
-local screen = make("ScreenGui", {
-    Name = "NoirUI",
+local function inset(parent, left, right, top, bottom)
+    return new("UIPadding", {
+        PaddingLeft = UDim.new(0, left or 0),
+        PaddingRight = UDim.new(0, right or 0),
+        PaddingTop = UDim.new(0, top or 0),
+        PaddingBottom = UDim.new(0, bottom or 0),
+    }, parent)
+end
+
+local function text(parent, value, size, color, font, xAlign)
+    return new("TextLabel", {
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Text = value or "",
+        TextSize = size or 12,
+        TextColor3 = color or Theme.text,
+        Font = font or Enum.Font.Gotham,
+        TextXAlignment = xAlign or Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    }, parent)
+end
+
+local function button(parent, value, size, bg, fg)
+    return new("TextButton", {
+        AutoButtonColor = false,
+        BorderSizePixel = 0,
+        Text = value or "",
+        TextSize = 12,
+        Font = Enum.Font.GothamSemibold,
+        TextColor3 = fg or Theme.text,
+        BackgroundColor3 = bg or Theme.raised,
+        Size = size,
+    }, parent)
+end
+
+local gui = new("ScreenGui", {
+    Name = "NoirKitiUI",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-    DisplayOrder = 50,
+    DisplayOrder = 90,
 }, playerGui)
 
--- Soft backdrop glow.
-local glow = make("Frame", {
-    Name = "Glow",
+local root = new("CanvasGroup", {
+    Name = "Root",
     AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(740, 520),
-    BackgroundColor3 = Theme.Accent,
-    BackgroundTransparency = 0.91,
+    Position = UDim2.fromScale(0.5, 0.51),
+    Size = UDim2.fromOffset(820, 540),
+    BackgroundColor3 = Theme.shell,
     BorderSizePixel = 0,
-    ZIndex = 0,
-}, screen)
-corner(glow, 36)
-
-local main = make("Frame", {
-    Name = "Main",
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.fromScale(0.5, 0.53),
-    Size = UDim2.fromOffset(760, 500),
-    BackgroundColor3 = Theme.Background,
-    BorderSizePixel = 0,
+    GroupTransparency = 1,
     ClipsDescendants = true,
-    ZIndex = 1,
-}, screen)
-corner(main, 16)
-stroke(main, Theme.Stroke, 0.18, 1)
+}, gui)
+round(root, 12)
+outline(root, Theme.border, 0.18, 1)
 
-local mainScale = make("UIScale", { Scale = 0.92 }, main)
-tween(mainScale, 0.42, { Scale = 1 }, Enum.EasingStyle.Back)
 
--- Header.
-local header = make("Frame", {
-    Name = "Header",
-    Size = UDim2.new(1, 0, 0, 66),
-    BackgroundColor3 = Theme.Panel,
+-- KITI-inspired compact icon rail.
+local rail = new("Frame", {
+    Name = "Rail",
+    Size = UDim2.new(0, 78, 1, 0),
+    BackgroundColor3 = Theme.bg,
     BorderSizePixel = 0,
-    ZIndex = 2,
-}, main)
-corner(header, 16)
-
-local headerCover = make("Frame", {
-    Position = UDim2.new(0, 0, 1, -16),
-    Size = UDim2.new(1, 0, 0, 16),
-    BackgroundColor3 = Theme.Panel,
+}, root)
+new("Frame", {
+    Position = UDim2.new(1, -1, 0, 0),
+    Size = UDim2.new(0, 1, 1, 0),
+    BackgroundColor3 = Theme.border,
+    BackgroundTransparency = 0.25,
     BorderSizePixel = 0,
-    ZIndex = 2,
-}, header)
+}, rail)
 
-local logo = make("Frame", {
-    Position = UDim2.fromOffset(18, 15),
-    Size = UDim2.fromOffset(36, 36),
-    BackgroundColor3 = Theme.Accent,
+local logo = new("Frame", {
+    Position = UDim2.fromOffset(16, 15),
+    Size = UDim2.fromOffset(46, 46),
+    BackgroundColor3 = Theme.accentDark,
     BorderSizePixel = 0,
-    ZIndex = 3,
-}, header)
-corner(logo, 11)
-local logoGradient = make("UIGradient", {
-    Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Theme.Accent),
-        ColorSequenceKeypoint.new(1, Theme.Accent2),
-    }),
+}, rail)
+round(logo, 13)
+outline(logo, Theme.accent, 0.35, 1)
+local logoGrad = new("UIGradient", {
     Rotation = 35,
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Theme.accentDark),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(17, 30, 22)),
+    }),
 }, logo)
-local logoText = label(logo, "N", 21, Color3.new(1, 1, 1), Enum.Font.GothamBlack)
-logoText.Size = UDim2.fromScale(1, 1)
-logoText.TextXAlignment = Enum.TextXAlignment.Center
+local logoMark = text(logo, "N", 24, Theme.accentBright, Enum.Font.GothamBlack, Enum.TextXAlignment.Center)
+logoMark.Size = UDim2.fromScale(1, 1)
 
-local brand = label(header, "NOIR", 18, Theme.Text, Enum.Font.GothamBlack)
-brand.Position = UDim2.fromOffset(66, 12)
-brand.Size = UDim2.fromOffset(110, 24)
-local subtitle = label(header, "INTERFACE  /  CONTROL CENTER", 9, Theme.Muted, Enum.Font.GothamMedium)
-subtitle.Position = UDim2.fromOffset(67, 35)
-subtitle.Size = UDim2.fromOffset(230, 15)
-
-local statusDot = make("Frame", {
-    Position = UDim2.new(1, -150, 0, 28),
-    Size = UDim2.fromOffset(7, 7),
-    BackgroundColor3 = Theme.Success,
+local railLine = new("Frame", {
+    Position = UDim2.fromOffset(24, 75),
+    Size = UDim2.fromOffset(30, 1),
+    BackgroundColor3 = Theme.border,
+    BackgroundTransparency = 0.25,
     BorderSizePixel = 0,
-    ZIndex = 3,
-}, header)
-corner(statusDot, 10)
-local statusText = label(header, "UI READY", 10, Theme.Muted, Enum.Font.GothamMedium)
-statusText.Position = UDim2.new(1, -137, 0, 22)
-statusText.Size = UDim2.fromOffset(72, 18)
+}, rail)
 
-local function headerButton(text, xOffset, hoverColor)
-    local button = make("TextButton", {
-        Position = UDim2.new(1, xOffset, 0, 19),
-        Size = UDim2.fromOffset(28, 28),
-        BackgroundColor3 = Theme.Panel2,
-        Text = text,
-        TextColor3 = Theme.Muted,
-        TextSize = 14,
-        Font = Enum.Font.GothamBold,
-        AutoButtonColor = false,
-        BorderSizePixel = 0,
-        ZIndex = 4,
-    }, header)
-    corner(button, 8)
-    button.MouseEnter:Connect(function()
-        tween(button, 0.14, { BackgroundColor3 = hoverColor or Theme.PanelHover, TextColor3 = Theme.Text })
-    end)
-    button.MouseLeave:Connect(function()
-        tween(button, 0.16, { BackgroundColor3 = Theme.Panel2, TextColor3 = Theme.Muted })
-    end)
-    return button
-end
-
-local minimizeButton = headerButton("—", -82)
-local closeButton = headerButton("×", -46, Theme.Danger)
-
--- Sidebar.
-local sidebar = make("Frame", {
-    Name = "Sidebar",
-    Position = UDim2.fromOffset(14, 80),
-    Size = UDim2.new(0, 176, 1, -94),
-    BackgroundColor3 = Theme.Panel,
-    BorderSizePixel = 0,
-    ZIndex = 2,
-}, main)
-corner(sidebar, 13)
-stroke(sidebar, Theme.Stroke, 0.5, 1)
-padding(sidebar, 9, 9, 12, 10)
-
-local navCaption = label(sidebar, "WORKSPACE", 9, Theme.Muted, Enum.Font.GothamBold)
-navCaption.Size = UDim2.new(1, 0, 0, 20)
-navCaption.Position = UDim2.fromOffset(8, 0)
-
-local navList = make("Frame", {
-    Position = UDim2.fromOffset(0, 28),
-    Size = UDim2.new(1, 0, 1, -80),
+local navHolder = new("Frame", {
+    Position = UDim2.fromOffset(9, 91),
+    Size = UDim2.new(1, -18, 1, -162),
     BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-}, sidebar)
-local navLayout = make("UIListLayout", {
-    Padding = UDim.new(0, 6),
+}, rail)
+local navLayout = new("UIListLayout", {
+    Padding = UDim.new(0, 8),
     SortOrder = Enum.SortOrder.LayoutOrder,
-}, navList)
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+}, navHolder)
 
-local profile = make("Frame", {
-    AnchorPoint = Vector2.new(0, 1),
-    Position = UDim2.new(0, 0, 1, 0),
-    Size = UDim2.new(1, 0, 0, 48),
-    BackgroundColor3 = Theme.Panel2,
+local railFooter = new("Frame", {
+    AnchorPoint = Vector2.new(0.5, 1),
+    Position = UDim2.new(0.5, 0, 1, -13),
+    Size = UDim2.fromOffset(46, 46),
+    BackgroundColor3 = Theme.panel,
     BorderSizePixel = 0,
-}, sidebar)
-corner(profile, 10)
-local avatar = make("Frame", {
-    Position = UDim2.fromOffset(8, 8),
-    Size = UDim2.fromOffset(31, 31),
-    BackgroundColor3 = Theme.Accent2,
-    BorderSizePixel = 0,
-}, profile)
-corner(avatar, 10)
-local avatarLetter = label(avatar, string.sub(player.DisplayName or player.Name, 1, 1):upper(), 14, Theme.Background, Enum.Font.GothamBlack)
-avatarLetter.Size = UDim2.fromScale(1, 1)
-avatarLetter.TextXAlignment = Enum.TextXAlignment.Center
-local profileName = label(profile, player.DisplayName or player.Name, 10, Theme.Text, Enum.Font.GothamBold)
-profileName.Position = UDim2.fromOffset(47, 8)
-profileName.Size = UDim2.new(1, -52, 0, 15)
-local profileCaption = label(profile, "LOCAL SESSION", 8, Theme.Muted, Enum.Font.GothamMedium)
-profileCaption.Position = UDim2.fromOffset(47, 23)
-profileCaption.Size = UDim2.new(1, -52, 0, 13)
+}, rail)
+round(railFooter, 23)
+outline(railFooter, Theme.border, 0.3, 1)
+local avatarText = text(railFooter, string.sub(player.DisplayName or player.Name, 1, 1):upper(), 16, Theme.accentBright, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+avatarText.Size = UDim2.fromScale(1, 1)
 
--- Content panel.
-local content = make("Frame", {
-    Name = "Content",
-    Position = UDim2.new(0, 204, 0, 80),
-    Size = UDim2.new(1, -218, 1, -94),
+-- Main header and content.
+local main = new("Frame", {
+    Name = "Main",
+    Position = UDim2.fromOffset(78, 0),
+    Size = UDim2.new(1, -78, 1, 0),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
-    ZIndex = 2,
+}, root)
+
+local header = new("Frame", {
+    Size = UDim2.new(1, 0, 0, 64),
+    BackgroundColor3 = Theme.shell,
+    BorderSizePixel = 0,
 }, main)
-
-local pageHeader = make("Frame", {
-    Size = UDim2.new(1, 0, 0, 58),
-    BackgroundTransparency = 1,
+new("Frame", {
+    Position = UDim2.new(0, 22, 1, -1),
+    Size = UDim2.new(1, -44, 0, 1),
+    BackgroundColor3 = Theme.border,
+    BackgroundTransparency = 0.4,
     BorderSizePixel = 0,
-}, content)
-local pageTitle = label(pageHeader, "Overview", 22, Theme.Text, Enum.Font.GothamBold)
-pageTitle.Position = UDim2.fromOffset(2, 0)
-pageTitle.Size = UDim2.new(1, -4, 0, 30)
-local pageDescription = label(pageHeader, "A clean workspace for your interface.", 11, Theme.Muted, Enum.Font.Gotham)
-pageDescription.Position = UDim2.fromOffset(3, 31)
-pageDescription.Size = UDim2.new(1, -4, 0, 19)
+}, header)
 
-local pageContainer = make("Frame", {
-    Position = UDim2.new(0, 0, 0, 64),
+local title = text(header, "Overview", 20, Theme.text, Enum.Font.GothamBold)
+title.Position = UDim2.fromOffset(23, 11)
+title.Size = UDim2.new(1, -170, 0, 27)
+local subtitle = text(header, "NOIR  /  INTERFACE", 9, Theme.muted, Enum.Font.GothamMedium)
+subtitle.Position = UDim2.fromOffset(24, 38)
+subtitle.Size = UDim2.new(1, -170, 0, 14)
+
+local livePill = new("Frame", {
+    AnchorPoint = Vector2.new(1, 0.5),
+    Position = UDim2.new(1, -94, 0.5, 0),
+    Size = UDim2.fromOffset(72, 25),
+    BackgroundColor3 = Theme.accentDark,
+    BorderSizePixel = 0,
+}, header)
+round(livePill, 8)
+local liveDot = new("Frame", {
+    Position = UDim2.fromOffset(9, 9),
+    Size = UDim2.fromOffset(7, 7),
+    BackgroundColor3 = Theme.accent,
+    BorderSizePixel = 0,
+}, livePill)
+round(liveDot, 4)
+local liveText = text(livePill, "READY", 9, Theme.accentBright, Enum.Font.GothamBold)
+liveText.Position = UDim2.fromOffset(22, 0)
+liveText.Size = UDim2.new(1, -24, 1, 0)
+
+local minimize = button(header, "—", UDim2.fromOffset(27, 27), Theme.panel, Theme.muted)
+minimize.Position = UDim2.new(1, -57, 0.5, -13)
+round(minimize, 8)
+local close = button(header, "×", UDim2.fromOffset(27, 27), Theme.panel, Theme.muted)
+close.Position = UDim2.new(1, -24, 0.5, -13)
+round(close, 8)
+
+local body = new("Frame", {
+    Position = UDim2.fromOffset(0, 64),
     Size = UDim2.new(1, 0, 1, -64),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     ClipsDescendants = true,
-}, content)
+}, main)
 
 local pages = {}
-local navButtons = {}
+local navItems = {}
 local currentPage = nil
 local minimized = false
-local expandedSize = UDim2.fromOffset(760, 500)
-local pageData = {
-    Overview = {
-        description = "A clean workspace for your interface.",
-        icon = "⌂",
-    },
-    Visuals = {
-        description = "Visual controls demo — no game features connected.",
-        icon = "◈",
-    },
-    Settings = {
-        description = "Interface preferences and motion settings.",
-        icon = "⚙",
-    },
-    About = {
-        description = "A lightweight UI foundation for Noir.",
-        icon = "✦",
-    },
+local expandedSize = root.Size
+local pageInfo = {
+    Overview = {icon = "⌂", subtitle = "NOIR  /  INTERFACE"},
+    Visuals = {icon = "◈", subtitle = "NOIR  /  VISUAL CONTROLS"},
+    Controls = {icon = "☷", subtitle = "NOIR  /  COMPONENTS"},
+    Settings = {icon = "⚙", subtitle = "NOIR  /  PREFERENCES"},
+    About = {icon = "✦", subtitle = "NOIR  /  BUILD INFO"},
 }
 
 local function makePage(name)
-    local page = make("ScrollingFrame", {
-        Name = name .. "Page",
+    local page = new("ScrollingFrame", {
+        Name = name,
         Size = UDim2.fromScale(1, 1),
+        Position = UDim2.fromOffset(0, 0),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 3,
-        ScrollBarImageColor3 = Theme.Accent,
+        ScrollBarImageColor3 = Theme.accent,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         Visible = false,
-    }, pageContainer)
-    padding(page, 1, 7, 2, 12)
-    local layout = make("UIListLayout", {
-        Padding = UDim.new(0, 11),
+    }, body)
+    inset(page, 22, 22, 18, 22)
+    new("UIListLayout", {
+        Padding = UDim.new(0, 12),
         SortOrder = Enum.SortOrder.LayoutOrder,
     }, page)
     pages[name] = page
     return page
 end
 
-local function section(parent, titleText, descriptionText)
-    local wrap = make("Frame", {
-        Size = UDim2.new(1, -1, 0, 54),
-        BackgroundColor3 = Theme.Panel,
+local function section(parent, heading, detail)
+    local box = new("Frame", {
+        Size = UDim2.new(1, -1, 0, 52),
+        BackgroundColor3 = Theme.panel,
         BorderSizePixel = 0,
     }, parent)
-    corner(wrap, 11)
-    stroke(wrap, Theme.Stroke, 0.6, 1)
-    local title = label(wrap, titleText, 12, Theme.Text, Enum.Font.GothamBold)
-    title.Position = UDim2.fromOffset(13, 8)
-    title.Size = UDim2.new(1, -26, 0, 18)
-    local desc = label(wrap, descriptionText or "", 10, Theme.Muted, Enum.Font.Gotham)
-    desc.Position = UDim2.fromOffset(13, 27)
-    desc.Size = UDim2.new(1, -26, 0, 16)
-    return wrap
+    round(box, 9)
+    outline(box, Theme.border, 0.48, 1)
+    local marker = new("Frame", {
+        Position = UDim2.fromOffset(0, 13),
+        Size = UDim2.fromOffset(3, 26),
+        BackgroundColor3 = Theme.accent,
+        BorderSizePixel = 0,
+    }, box)
+    round(marker, 2)
+    local head = text(box, heading, 12, Theme.text, Enum.Font.GothamBold)
+    head.Position = UDim2.fromOffset(14, 7)
+    head.Size = UDim2.new(1, -25, 0, 18)
+    local sub = text(box, detail or "", 10, Theme.muted, Enum.Font.Gotham)
+    sub.Position = UDim2.fromOffset(14, 26)
+    sub.Size = UDim2.new(1, -25, 0, 16)
+    return box
 end
 
 local function card(parent, height)
-    local item = make("Frame", {
-        Size = UDim2.new(1, -1, 0, height or 70),
-        BackgroundColor3 = Theme.Panel,
+    local box = new("Frame", {
+        Size = UDim2.new(1, -1, 0, height or 66),
+        BackgroundColor3 = Theme.panel,
         BorderSizePixel = 0,
     }, parent)
-    corner(item, 11)
-    stroke(item, Theme.Stroke, 0.62, 1)
-    return item
+    round(box, 9)
+    outline(box, Theme.border, 0.52, 1)
+    return box
 end
 
-local function addToggle(parent, titleText, descriptionText, defaultValue)
-    local row = card(parent, 66)
-    local title = label(row, titleText, 12, Theme.Text, Enum.Font.GothamSemibold)
-    title.Position = UDim2.fromOffset(13, 10)
-    title.Size = UDim2.new(1, -85, 0, 19)
-    local desc = label(row, descriptionText or "Demo control only", 10, Theme.Muted, Enum.Font.Gotham)
-    desc.Position = UDim2.fromOffset(13, 32)
-    desc.Size = UDim2.new(1, -85, 0, 17)
+local function addToggle(parent, heading, detail, initial)
+    local row = card(parent, 62)
+    local name = text(row, heading, 12, Theme.text, Enum.Font.GothamSemibold)
+    name.Position = UDim2.fromOffset(14, 8)
+    name.Size = UDim2.new(1, -95, 0, 20)
+    local desc = text(row, detail or "Interface demo only", 10, Theme.muted)
+    desc.Position = UDim2.fromOffset(14, 31)
+    desc.Size = UDim2.new(1, -95, 0, 16)
 
-    local track = make("TextButton", {
-        Position = UDim2.new(1, -58, 0.5, -12),
-        Size = UDim2.fromOffset(44, 24),
-        BackgroundColor3 = defaultValue and Theme.Accent or Theme.Panel2,
-        Text = "",
-        AutoButtonColor = false,
+    local switch = button(row, "", UDim2.fromOffset(38, 21), initial and Theme.accent or Theme.raised, Theme.text)
+    switch.Position = UDim2.new(1, -53, 0.5, -10)
+    round(switch, 11)
+    local knob = new("Frame", {
+        Position = initial and UDim2.new(1, -18, 0, 3) or UDim2.fromOffset(3, 3),
+        Size = UDim2.fromOffset(15, 15),
+        BackgroundColor3 = Theme.text,
         BorderSizePixel = 0,
-    }, row)
-    corner(track, 12)
-    local knob = make("Frame", {
-        Position = defaultValue and UDim2.new(1, -21, 0, 3) or UDim2.fromOffset(3, 3),
-        Size = UDim2.fromOffset(18, 18),
-        BackgroundColor3 = Color3.fromRGB(248, 248, 255),
-        BorderSizePixel = 0,
-    }, track)
-    corner(knob, 10)
-    local enabled = defaultValue == true
-    track.Activated:Connect(function()
-        enabled = not enabled
-        tween(track, 0.2, { BackgroundColor3 = enabled and Theme.Accent or Theme.Panel2 })
-        tween(knob, 0.22, { Position = enabled and UDim2.new(1, -21, 0, 3) or UDim2.fromOffset(3, 3) }, Enum.EasingStyle.Back)
+    }, switch)
+    round(knob, 9)
+    local state = initial == true
+    switch.Activated:Connect(function()
+        state = not state
+        tw(switch, 0.18, {BackgroundColor3 = state and Theme.accent or Theme.raised})
+        tw(knob, 0.22, {Position = state and UDim2.new(1, -18, 0, 3) or UDim2.fromOffset(3, 3)}, Enum.EasingStyle.Back)
     end)
     return row
 end
 
-local function addAction(parent, titleText, descriptionText, buttonText, callback)
-    local row = card(parent, 70)
-    local title = label(row, titleText, 12, Theme.Text, Enum.Font.GothamSemibold)
-    title.Position = UDim2.fromOffset(13, 10)
-    title.Size = UDim2.new(1, -135, 0, 19)
-    local desc = label(row, descriptionText or "", 10, Theme.Muted, Enum.Font.Gotham)
-    desc.Position = UDim2.fromOffset(13, 33)
-    desc.Size = UDim2.new(1, -135, 0, 16)
-
-    local button = make("TextButton", {
-        AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -12, 0.5, 0),
-        Size = UDim2.fromOffset(96, 32),
-        BackgroundColor3 = Theme.Panel2,
-        Text = buttonText or "Open",
-        TextColor3 = Theme.Text,
-        TextSize = 10,
-        Font = Enum.Font.GothamBold,
-        AutoButtonColor = false,
-        BorderSizePixel = 0,
-    }, row)
-    corner(button, 9)
-    stroke(button, Theme.Stroke, 0.4, 1)
-    button.MouseEnter:Connect(function()
-        tween(button, 0.15, { BackgroundColor3 = Theme.Accent, Size = UDim2.fromOffset(100, 34) })
+local function addButtonRow(parent, heading, detail, actionText, callback)
+    local row = card(parent, 66)
+    local name = text(row, heading, 12, Theme.text, Enum.Font.GothamSemibold)
+    name.Position = UDim2.fromOffset(14, 8)
+    name.Size = UDim2.new(1, -130, 0, 20)
+    local desc = text(row, detail or "", 10, Theme.muted)
+    desc.Position = UDim2.fromOffset(14, 31)
+    desc.Size = UDim2.new(1, -130, 0, 16)
+    local action = button(row, actionText or "Test", UDim2.fromOffset(88, 30), Theme.raised, Theme.text)
+    action.AnchorPoint = Vector2.new(1, 0.5)
+    action.Position = UDim2.new(1, -12, 0.5, 0)
+    round(action, 7)
+    local edge = outline(action, Theme.border, 0.3, 1)
+    action.MouseEnter:Connect(function()
+        tw(action, 0.14, {BackgroundColor3 = Theme.accentDark, TextColor3 = Theme.accentBright, Size = UDim2.fromOffset(92, 31)})
+        tw(edge, 0.14, {Color = Theme.accent, Transparency = 0.15})
     end)
-    button.MouseLeave:Connect(function()
-        tween(button, 0.16, { BackgroundColor3 = Theme.Panel2, Size = UDim2.fromOffset(96, 32) })
+    action.MouseLeave:Connect(function()
+        tw(action, 0.16, {BackgroundColor3 = Theme.raised, TextColor3 = Theme.text, Size = UDim2.fromOffset(88, 30)})
+        tw(edge, 0.16, {Color = Theme.border, Transparency = 0.3})
     end)
-    button.Activated:Connect(function()
-        tween(button, 0.07, { Size = UDim2.fromOffset(91, 29) })
+    action.Activated:Connect(function()
+        tw(action, 0.07, {Size = UDim2.fromOffset(84, 28)})
         task.delay(0.08, function()
-            if button.Parent then tween(button, 0.15, { Size = UDim2.fromOffset(100, 34) }) end
+            if action.Parent then tw(action, 0.15, {Size = UDim2.fromOffset(92, 31)}) end
         end)
         if callback then callback() end
     end)
     return row
 end
 
-local notificationLayer = make("Frame", {
-    Name = "Notifications",
+local function addSlider(parent, heading, minimum, maximum, startValue)
+    local row = card(parent, 72)
+    local name = text(row, heading, 12, Theme.text, Enum.Font.GothamSemibold)
+    name.Position = UDim2.fromOffset(14, 7)
+    name.Size = UDim2.new(1, -90, 0, 20)
+    local val = text(row, tostring(startValue), 11, Theme.accentBright, Enum.Font.GothamBold, Enum.TextXAlignment.Right)
+    val.Position = UDim2.new(1, -61, 0, 7)
+    val.Size = UDim2.fromOffset(45, 20)
+
+    local track = button(row, "", UDim2.new(1, -28, 0, 6), Theme.raised)
+    track.Position = UDim2.fromOffset(14, 47)
+    round(track, 4)
+    local alpha = math.clamp((startValue - minimum) / math.max(maximum - minimum, 1), 0, 1)
+    local fill = new("Frame", {
+        Size = UDim2.new(alpha, 0, 1, 0),
+        BackgroundColor3 = Theme.accent,
+        BorderSizePixel = 0,
+    }, track)
+    round(fill, 4)
+    local thumb = new("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(alpha, 0, 0.5, 0),
+        Size = UDim2.fromOffset(12, 12),
+        BackgroundColor3 = Theme.text,
+        BorderSizePixel = 0,
+    }, track)
+    round(thumb, 7)
+    local dragging = false
+    local function update(x)
+        local width = math.max(track.AbsoluteSize.X, 1)
+        local ratio = math.clamp((x - track.AbsolutePosition.X) / width, 0, 1)
+        local current = math.floor(minimum + (maximum - minimum) * ratio + 0.5)
+        val.Text = tostring(current)
+        tw(fill, 0.06, {Size = UDim2.new(ratio, 0, 1, 0)}, Enum.EasingStyle.Linear)
+        tw(thumb, 0.06, {Position = UDim2.new(ratio, 0, 0.5, 0)}, Enum.EasingStyle.Linear)
+    end
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            update(input.Position.X)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input.Position.X)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+    end)
+    return row
+end
+
+-- Animated toast notifications, styled with Noir's accent line.
+local toastHolder = new("Frame", {
+    Name = "ToastHolder",
     AnchorPoint = Vector2.new(1, 0),
     Position = UDim2.new(1, -18, 0, 18),
-    Size = UDim2.fromOffset(300, 360),
+    Size = UDim2.fromOffset(310, 300),
     BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ZIndex = 30,
-}, screen)
-local notificationLayout = make("UIListLayout", {
-    Padding = UDim.new(0, 9),
+    ZIndex = 100,
+}, gui)
+new("UIListLayout", {
+    Padding = UDim.new(0, 8),
     SortOrder = Enum.SortOrder.LayoutOrder,
     VerticalAlignment = Enum.VerticalAlignment.Top,
-}, notificationLayer)
+}, toastHolder)
 
-local notificationCount = 0
-local function notify(titleText, messageText, kind)
-    notificationCount += 1
-    local accent = kind == "success" and Theme.Success or (kind == "error" and Theme.Danger or Theme.Accent)
-    local toast = make("Frame", {
-        LayoutOrder = -notificationCount,
-        Size = UDim2.fromOffset(292, 76),
-        BackgroundColor3 = Theme.Panel,
-        BackgroundTransparency = 0.05,
+local toastOrder = 0
+local function notify(heading, detail, kind)
+    toastOrder += 1
+    local accent = kind == "error" and Theme.red or (kind == "info" and Theme.blue or Theme.accent)
+    local toast = new("CanvasGroup", {
+        LayoutOrder = -toastOrder,
+        Size = UDim2.fromOffset(300, 72),
+        Position = UDim2.fromOffset(20, 0),
+        BackgroundColor3 = Theme.panel,
+        BackgroundTransparency = 0.04,
+        GroupTransparency = 1,
         BorderSizePixel = 0,
-        ZIndex = 31,
-    }, notificationLayer)
-    corner(toast, 12)
-    stroke(toast, Theme.Stroke, 0.25, 1)
-    local bar = make("Frame", {
-        Position = UDim2.fromOffset(0, 13),
-        Size = UDim2.fromOffset(3, 50),
+        ZIndex = 101,
+    }, toastHolder)
+    round(toast, 9)
+    outline(toast, Theme.border, 0.25, 1)
+    local stripe = new("Frame", {
+        Position = UDim2.fromOffset(0, 12),
+        Size = UDim2.fromOffset(3, 48),
         BackgroundColor3 = accent,
         BorderSizePixel = 0,
-        ZIndex = 32,
+        ZIndex = 102,
     }, toast)
-    corner(bar, 3)
-    local title = label(toast, titleText or "NOIR", 12, Theme.Text, Enum.Font.GothamBold)
-    title.Position = UDim2.fromOffset(14, 12)
-    title.Size = UDim2.new(1, -26, 0, 19)
-    title.ZIndex = 32
-    local message = label(toast, messageText or "Notification preview.", 10, Theme.Muted, Enum.Font.Gotham)
-    message.Position = UDim2.fromOffset(14, 34)
-    message.Size = UDim2.new(1, -26, 0, 27)
-    message.TextWrapped = true
-    message.ZIndex = 32
-
-    toast.Position = UDim2.fromOffset(24, 0)
-    toast.BackgroundTransparency = 1
-    tween(toast, 0.28, { Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 0.05 }, Enum.EasingStyle.Quint)
-    task.delay(3.2, function()
+    round(stripe, 2)
+    local headingLabel = text(toast, heading or "NOIR", 12, Theme.text, Enum.Font.GothamBold)
+    headingLabel.Position = UDim2.fromOffset(14, 10)
+    headingLabel.Size = UDim2.new(1, -25, 0, 20)
+    headingLabel.ZIndex = 102
+    local detailLabel = text(toast, detail or "Preview notification", 10, Theme.muted)
+    detailLabel.Position = UDim2.fromOffset(14, 32)
+    detailLabel.Size = UDim2.new(1, -25, 0, 27)
+    detailLabel.TextWrapped = true
+    detailLabel.TextYAlignment = Enum.TextYAlignment.Top
+    detailLabel.ZIndex = 102
+    tw(toast, 0.26, {Position = UDim2.fromOffset(0, 0), GroupTransparency = 0}, Enum.EasingStyle.Quint)
+    task.delay(3.3, function()
         if toast.Parent then
-            tween(toast, 0.24, { Position = UDim2.fromOffset(25, 0), BackgroundTransparency = 1 })
-            task.wait(0.25)
+            tw(toast, 0.22, {Position = UDim2.fromOffset(22, 0), GroupTransparency = 1}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            task.wait(0.24)
             if toast.Parent then toast:Destroy() end
         end
     end)
 end
 
-local function addSlider(parent, titleText, minValue, maxValue, initialValue)
-    local row = card(parent, 76)
-    local title = label(row, titleText, 12, Theme.Text, Enum.Font.GothamSemibold)
-    title.Position = UDim2.fromOffset(13, 8)
-    title.Size = UDim2.new(1, -80, 0, 19)
-    local valueLabel = label(row, tostring(initialValue), 11, Theme.Accent2, Enum.Font.GothamBold)
-    valueLabel.Position = UDim2.new(1, -60, 0, 8)
-    valueLabel.Size = UDim2.fromOffset(45, 19)
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+-- Pages use KITI-style compact sections and Noir dashboard cards.
+local overview = makePage("OverviewPage")
+section(overview, "Dashboard", "A compact control surface for the new Noir UI.")
+local identity = card(overview, 104)
+local identityMark = new("Frame", {
+    Position = UDim2.fromOffset(15, 17),
+    Size = UDim2.fromOffset(54, 54),
+    BackgroundColor3 = Theme.accentDark,
+    BorderSizePixel = 0,
+}, identity)
+round(identityMark, 13)
+outline(identityMark, Theme.accent, 0.4, 1)
+local identityGlyph = text(identityMark, "N", 26, Theme.accentBright, Enum.Font.GothamBlack, Enum.TextXAlignment.Center)
+identityGlyph.Size = UDim2.fromScale(1, 1)
+local identityName = text(identity, "NOIR HUB", 18, Theme.text, Enum.Font.GothamBlack)
+identityName.Position = UDim2.fromOffset(83, 18)
+identityName.Size = UDim2.new(1, -100, 0, 25)
+local identityDesc = text(identity, "KITI layout × Noir visual language", 11, Theme.muted)
+identityDesc.Position = UDim2.fromOffset(84, 46)
+identityDesc.Size = UDim2.new(1, -100, 0, 18)
+local identityStatus = text(identity, "●  UI FOUNDATION  /  NO GAME FEATURES", 9, Theme.accentBright, Enum.Font.GothamBold)
+identityStatus.Position = UDim2.fromOffset(84, 69)
+identityStatus.Size = UDim2.new(1, -100, 0, 18)
 
-    local track = make("TextButton", {
-        Position = UDim2.fromOffset(13, 43),
-        Size = UDim2.new(1, -26, 0, 8),
-        BackgroundColor3 = Theme.Panel2,
-        Text = "",
-        AutoButtonColor = false,
+local metrics = new("Frame", {Size = UDim2.new(1, -1, 0, 88), BackgroundTransparency = 1}, overview)
+local metricsLayout = new("UIGridLayout", {
+    CellPadding = UDim2.fromOffset(10, 0),
+    CellSize = UDim2.new(0.3333, -7, 1, 0),
+    FillDirectionMaxCells = 3,
+    SortOrder = Enum.SortOrder.LayoutOrder,
+}, metrics)
+local function metric(parent, order, caption, value, accent)
+    local box = new("Frame", {
+        LayoutOrder = order,
+        BackgroundColor3 = Theme.panel,
         BorderSizePixel = 0,
-    }, row)
-    corner(track, 8)
-    local fill = make("Frame", {
-        Size = UDim2.new((initialValue - minValue) / (maxValue - minValue), 0, 1, 0),
-        BackgroundColor3 = Theme.Accent,
-        BorderSizePixel = 0,
-    }, track)
-    corner(fill, 8)
-    local dot = make("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new((initialValue - minValue) / (maxValue - minValue), 0, 0.5, 0),
-        Size = UDim2.fromOffset(14, 14),
-        BackgroundColor3 = Theme.Text,
-        BorderSizePixel = 0,
-    }, track)
-    corner(dot, 10)
-    local dragging = false
-    local function setFromX(x)
-        local width = math.max(track.AbsoluteSize.X, 1)
-        local alpha = math.clamp((x - track.AbsolutePosition.X) / width, 0, 1)
-        local value = math.floor(minValue + (maxValue - minValue) * alpha + 0.5)
-        valueLabel.Text = tostring(value)
-        tween(fill, 0.07, { Size = UDim2.new(alpha, 0, 1, 0) }, Enum.EasingStyle.Linear)
-        tween(dot, 0.07, { Position = UDim2.new(alpha, 0, 0.5, 0) }, Enum.EasingStyle.Linear)
-    end
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            setFromX(input.Position.X)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            setFromX(input.Position.X)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    return row
+    }, parent)
+    round(box, 9)
+    outline(box, Theme.border, 0.5, 1)
+    local cap = text(box, caption:upper(), 9, Theme.muted, Enum.Font.GothamBold)
+    cap.Position = UDim2.fromOffset(12, 12)
+    cap.Size = UDim2.new(1, -20, 0, 16)
+    local number = text(box, value, 21, accent or Theme.text, Enum.Font.GothamBold)
+    number.Position = UDim2.fromOffset(12, 34)
+    number.Size = UDim2.new(1, -20, 0, 29)
+    return box
 end
+metric(metrics, 1, "Build", "01", Theme.accentBright)
+metric(metrics, 2, "Mode", "UI", Theme.blue)
+metric(metrics, 3, "Status", "Ready", Theme.text)
+addButtonRow(overview, "Toast system", "Preview the KITI × Noir notification style.", "Preview", function()
+    notify("Noir notification", "This is a preview only. Nothing in the game was changed.", "success")
+end)
+addButtonRow(overview, "Motion preview", "Test the press feedback and easing.", "Play", function()
+    notify("Motion system", "Button press and toast transitions are enabled.", "info")
+end)
+
+local visuals = makePage("VisualsPage")
+section(visuals, "Visual components", "Example controls only. They are not wired to gameplay.")
+addToggle(visuals, "Example switch", "Compact KITI-style toggle with Noir accent.", false)
+addToggle(visuals, "Soft transitions", "Visual preference placeholder.", true)
+addToggle(visuals, "Show status pill", "Visual preference placeholder.", true)
+addSlider(visuals, "Animation strength", 0, 100, 70)
+addSlider(visuals, "Interface scale", 80, 120, 100)
+
+local controls = makePage("ControlsPage")
+section(controls, "Control library", "Reusable components to connect later.")
+addToggle(controls, "Toggle component", "Switch component sample.", false)
+addSlider(controls, "Slider component", 0, 100, 40)
+addButtonRow(controls, "Button component", "Hover, click and release animation.", "Click", function()
+    notify("Button pressed", "Component callback fired successfully.", "success")
+end)
+local dropdownRow = card(controls, 64)
+local dropdownTitle = text(dropdownRow, "Dropdown component", 12, Theme.text, Enum.Font.GothamSemibold)
+dropdownTitle.Position = UDim2.fromOffset(14, 8)
+dropdownTitle.Size = UDim2.new(1, -150, 0, 20)
+local dropdownDesc = text(dropdownRow, "Small animated option menu.", 10, Theme.muted)
+dropdownDesc.Position = UDim2.fromOffset(14, 31)
+dropdownDesc.Size = UDim2.new(1, -150, 0, 16)
+local dropdown = button(dropdownRow, "Default  ▾", UDim2.fromOffset(112, 30), Theme.raised, Theme.text)
+dropdown.AnchorPoint = Vector2.new(1, 0.5)
+dropdown.Position = UDim2.new(1, -12, 0.5, 0)
+round(dropdown, 7)
+local dropOptions = {"Default", "Compact", "Comfort"}
+local dropIndex = 1
+dropdown.Activated:Connect(function()
+    dropIndex = dropIndex % #dropOptions + 1
+    dropdown.Text = dropOptions[dropIndex] .. "  ▾"
+    tw(dropdown, 0.1, {BackgroundColor3 = Theme.accentDark})
+    task.delay(0.12, function()
+        if dropdown.Parent then tw(dropdown, 0.14, {BackgroundColor3 = Theme.raised}) end
+    end)
+end)
+
+local settings = makePage("SettingsPage")
+section(settings, "Window preferences", "A few basic interface controls.")
+addButtonRow(settings, "Reset window position", "Return the panel to the center of the screen.", "Reset", function()
+    root.Position = UDim2.fromScale(0.5, 0.51)
+    notify("Window reset", "The window was centered.", "success")
+end)
+addToggle(settings, "Compact mode", "Demo switch; layout remains unchanged.", false)
+addToggle(settings, "Reduced motion", "Demo preference; current animations remain active.", false)
+addButtonRow(settings, "Notification preview", "Check the notification entrance and exit.", "Show", function()
+    notify("Settings", "Notification preview from the Settings page.", "info")
+end)
+
+local about = makePage("AboutPage")
+section(about, "Noir × KITI", "A merged visual direction, not copied gameplay logic.")
+local aboutCard = card(about, 144)
+local aboutTitle = text(aboutCard, "DESIGN NOTES", 12, Theme.text, Enum.Font.GothamBold)
+aboutTitle.Position = UDim2.fromOffset(15, 13)
+aboutTitle.Size = UDim2.new(1, -30, 0, 20)
+local aboutBody = text(aboutCard,
+    "• KITI: compact icon rail, section spacing and reusable controls\n• Noir: charcoal palette, restrained green accent and dashboard cards\n• Motion: short tweens, eased tab transitions and toast notifications\n• Scope: interface only — no game actions, remotes or external downloads",
+    10, Theme.muted, Enum.Font.Gotham)
+aboutBody.Position = UDim2.fromOffset(15, 39)
+aboutBody.Size = UDim2.new(1, -30, 0, 93)
+aboutBody.TextYAlignment = Enum.TextYAlignment.Top
+aboutBody.TextWrapped = true
 
 local function addNav(name, order)
-    local data = pageData[name]
-    local button = make("TextButton", {
-        Name = name .. "Nav",
-        LayoutOrder = order,
-        Size = UDim2.new(1, 0, 0, 39),
-        BackgroundColor3 = Theme.Panel,
-        Text = "",
-        AutoButtonColor = false,
-        BorderSizePixel = 0,
-    }, navList)
-    corner(button, 9)
-    local iconText = label(button, data.icon, 17, Theme.Muted, Enum.Font.GothamBold)
-    iconText.Position = UDim2.fromOffset(10, 0)
-    iconText.Size = UDim2.fromOffset(24, 39)
-    iconText.TextXAlignment = Enum.TextXAlignment.Center
-    local nameLabel = label(button, name, 11, Theme.Muted, Enum.Font.GothamSemibold)
-    nameLabel.Position = UDim2.fromOffset(42, 0)
-    nameLabel.Size = UDim2.new(1, -50, 1, 0)
-    local activeBar = make("Frame", {
-        Position = UDim2.new(0, 0, 0.5, -9),
-        Size = UDim2.fromOffset(3, 18),
-        BackgroundColor3 = Theme.Accent,
+    local data = pageInfo[name]
+    local nav = button(navHolder, "", UDim2.fromOffset(54, 48), Theme.bg, Theme.muted)
+    nav.Name = name .. "Button"
+    nav.LayoutOrder = order
+    round(nav, 10)
+    local glyph = text(nav, data.icon, 20, Theme.muted, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+    glyph.Size = UDim2.fromScale(1, 1)
+    local activeBar = new("Frame", {
+        Position = UDim2.new(0, -8, 0.5, -10),
+        Size = UDim2.fromOffset(3, 20),
+        BackgroundColor3 = Theme.accent,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-    }, button)
-    corner(activeBar, 3)
-
-    button.MouseEnter:Connect(function()
-        if currentPage ~= name then tween(button, 0.14, { BackgroundColor3 = Theme.Panel2 }) end
+    }, nav)
+    round(activeBar, 2)
+    nav.MouseEnter:Connect(function()
+        if currentPage ~= name then
+            tw(nav, 0.14, {BackgroundColor3 = Theme.panel})
+            tw(glyph, 0.14, {TextColor3 = Theme.text})
+        end
     end)
-    button.MouseLeave:Connect(function()
-        if currentPage ~= name then tween(button, 0.14, { BackgroundColor3 = Theme.Panel }) end
+    nav.MouseLeave:Connect(function()
+        if currentPage ~= name then
+            tw(nav, 0.14, {BackgroundColor3 = Theme.bg})
+            tw(glyph, 0.14, {TextColor3 = Theme.muted})
+        end
     end)
-    button.Activated:Connect(function()
+    nav.Activated:Connect(function()
         if currentPage == name then return end
+        local old = currentPage
         currentPage = name
         for pageName, page in pairs(pages) do
-            local selected = pageName == name
-            page.Visible = selected
-            if selected then
-                page.CanvasPosition = Vector2.new(0, 0)
+            if pageName == name then
+                page.Visible = true
                 page.Position = UDim2.fromOffset(10, 0)
-                tween(page, 0.22, { Position = UDim2.fromOffset(0, 0) })
+                page.CanvasPosition = Vector2.zero
+                tw(page, 0.22, {Position = UDim2.fromOffset(0, 0)}, Enum.EasingStyle.Quint)
+            elseif pageName == old then
+                page.Visible = false
+            else
+                page.Visible = false
             end
         end
-        for navName, nav in pairs(navButtons) do
+        for navName, item in pairs(navItems) do
             local selected = navName == name
-            tween(nav.button, 0.16, { BackgroundColor3 = selected and Theme.PanelHover or Theme.Panel })
-            tween(nav.icon, 0.16, { TextColor3 = selected and Theme.Accent2 or Theme.Muted })
-            tween(nav.label, 0.16, { TextColor3 = selected and Theme.Text or Theme.Muted })
-            tween(nav.bar, 0.16, { BackgroundTransparency = selected and 0 or 1 })
+            tw(item.button, 0.16, {BackgroundColor3 = selected and Theme.raised or Theme.bg})
+            tw(item.glyph, 0.16, {TextColor3 = selected and Theme.accentBright or Theme.muted})
+            tw(item.bar, 0.16, {BackgroundTransparency = selected and 0 or 1})
         end
-        pageTitle.Text = name
-        pageDescription.Text = data.description
+        title.Text = name
+        subtitle.Text = data.subtitle
     end)
-    navButtons[name] = { button = button, icon = iconText, label = nameLabel, bar = activeBar }
+    navItems[name] = {button = nav, glyph = glyph, bar = activeBar}
 end
 
--- Build pages.
-local overview = makePage("Overview")
-section(overview, "Welcome to Noir", "A new interface foundation — no gameplay functions are connected.")
-local statusCard = card(overview, 94)
-local statusTitle = label(statusCard, "Interface status", 13, Theme.Text, Enum.Font.GothamBold)
-statusTitle.Position = UDim2.fromOffset(14, 12)
-statusTitle.Size = UDim2.new(1, -28, 0, 20)
-local statusDesc = label(statusCard, "Animations, navigation and notifications are ready.", 10, Theme.Muted, Enum.Font.Gotham)
-statusDesc.Position = UDim2.fromOffset(14, 36)
-statusDesc.Size = UDim2.new(1, -28, 0, 18)
-local pill = make("Frame", {
-    Position = UDim2.fromOffset(14, 62),
-    Size = UDim2.fromOffset(86, 20),
-    BackgroundColor3 = Color3.fromRGB(25, 54, 47),
-    BorderSizePixel = 0,
-}, statusCard)
-corner(pill, 7)
-local pillText = label(pill, "●  UI ONLY", 9, Theme.Success, Enum.Font.GothamBold)
-pillText.Position = UDim2.fromOffset(7, 0)
-pillText.Size = UDim2.new(1, -10, 1, 0)
-addAction(overview, "Notification preview", "Preview the animated toast notification.", "Preview", function()
-    notify("Noir UI", "This is a sample notification. No game action was performed.", "success")
-end)
-addAction(overview, "Button animation", "Try the hover and press transitions.", "Test button", function()
-    notify("Animation test", "Button press animation is working.", "info")
-end)
+for i, name in ipairs({"Overview", "Visuals", "Controls", "Settings", "About"}) do addNav(name, i) end
 
-local visuals = makePage("Visuals")
-section(visuals, "Visual controls", "These are UI demos only; they are not connected to game logic.")
-addToggle(visuals, "Example toggle", "Toggle state is visual only.", false)
-addToggle(visuals, "Smooth transitions", "Demo setting for the interface.", true)
-addToggle(visuals, "Compact notifications", "Placeholder preference only.", false)
-addSlider(visuals, "Animation intensity", 0, 100, 65)
-addSlider(visuals, "UI scale preview", 80, 120, 100)
-
-local settings = makePage("Settings")
-section(settings, "Interface settings", "UI preferences can be wired up later.")
-addToggle(settings, "Blur backdrop", "Placeholder toggle — no blur effect connected.", false)
-addToggle(settings, "Reduced motion", "Placeholder toggle — animations still run in this UI demo.", false)
-addToggle(settings, "Show status indicator", "Placeholder preference.", true)
-addAction(settings, "Reset interface preview", "Reopen the UI in its default size.", "Reset", function()
-    main.Size = UDim2.fromOffset(760, 500)
-    main.Position = UDim2.fromScale(0.5, 0.53)
-    main.Visible = true
-    minimized = false
-    notify("Noir UI", "Window layout reset.", "success")
-end)
-
-local about = makePage("About")
-section(about, "Built for Noir", "Minimal dark UI with motion designed to feel smooth, not noisy.")
-local aboutCard = card(about, 112)
-local aboutTitle = label(aboutCard, "NOIR UI FOUNDATION", 13, Theme.Text, Enum.Font.GothamBlack)
-aboutTitle.Position = UDim2.fromOffset(14, 14)
-aboutTitle.Size = UDim2.new(1, -28, 0, 20)
-local aboutText = label(aboutCard, "• Animated tab transitions\n• Hover and press feedback\n• Toast notification system\n• Draggable window\n• Responsive scaling\n• Toggle and slider components", 10, Theme.Muted, Enum.Font.Gotham)
-aboutText.Position = UDim2.fromOffset(14, 40)
-aboutText.Size = UDim2.new(1, -28, 0, 65)
-aboutText.TextYAlignment = Enum.TextYAlignment.Top
-
-for index, name in ipairs({ "Overview", "Visuals", "Settings", "About" }) do
-    addNav(name, index)
-end
-
--- Select initial tab.
-navButtons.Overview.button:Activate()
-
--- Drag window from header, while not grabbing a header button.
+-- Drag from the title area; buttons are kept out of the drag hit zone.
 local dragging = false
 local dragStart
-local startPosition
+local startPos
 header.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        local mouseX = input.Position.X
-        if mouseX > closeButton.AbsolutePosition.X - 4 then return end
+        if input.Position.X >= minimize.AbsolutePosition.X - 4 then return end
         dragging = true
         dragStart = input.Position
-        startPosition = main.Position
+        startPos = root.Position
     end
 end)
 UserInputService.InputChanged:Connect(function(input)
     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
-        main.Position = UDim2.new(
-            startPosition.X.Scale, startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
-        )
-        glow.Position = main.Position
+        root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
 end)
 
-minimizeButton.Activated:Connect(function()
+-- Resize grip at bottom-right.
+local resizeGrip = button(root, "◢", UDim2.fromOffset(22, 22), Theme.shell, Theme.dim)
+resizeGrip.AnchorPoint = Vector2.new(1, 1)
+resizeGrip.Position = UDim2.new(1, -3, 1, -3)
+resizeGrip.TextSize = 12
+resizeGrip.ZIndex = 20
+local resizing = false
+local resizeStart
+local sizeStart
+resizeGrip.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = true
+        resizeStart = input.Position
+        sizeStart = root.AbsoluteSize
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - resizeStart
+        local width = math.clamp(sizeStart.X + delta.X, 340, 1200)
+        local height = math.clamp(sizeStart.Y + delta.Y, 300, 900)
+        root.Size = UDim2.fromOffset(width, height)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then resizing = false end
+end)
+
+minimize.MouseEnter:Connect(function() tw(minimize, 0.12, {BackgroundColor3 = Theme.raised, TextColor3 = Theme.text}) end)
+minimize.MouseLeave:Connect(function() tw(minimize, 0.12, {BackgroundColor3 = Theme.panel, TextColor3 = Theme.muted}) end)
+close.MouseEnter:Connect(function() tw(close, 0.12, {BackgroundColor3 = Color3.fromRGB(67, 28, 31), TextColor3 = Theme.red}) end)
+close.MouseLeave:Connect(function() tw(close, 0.12, {BackgroundColor3 = Theme.panel, TextColor3 = Theme.muted}) end)
+
+minimize.Activated:Connect(function()
     minimized = not minimized
     if minimized then
-        expandedSize = main.Size
-        tween(main, 0.25, { Size = UDim2.fromOffset(400, 66) }, Enum.EasingStyle.Quint)
-        sidebar.Visible = false
-        content.Visible = false
-        glow.Visible = false
+        expandedSize = root.Size
+        rail.Visible = false
+        body.Visible = false
+        main.Position = UDim2.fromOffset(0, 0)
+        main.Size = UDim2.new(1, 0, 1, 0)
+        tw(root, 0.24, {Size = UDim2.fromOffset(400, 64)}, Enum.EasingStyle.Quint)
     else
-        sidebar.Visible = true
-        content.Visible = true
-        glow.Visible = true
-        tween(main, 0.28, { Size = expandedSize }, Enum.EasingStyle.Back)
+        rail.Visible = true
+        body.Visible = true
+        main.Position = UDim2.fromOffset(78, 0)
+        main.Size = UDim2.new(1, -78, 1, 0)
+        tw(root, 0.26, {Size = expandedSize}, Enum.EasingStyle.Back)
     end
 end)
 
-closeButton.Activated:Connect(function()
-    tween(mainScale, 0.18, { Scale = 0.92 })
-    tween(main, 0.18, { BackgroundTransparency = 1 })
-    task.wait(0.19)
-    if screen.Parent then screen:Destroy() end
+close.Activated:Connect(function()
+    local out = tw(root, 0.18, {GroupTransparency = 1, Position = UDim2.fromScale(0.5, 0.53)}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    tw(rootScale, 0.18, {Scale = 0.96}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    if out then out.Completed:Wait() end
+    if gui.Parent then gui:Destroy() end
 end)
 
--- Small intro toast after the open animation.
-task.delay(0.55, function()
-    if screen.Parent then
-        notify("Welcome to Noir", "UI loaded. All controls are placeholders for now.", "success")
+-- Responsive scaling for smaller screens.
+local camera = workspace.CurrentCamera
+local function updateScale()
+    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+    local ratio = math.min(viewport.X / 840, viewport.Y / 560, 1)
+    rootScale.Scale = math.clamp(ratio, 0.42, 1)
+end
+updateScale()
+if camera then
+    camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+end
+
+-- Initial page and entrance.
+navItems.Overview.button:Activate()
+task.defer(function()
+    if root.Parent then
+        tw(root, 0.32, {GroupTransparency = 0}, Enum.EasingStyle.Quint)
+        tw(rootScale, 0.42, {Scale = math.max(rootScale.Scale, 0.88)}, Enum.EasingStyle.Back)
     end
+end)
+task.delay(0.6, function()
+    if gui.Parent then notify("Noir × KITI", "The UI is ready. All controls are demo-only.", "success") end
 end)
