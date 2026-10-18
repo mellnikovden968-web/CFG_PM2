@@ -760,7 +760,20 @@ if camera then
 end
 
 -- Initial page and entrance.
-navItems.Overview.button:Activate()
+-- Initialize the first tab directly. GuiButton:Activate() is not available
+-- in every Roblox client/runtime, so do not call it as a method.
+currentPage = "Overview"
+pages.OverviewPage.Visible = true
+pages.OverviewPage.Position = UDim2.fromOffset(0, 0)
+title.Text = "Overview"
+subtitle.Text = pageInfo.Overview.subtitle
+for navName, item in pairs(navItems) do
+    local selected = navName == "Overview"
+    item.button.BackgroundColor3 = selected and Theme.raised or Theme.bg
+    item.glyph.TextColor3 = selected and Theme.accentBright or Theme.muted
+    item.bar.BackgroundTransparency = selected and 0 or 1
+end
+
 task.defer(function()
     if root.Parent then
         tw(root, 0.32, {GroupTransparency = 0}, Enum.EasingStyle.Quint)
