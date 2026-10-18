@@ -3619,40 +3619,20 @@ do
     -- Autofarm: shoot murder on full bag + auto fling sheriff when innocent for gun
     -- Expose flags for external access
     pcall(function() NoirGenv().__ShootFull = shootFull_on; NoirGenv().__FlingSheriffFull = flingSheriffFull_on end)
-    -- Simple fling helper for autofarm (does not depend on Part2 SkidFling)
+    -- Fling helper for autofarm — uses proper Noir fling from Part2 (no stretch)
     local function autofarmFlingTarget(targetPlr)
         if not targetPlr or not targetPlr.Parent then return false end
-        local myChar = lp.Character
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart") or farm_hrp()
-        local tChar = targetPlr.Character
-        local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
-        local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
-        if not (myRoot and tRoot and tHum and tHum.Health>0) then return false end
-        -- try to use existing Noir fling if exposed
         local ok = false
         pcall(function()
-            if typeof(SkidFling)=="function" then SkidFling(targetPlr); ok=true end
+            if NoirGenv().__NoirFling and typeof(NoirGenv().__NoirFling)=="function" then
+                local res = NoirGenv().__NoirFling(targetPlr)
+                ok = res ~= false
+            elseif getgenv().__NoirFling and typeof(getgenv().__NoirFling)=="function" then
+                local res = getgenv().__NoirFling(targetPlr)
+                ok = res ~= false
+            end
         end)
-        if ok then return true end
-        pcall(function()
-            if getgenv() and typeof(getgenv().SkidFling)=="function" then getgenv().SkidFling(targetPlr); ok=true end
-        end)
-        if ok then return true end
-        -- fallback: BodyVelocity fling
-        local bv
-        pcall(function()
-            bv = Instance.new("BodyVelocity")
-            bv.MaxForce = Vector3.new(9e9,9e9,9e9)
-            bv.Velocity = Vector3.new(0, 90000000, 0)
-            bv.Parent = myRoot
-        end)
-        for i=1,8 do
-            if not (myRoot.Parent and tRoot.Parent) then break end
-            pcall(function() myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 1.2, 0) * CFrame.Angles(math.rad(i*45),0,0) end)
-            task.wait(0.04)
-        end
-        pcall(function() if bv then bv:Destroy() end end)
-        return true
+        return ok
     end
 
     task.spawn(function()

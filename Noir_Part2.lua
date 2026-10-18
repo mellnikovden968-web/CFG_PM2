@@ -6799,6 +6799,7 @@ local function SkidFling(TargetPlayer)
     end
     flingObj.cancel=function() cleanup(true,true) end
     currentFling=flingObj
+    pcall(function() NoirGenv().__NoirFling = SkidFling; getgenv().__NoirFling = SkidFling; NoirGenv().__SkidFling = SkidFling end)
     BindableButtons.ResetActive=true
     StatusHUD.Set("\x61ctive", TargetPlayer.Name)
     flingObj.watchdog = task.delay(duration + 2, function() if not done then cleanup(false) end end)
@@ -6882,6 +6883,8 @@ local function SkidFling(TargetPlayer)
 end
 
  
+pcall(function() NoirGenv().__NoirFling = SkidFling; getgenv().__NoirFling = SkidFling end)
+
 local function startAutoModule(maidKey, finderFunc, intervalFn)
     if maids[maidKey] then maids[maidKey]:Destroy(); maids[maidKey]=nil end
     local maid=Maid.new()
