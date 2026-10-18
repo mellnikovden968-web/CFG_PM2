@@ -503,6 +503,10 @@ do
     st.dict["Language updated."] = "Язык изменён"
     st.dict["type: Basic"] = "Тип: Basic"
     st.dict["type: Down"] = "Тип: Down"
+    st.dict["Silent Aim Mode"] = "Режим Silent Aim"
+    st.dict["Noir"] = "Noir"
+    st.dict["Tering"] = "Tering"
+    st.dict["BULLET TRACER"] = "Трейсер пуль"
     local AR_DICT = {
         ["Home"] = "الرئيسية",
         ["Main"] = "الرئيسي",
@@ -826,6 +830,15 @@ do
     AR_DICT["type: Basic"] = "النوع: أساسي"
     AR_DICT["type: Down"] = "النوع: نزول"
     st.dicts = { en = {}, ru = st.dict, ar = AR_DICT }
+    -- Fix Arabic missing feature names: fill from RU/EN if missing
+    for k,v in pairs(st.dict) do if AR_DICT[k]==nil then AR_DICT[k]=k end end
+    AR_DICT["Silent Aim Mode"] = "وضع التصويب الصامت"
+    AR_DICT["Noir"] = "نوار"
+    AR_DICT["Tering"] = "تيرينغ"
+    AR_DICT["BULLET TRACER"] = "تتبع الرصاص"
+    AR_DICT["Touch Fling"] = AR_DICT["Touch Fling"] or "اللمس السريع"
+    AR_DICT["👋 Touch Fling"] = AR_DICT["👋 Touch Fling"] or "👋 اللمس السريع"
+    AR_DICT["Bind Touch Fling"] = AR_DICT["Bind Touch Fling"] or "ربط اللمس السريع"
     st.renderedToSource = {}
     st.originalTextDirections = setmetatable({}, { __mode = "k" })
     st.originalTextXAlignments = setmetatable({}, { __mode = "k" })
@@ -868,11 +881,10 @@ function NoirPersistence.SetPosition(key, p)
 end
 
 local C = {
-    -- Refined Noir palette: layered charcoal surfaces and restrained green accent.
-    base = Color3.fromRGB(7, 9, 11), surface = Color3.fromRGB(15, 18, 21), panel = Color3.fromRGB(12, 15, 18),
-    card = Color3.fromRGB(20, 24, 27), border = Color3.fromRGB(67, 77, 73), accent = Color3.fromRGB(91, 181, 105),
-    accent2 = Color3.fromRGB(139, 218, 145), text = Color3.fromRGB(239, 242, 239), dim = Color3.fromRGB(150, 160, 154),
-    off = Color3.fromRGB(39, 46, 44), btn = Color3.fromRGB(27, 33, 32),
+    base = Color3.fromRGB(7,8,10), surface = Color3.fromRGB(15,17,20), panel = Color3.fromRGB(13,15,18),
+    card = Color3.fromRGB(17,19,23), border = Color3.fromRGB(120,126,134), accent = Color3.fromRGB(93,168,94),
+    accent2 = Color3.fromRGB(122,201,122), text = Color3.fromRGB(233,235,238), dim = Color3.fromRGB(124,130,138),
+    off = Color3.fromRGB(42,45,50), btn = Color3.fromRGB(35,38,41),
 }
 local gui
 function New(class, props)
@@ -928,7 +940,15 @@ function New(class, props)
                 langState.originalTextDirections[x] = originalDirection
             end
             if langState.lang == "ar" then
-                pcall(function() x.TextDirection = Enum.TextDirection.RightToLeft end)
+                local txt2 = ""
+                pcall(function() txt2 = x.Text or "" end)
+                local hasArabic2 = txt2:match("[\216-\219][\128-\191]") ~= nil
+                local hasLatin2 = txt2:match("[A-Za-z]") ~= nil
+                if hasLatin2 and not hasArabic2 then
+                    pcall(function() x.TextDirection = Enum.TextDirection.LeftToRight end)
+                else
+                    pcall(function() x.TextDirection = Enum.TextDirection.RightToLeft end)
+                end
             end
         end
     end
@@ -1012,7 +1032,15 @@ local function refreshNoirLanguage()
         if not ok then return end
         if state.originalTextDirections[instance] == nil then state.originalTextDirections[instance] = current end
         if state.lang == "ar" then
-            pcall(function() instance.TextDirection = Enum.TextDirection.RightToLeft end)
+            local txt = ""
+            pcall(function() txt = instance.Text or "" end)
+            local hasArabic = txt:match("[\216-\219][\128-\191]") ~= nil
+            local hasLatin = txt:match("[A-Za-z]") ~= nil
+            if hasLatin and not hasArabic then
+                pcall(function() instance.TextDirection = Enum.TextDirection.LeftToRight end)
+            else
+                pcall(function() instance.TextDirection = Enum.TextDirection.RightToLeft end)
+            end
         else
             local original = state.originalTextDirections[instance]
             if original ~= nil then pcall(function() instance.TextDirection = original end) end
@@ -1778,7 +1806,7 @@ local function makeDualScrollColumns(parent)
         CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y, ScrollingEnabled = true, Active = true,
         ElasticBehavior = Enum.ElasticBehavior.WhenScrollable, VerticalScrollBarInset = Enum.ScrollBarInset.Always })
-    New("\x55IListLayout", { Parent = col, Padding = UDim.new(0, 11), SortOrder = Enum.SortOrder.LayoutOrder })
+    New("\x55IListLayout", { Parent = col, Padding = UDim.new(0, 14), SortOrder = Enum.SortOrder.LayoutOrder })
     New("\x55IPadding", { Parent = col, PaddingBottom = UDim.new(0, 16), PaddingRight = UDim.new(0, 4) })
     return { col, col }
 end
@@ -2093,7 +2121,7 @@ function host.CreateTab()
         else sectionCount += 1; col = cols[(sectionCount - 1) % 2 + 1] end
         local panel = New("\x46rame", { Parent = col, Size = UDim2.new(1, 0, 0, 90), AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundColor3 = C.panel, BackgroundTransparency = .25, ClipsDescendants = true })
-        corner(panel, 14); stroke(panel, C.border, .38)
+        corner(panel, 18); stroke(panel, C.border, .5)
         local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(0, 16), Size = UDim2.fromOffset(3, 20), BackgroundColor3 = C.accent })
         corner(tick, 2)
         table.insert(sectionPanels, { panel = panel, page = page, name = string.lower(name .. "\x20" .. (description or "")) })
@@ -2157,15 +2185,8 @@ function host.CreateTab()
             local b = New("\x54extButton", { Parent = holder, Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = C.btn,
                 Text = NoirTr(label), TextColor3 = C.text, TextSize = 15, Font = Enum.Font.Gotham, AutoButtonColor = false })
             corner(b, 12); stroke(b, C.border, .5)
-            local buttonStroke = b:FindFirstChildOfClass("UIStroke")
-            b.MouseEnter:Connect(function()
-                TweenService:Create(b, TweenInfo.new(.16, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundColor3 = C.card}):Play()
-                if buttonStroke then TweenService:Create(buttonStroke, TweenInfo.new(.16, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Color = C.accent, Transparency = .18}):Play() end
-            end)
-            b.MouseLeave:Connect(function()
-                TweenService:Create(b, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundColor3 = C.btn}):Play()
-                if buttonStroke then TweenService:Create(buttonStroke, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Color = C.border, Transparency = .5}):Play() end
-            end)
+            b.MouseEnter:Connect(function() TweenService:Create(b, TweenInfo.new(.18), { BackgroundColor3 = Color3.fromRGB(48,52,56) }):Play() end)
+            b.MouseLeave:Connect(function() TweenService:Create(b, TweenInfo.new(.18), { BackgroundColor3 = C.btn }):Play() end)
             local lastClick = 0
             local function fire()
                 local now = os.clock()
@@ -4786,6 +4807,62 @@ function fireGunAt(player, usePrediction)
     shootBusy = false
     return success
 end
+-- Tering Silent Aim — mode switch
+do
+  local TeringHookInstalled = false
+  local OldNamecall = nil
+  local function getMode()
+    local ok, m = pcall(function() return NoirGenv().__NoirSilentMode end)
+    if ok and (m=="Tering" or m=="Noir") then return m end
+    local ok2, v = pcall(function() return NoirPersistence and NoirPersistence.data.dropdowns and NoirPersistence.data.dropdowns["SILENT AIM::Silent Aim Mode"] end)
+    if ok2 and (v=="Tering" or v=="Noir") then return v end
+    return "Noir"
+  end
+  local function installTeringHook()
+    if TeringHookInstalled then return true end
+    if type(hookmetamethod)~="function" or type(getnamecallmethod)~="function" or type(newcclosure)~="function" or type(checkcaller)~="function" then return false end
+    local ok, hook = pcall(function()
+      return hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method=="FireServer" and self.Name=="Shoot" and getMode()=="Tering" and config and config.enabled and not checkcaller() then
+          local args = {...}
+          local target = nil
+          pcall(function() target = selectTarget and selectTarget() or nil end)
+          if not target then pcall(function() target = findByKnife and findByKnife() or nil end) end
+          if target and target.Parent then
+            local part = nil
+            pcall(function() part = getAimPart and getAimPart(target) or nil end)
+            if part and part.Parent then
+              local aim = part.Position
+              pcall(function() if calculateAim then aim = calculateAim(part) end end)
+              if typeof(args[1])=="CFrame" then
+                args[1] = CFrame.lookAt(args[1].Position, aim)
+              end
+              if #args>=2 then
+                if typeof(args[2])=="CFrame" then
+                  args[2] = CFrame.new(aim)
+                elseif typeof(args[2])=="Vector3" then
+                  args[2] = aim
+                end
+              end
+              return OldNamecall(self, table.unpack(args))
+            end
+          end
+        end
+        return OldNamecall(self, ...)
+      end))
+    end)
+    if ok and hook then OldNamecall = hook; TeringHookInstalled=true; return true end
+    return false
+  end
+  NoirGenv().__TeringInstall = installTeringHook
+  getgenv().__TeringInstall = installTeringHook
+  task.spawn(function()
+    repeat task.wait(0.5) until config and config.enabled ~= nil
+    if getMode()=="Tering" then pcall(installTeringHook) end
+  end)
+end
+
 
  
  

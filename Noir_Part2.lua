@@ -250,12 +250,43 @@ do
         combatAim:AddToggle("\x53how Shoot Murder Button", setShootButtonVisible)
         combatAim:AddToggle("\x4cock Shoot Murder Button", function(v) config.lockShootButton=v==true end)
 
-        -- ===== BULLET TRACER — PULSE HUB port (заменяет KITI) — SILENT AIM ====
-        -- Вставлен рядом с silent aim, стиль как в Pulse Hub: Energy/Laser/Lightning/Plasma/Fire/Smoke/Stardust
-        combatAim:AddLabel("BULLET TRACER  •  PULSE")
-        combatAim:AddParagraph("Bullet Tracer", "Пульсовский трейсер пули. Classic = прямая, Path Finder = обход стен через Pathfinding. Стили задают текстуры/ширину/прозрачность как в Pulse. Работает для Silent Aim (через fireGunAt) и для любых выстрелов других игроков если включишь Show Other Shots.")
+        -- Silent Aim Mode dropdown (Noir / Tering) — возле функции silent aim
         do
-            -- состояние как в Pulse
+          local initialMode = "Noir"
+          do
+            local ok, v = pcall(function() return NoirPersistence and NoirPersistence.data.dropdowns and NoirPersistence.data.dropdowns["SILENT AIM::Silent Aim Mode"] end)
+            if ok and (v=="Noir" or v=="Tering") then initialMode = v end
+          end
+          NoirGenv().__NoirSilentMode = initialMode
+          local modeDropdown = nil
+          pcall(function()
+            modeDropdown = combatAim:AddDropdown("Silent Aim Mode", {"Noir", "Tering"}, function(v)
+              local mode = (v=="Tering" and "Tering" or "Noir")
+              NoirGenv().__NoirSilentMode = mode
+              pcall(function()
+                NoirPersistence.data.dropdowns["SILENT AIM::Silent Aim Mode"] = mode
+                NoirPersistence.Save()
+              end)
+              if mode=="Tering" then
+                pcall(function() if NoirGenv().__TeringInstall then NoirGenv().__TeringInstall() end end)
+              end
+              local label = mode=="Tering" and "Tering" or "Noir"
+              if type(notify)=="function" then pcall(notify, NoirTr("Silent Aim Mode")..": "..label, 2) end
+            end)
+          end)
+          pcall(function() if modeDropdown and modeDropdown.SetValue then modeDropdown:SetValue(initialMode) end end)
+          pcall(function()
+            if initialMode=="Tering" and NoirGenv().__TeringInstall then NoirGenv().__TeringInstall() end
+          end)
+        end
+        combatAim:AddLabel("Noir — стандартный Noir, Tering — альтернативный режим.")
+
+        -- ===== BULLET TRACER — SILENT AIM ====
+        -- Вставлен рядом с silent aim, стиль как в  Energy/Laser/Lightning/Plasma/Fire/Smoke/Stardust
+        combatAim:AddLabel("BULLET TRACER")
+        combatAim:AddParagraph("Bullet Tracer", "Трейсер пули. Classic = прямая, Path Finder = обход стен через Pathfinding. Стили задают текстуры/ширину/прозрачность как в стилях. Работает для Silent Aim (через fireGunAt) и для любых выстрелов других игроков если включишь Show Other Shots.")
+        do
+            -- состояние как в Tracer
             local G = {
                 on = false,
                 method = "Classic",
@@ -276,9 +307,9 @@ do
             }
             -- expose
             pcall(function()
-                NoirGenv().__pulseTracers = G
-                getgenv().__pulseTracers = G
-                NoirGenv().__PulseTracer = G
+                NoirGenv().__NoirTracers = G
+                getgenv().__NoirTracers = G
+                NoirGenv().__NoirTracer = G
             end)
 
             local RunService = game:GetService("RunService")
@@ -290,7 +321,7 @@ do
             local ReplicatedStorage = game:GetService("ReplicatedStorage")
             local LocalPlayer = Players.LocalPlayer
 
-            -- текстуры Pulse
+            -- текстуры Tracer
             local Tex = {
                 glow = "rbxassetid://12781803086",
                 energy = "rbxassetid://12781800668",
@@ -306,7 +337,7 @@ do
                 ring = "rbxassetid://12403112662",
                 soft = "rbxassetid://1075864321",
             }
-            -- стили Pulse (c)
+            -- стили Tracer (c)
             local Styles = {
                 Energy = {
                     { tex = "core", w = 4, spd = 4, br = 1.6, a = 0.35, mix = 0 },
@@ -346,12 +377,12 @@ do
             local StyleList = {"Energy","Laser","Lightning","Plasma","Fire","Smoke","Stardust"}
 
             -- helpers
-            local function logPulse(msg)
+            local function logTracer(msg)
                 G.log[#G.log+1] = string.format("%.2f %s", os.clock(), msg)
                 if #G.log>30 then table.remove(G.log,1) end
             end
 
-            -- stretch compensation (Pulse X.ui.stretch)
+            -- stretch compensation (stretch)
             local function stretchLog() return 0 end
             local function stretchMul() return 1 end
             -- preload textures
@@ -373,13 +404,13 @@ do
                     return V
                 end
                 local a0 = Instance.new("Attachment")
-                a0.Name = "PulseTracerA"
+                a0.Name = "NoirTracerA"
                 a0.Parent = Terrain
                 local a1 = Instance.new("Attachment")
-                a1.Name = "PulseTracerB"
+                a1.Name = "NoirTracerB"
                 a1.Parent = Terrain
                 local beam = Instance.new("Beam")
-                beam.Name = "PulseTracer"
+                beam.Name = "NoirTracer"
                 beam.Attachment0, beam.Attachment1 = a0, a1
                 beam.FaceCamera = true
                 beam.LightEmission, beam.LightInfluence = 1, 0
@@ -434,7 +465,7 @@ do
                 return nil
             end
 
-            -- path finder wrapper (Pulse r)
+            -- path finder wrapper (path finder)
             local function buildPathfinder(s, e)
                 local ok, pts = pcall(function()
                     local path = PathService:CreatePath({AgentRadius=1.5, AgentHeight=5, AgentCanJump=true, AgentCanClimb=true, WaypointSpacing=6})
@@ -454,7 +485,7 @@ do
                 return pts
             end
 
-            -- smoothing like Pulse u (catmull)
+            -- smoothing like catmull
             local function smoothPoints(pts)
                 if #pts<=2 then return pts end
                 local out = {pts[1]}
@@ -480,10 +511,10 @@ do
                 return out
             end
 
-            -- FX helpers (Pulse B, s, h)
+            -- FX helpers (FX helpers)
             local function newAttachment(pos)
                 local a=Instance.new("Attachment")
-                a.Name="PulseTracerFx"
+                a.Name="NoirTracerFx"
                 a.WorldPosition=pos
                 a.Parent=Terrain
                 return a
@@ -533,7 +564,7 @@ do
                 return opts.col or G.col, opts.col2 or G.col2
             end
 
-            -- core builder (Pulse l)
+            -- core builder (builder)
             local function buildTracer(pts, opts)
                 opts = opts or {}
                 if #pts < 2 then return end
@@ -612,7 +643,7 @@ do
                 return pts[lo]:Lerp(pts[lo+1], t), lo
             end
 
-            -- heartbeat updater (Pulse U)
+            -- heartbeat updater (Updater)
             local function updateTracers()
                 if #G.live==0 then return end
                 local now=os.clock()
@@ -705,7 +736,7 @@ do
             end
             RunService.Heartbeat:Connect(function() pcall(updateTracers) end)
 
-            -- path builder wrapper (Pulse B)
+            -- path builder wrapper (builder)
             local function spawnFromTo(a, b, impact, muzzle, extra)
                 extra = extra or {}
                 local opts = {impact=impact, muzzle=muzzle, speed=extra.speed, life=extra.life, cb=extra.cb}
@@ -718,12 +749,12 @@ do
                     if not isObstructed(a,b) then
                         directPts, reason = {a,b}, "direct"
                     else
-                        -- try simple waypoint offset sampling like Pulse Y (simplified placeholder)
+                        -- try simple waypoint offset sampling like Tracer Y (simplified placeholder)
                         directPts = nil
                     end
                     if directPts then
                         local pts = smoothPoints(directPts)
-                        logPulse(string.format("PF %s pts=%d %.1fms", reason or "?", #pts, (os.clock()-startTime)*1000))
+                        logTracer(string.format("PF %s pts=%d %.1fms", reason or "?", #pts, (os.clock()-startTime)*1000))
                         return buildTracer(pts, opts)
                     end
                     -- fallback to pathfinder async
@@ -732,10 +763,10 @@ do
                         local pts = buildPathfinder(a,b)
                         if pts then
                             pts = smoothPoints(pts)
-                            logPulse(string.format("PF nav pts=%d %.1fms", #pts, (os.clock()-st)*1000))
+                            logTracer(string.format("PF nav pts=%d %.1fms", #pts, (os.clock()-st)*1000))
                             buildTracer(pts, opts)
                         else
-                            logPulse("PF fallback straight")
+                            logTracer("PF fallback straight")
                             buildTracer({a,b}, opts)
                         end
                     end)
@@ -745,7 +776,7 @@ do
             end
 
             G.build = spawnFromTo
-            -- helper to find origin from character/gun like Pulse U
+            -- helper to find origin from character/gun like Updater
             local function findOrigin(char, part, vec)
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 local att = hrp and hrp:FindFirstChild("GunRaycastAttachment")
@@ -772,7 +803,7 @@ do
                         if ok and type(env)=="table" then orig = env.fireGunAt end
                     end
                     if typeof(orig)~="function" then return end
-                    if orig.__pulseWrapped then return end
+                    if orig.__tracerWrapped then return end
                     local wrapped = function(plr, usePred)
                         local ok, res = pcall(orig, plr, usePred)
                         if G.on and plr and typeof(plr)=="Instance" then
@@ -800,16 +831,16 @@ do
                         end
                         return ok and res or false
                     end
-                    wrapped.__pulseWrapped=true
+                    wrapped.__tracerWrapped=true
                     _G.fireGunAt = wrapped
                     getgenv().fireGunAt = wrapped
                     pcall(function() NoirGenv().fireGunAt = wrapped end)
-                    logPulse("hooked fireGunAt")
+                    logTracer("hooked fireGunAt")
                 end)
             end
             hookFireGunAt()
 
-            -- GunFired hook (Pulse style) for other shots
+            -- GunFired hook (Tracer style) for other shots
             task.spawn(function()
                 local ok, obj = pcall(function() return ReplicatedStorage:WaitForChild("ClientServices",5) end)
                 local ws = ok and obj and obj:FindFirstChild("WeaponService")
@@ -827,7 +858,7 @@ do
                     local args={...}
                     task.spawn(function()
                         pcall(function()
-                            -- Pulse M logic simplified: args[1]=shooter char/instance?, args[3]=target Vector3
+                            -- GunFired logic simplified: args[1]=shooter char/instance?, args[3]=target Vector3
                             -- try to extract Vector3 target
                             local target=nil
                             for _,v in ipairs(args) do if typeof(v)=="Vector3" then target=v end end
@@ -848,7 +879,7 @@ do
                         end)
                     end)
                 end)
-                logPulse("GunFired hook armed")
+                logTracer("GunFired hook armed")
             end)
 
             -- preview helper
@@ -898,7 +929,7 @@ do
                 cam.CameraType=Enum.CameraType.Scriptable
                 local ok=pcall(function()
                     local conn
-                    conn=RunService:BindToRenderStep("PulseTracerCam", Enum.RenderPriority.Camera.Value+2, function(dt)
+                    conn=RunService:BindToRenderStep("NoirTracerCam", Enum.RenderPriority.Camera.Value+2, function(dt)
                         if not G.previewing then return end
                         local elapsed=os.clock()-tr.t0
                         local headDist=math.min(tr.L, elapsed*tr.speed)
@@ -916,7 +947,7 @@ do
                 local dur = tr.L/tr.speed
                 local endT=os.clock()
                 while os.clock()-endT < math.min(dur+1.5,9) and G.previewing do task.wait() end
-                pcall(function() RunService:UnbindFromRenderStep("PulseTracerCam") end)
+                pcall(function() RunService:UnbindFromRenderStep("NoirTracerCam") end)
                 pcall(function() cam.CameraType=Enum.CameraType.Custom; cam.CameraSubject = myChar:FindFirstChildOfClass("Humanoid") end)
                 G.previewing=false
             end
@@ -961,7 +992,7 @@ do
             pcall(function()
                 combatAim:AddButton("Preview Tracer", function() task.spawn(function() pcall(G.preview) end) end)
             end)
-            combatAim:AddLabel("Pulse-стиль: Energy/Laser/Lightning/Plasma/Fire/Smoke/Stardust. Preview — камера преследует трейсер.")
+            combatAim:AddLabel("Стили: Energy/Laser/Lightning/Plasma/Fire/Smoke/Stardust. Preview — камера преследует трейсер.")
         end
 
          
