@@ -507,6 +507,9 @@ do
     st.dict["Noir"] = "Noir"
     st.dict["Tering"] = "Tering"
     st.dict["BULLET TRACER"] = "Трейсер пуль"
+    st.dict["Shoot Murder on full bag"] = "Стрелять в маньяка при полном мешке"
+    st.dict["Auto Fling Sheriff (Innocent)"] = "Авто-флинг шерифа (невиновный)"
+    st.dict["Flings sheriff when you are innocent to steal gun"] = "Флингает шерифа когда ты невиновный чтобы забрать пушку"
     local AR_DICT = {
         ["Home"] = "الرئيسية",
         ["Main"] = "الرئيسي",
@@ -836,6 +839,9 @@ do
     AR_DICT["Noir"] = "نوار"
     AR_DICT["Tering"] = "تيرينغ"
     AR_DICT["BULLET TRACER"] = "تتبع الرصاص"
+    AR_DICT["Shoot Murder on full bag"] = "إطلاق النار على القاتل عند امتلاء الحقيبة"
+    AR_DICT["Auto Fling Sheriff (Innocent)"] = "رمي الشريف تلقائيا (بريء)"
+    AR_DICT["Flings sheriff when you are innocent to steal gun"] = "يرمي الشريف عندما تكون بريئا لسرقة السلاح"
     AR_DICT["Touch Fling"] = AR_DICT["Touch Fling"] or "اللمس السريع"
     AR_DICT["👋 Touch Fling"] = AR_DICT["👋 Touch Fling"] or "👋 اللمس السريع"
     AR_DICT["Bind Touch Fling"] = AR_DICT["Bind Touch Fling"] or "ربط اللمس السريع"
@@ -3206,6 +3212,8 @@ do
     local autofarm_on = false
     local autoreset_on = false
     local autokill_on = false
+    local shootFull_on = false
+    local flingSheriff_on = false
     local coins_done = false
     local saw_coins = false
     local farm_target = nil
@@ -3608,6 +3616,128 @@ do
         end
     end)
 
+    -- Autofarm: shoot murder on full bag + auto fling sheriff when innocent for gun
+    -- Expose flags for external access
+    pcall(function() NoirGenv().__ShootFull = shootFull_on; NoirGenv().__FlingSheriff = flingSheriff_on end)
+    -- Simple fling helper for autofarm (does not depend on Part2 SkidFling)
+    local function autofarmFlingTarget(targetPlr)
+        if not targetPlr or not targetPlr.Parent then return false end
+        local myChar = lp.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart") or farm_hrp()
+        local tChar = targetPlr.Character
+        local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+        local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
+        if not (myRoot and tRoot and tHum and tHum.Health>0) then return false end
+        -- try to use existing Noir fling if exposed
+        local ok = false
+        pcall(function()
+            if typeof(SkidFling)=="function" then SkidFling(targetPlr); ok=true end
+        end)
+        if ok then return true end
+        pcall(function()
+            if getgenv() and typeof(getgenv().SkidFling)=="function" then getgenv().SkidFling(targetPlr); ok=true end
+        end)
+        if ok then return true end
+        -- fallback: BodyVelocity fling
+        local bv
+        pcall(function()
+            bv = Instance.new("BodyVelocity")
+            bv.MaxForce = Vector3.new(9e9,9e9,9e9)
+            bv.Velocity = Vector3.new(0, 90000000, 0)
+            bv.Parent = myRoot
+        end)
+        for i=1,8 do
+            if not (myRoot.Parent and tRoot.Parent) then break end
+            pcall(function() myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 1.2, 0) * CFrame.Angles(math.rad(i*45),0,0) end)
+            task.wait(0.04)
+        end
+        pcall(function() if bv then bv:Destroy() end end)
+        return true
+    end
+
+    task.spawn(function()
+        while true do
+            task.wait(0.35)
+            if not (shootFull_on and autofarm_on and coins_done) then continue end
+            if getgenv().AUTOFARM_HOLD then continue end
+            local d = get_round_data and get_round_data() or nil
+            local me = type(d)=="table" and d[lp.Name] or nil
+            -- allow shooting even if role not detected, just need gun and murderer
+            local hasGun = false
+            pcall(function()
+                local ch = lp.Character
+                hasGun = (ch and ch:FindFirstChild("Gun") ~= nil) or (lp:FindFirstChild("Backpack") and lp.Backpack:FindFirstChild("Gun") ~= nil)
+            end)
+            if not hasGun then continue end
+            local target = murderer or findByKnife and findByKnife() or nil
+            if not target then
+                -- try via roleCache
+                pcall(function()
+                    if roleCache then
+                        for uid, role in pairs(roleCache) do
+                            if role=="murderer" then
+                                local pl = players:FindFirstChild(tostring(uid)) or players:GetPlayerByUserId(tonumber(uid) or 0)
+                                if pl then target=pl end
+                            end
+                        end
+                    end
+                end)
+            end
+            if not target or not target.Character then continue end
+            local hum = target.Character:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health<=0 then continue end
+            pcall(function() if fireGunAt then fireGunAt(target, true) end end)
+            task.wait(0.8)
+        end
+    end)
+
+    task.spawn(function()
+        while true do
+            task.wait(0.9)
+            if not (flingSheriff_on and autofarm_on) then continue end
+            if getgenv().AUTOFARM_HOLD and coins_done then continue end -- don't interrupt full bag shooting
+            local d = get_round_data and get_round_data() or nil
+            local me = type(d)=="table" and d[lp.Name] or nil
+            local isInnocent = false
+            if me and me.Role then
+                local r = string.lower(tostring(me.Role))
+                isInnocent = r:find("innocent")~=nil and not r:find("murder") and not r:find("sheriff") and not r:find("hero")
+            else
+                -- fallback via roleCache
+                pcall(function() isInnocent = (roleCache[lp.UserId]=="innocent") end)
+            end
+            if not isInnocent then continue end
+            -- we are innocent, find sheriff with gun
+            local sh = sheriff or findByGun and findByGun() or nil
+            if not sh then
+                pcall(function()
+                    if roleCache then
+                        for uid, role in pairs(roleCache) do
+                            if role=="sheriff" then
+                                local pl = players:GetPlayerByUserId(tonumber(uid) or 0) or players:FindFirstChild(tostring(uid))
+                                if pl then sh=pl end
+                            end
+                        end
+                    end
+                end)
+            end
+            if not sh or sh==lp then continue end
+            local tChar = sh.Character
+            local hasGun = false
+            pcall(function() hasGun = tChar and tChar:FindFirstChild("Gun") ~= nil end)
+            if not hasGun then
+                pcall(function() hasGun = sh:FindFirstChild("Backpack") and sh.Backpack:FindFirstChild("Gun") ~= nil end)
+            end
+            if not hasGun then continue end
+            local myGun = false
+            pcall(function() myGun = lp.Character and lp.Character:FindFirstChild("Gun") ~= nil end)
+            if myGun then continue end -- already have gun
+            -- fling sheriff
+            pcall(function() autofarmFlingTarget(sh) end)
+            task.wait(3.5)
+        end
+    end)
+
     -- ---------- UI (paste names) ----------
     local holder = panel("\x41utofarm", "Shitaro port · Basic/Down · round-aware", "")
     if holder then
@@ -3654,6 +3784,18 @@ do
         makeToggle(holder, "\x61uto kill", function(v)
             autokill_on = v
             update_hold()
+        end, false)
+
+        makeToggle(holder, "Shoot Murder on full bag", function(v)
+            shootFull_on = v
+            pcall(function() NoirGenv().__ShootFull = v end)
+            if v then task.spawn(function() task.wait(0.1) pcall(function() if notify then notify(NoirTr("Shoot Murder on full bag")..": ON", 2) end end) end) end
+        end, false)
+
+        makeToggle(holder, "Auto Fling Sheriff (Innocent)", function(v)
+            flingSheriff_on = v
+            pcall(function() NoirGenv().__FlingSheriff = v end)
+            if v then task.spawn(function() task.wait(0.1) pcall(function() if notify then notify(NoirTr("Auto Fling Sheriff (Innocent)")..": ON", 2) end end) end) end
         end, false)
     end
 end
