@@ -912,6 +912,222 @@ do
         end
         syncRevertControls()
     end
+        -- ================================================================
+        -- NOIR BULLET TRACERS (adapted from Pulse; no Knife Tracers)
+        -- Standalone runtime with Noir's native controls and cleanup.
+        -- ================================================================
+        do
+            local section = tab:AddSection("VISUAL • BULLET TRACERS", "Custom shot trails • Pulse-inspired")
+            local tracer = {
+                enabled = false, method = "Classic", style = "Energy",
+                color = Color3.fromRGB(110, 190, 255), tailColor = Color3.fromRGB(255, 90, 210),
+                rainbow = false, width = 100, speed = 520, life = 1.2,
+                impact = true, muzzle = true, others = false,
+                connections = {}, active = {}, alive = true,
+            }
+            local RunServiceLocal = RunService or game:GetService("RunService")
+            local PlayersLocal = Players or game:GetService("Players")
+            local ReplicatedStorageLocal = ReplicatedStorage or game:GetService("ReplicatedStorage")
+            local WorkspaceLocal = Workspace or workspace
+            local Terrain = WorkspaceLocal.Terrain
+            local texture = {
+                Energy = "rbxassetid://12781800668",
+                Laser = "rbxassetid://12781750620",
+                Lightning = "rbxassetid://12781757438",
+                Plasma = "rbxassetid://7071778278",
+                Fire = "rbxassetid://12781855685",
+                Smoke = "rbxassetid://12781879045",
+                Stardust = "rbxassetid://1851669703",
+            }
+            local styleOptions = {"Energy", "Laser", "Lightning", "Plasma", "Fire", "Smoke", "Stardust"}
+            local methodOptions = {"Classic", "Path Finder"}
+            local function disconnectAll()
+                for _, connection in ipairs(tracer.connections) do pcall(function() connection:Disconnect() end) end
+                table.clear(tracer.connections)
+            end
+            local function removeBundle(bundle)
+                if not bundle or bundle.removed then return end
+                bundle.removed = true
+                for _, item in ipairs(bundle.items) do pcall(function() item:Destroy() end) end
+                tracer.active[bundle] = nil
+            end
+            local function newEffect(position, isImpact, bundle)
+                local attachment = Instance.new("Attachment")
+                attachment.Name = isImpact and "NoirTracerImpact" or "NoirTracerMuzzle"
+                attachment.WorldPosition = position
+                attachment.Parent = Terrain
+                bundle.items[#bundle.items + 1] = attachment
+                local emitter = Instance.new("ParticleEmitter")
+                emitter.Name = "NoirTracerBurst"
+                emitter.Texture = isImpact and "rbxassetid://12403112662" or "rbxassetid://12781803086"
+                emitter.Rate = 0
+                emitter.Lifetime = NumberRange.new(.18, .42)
+                emitter.Speed = NumberRange.new(isImpact and 3 or 1, isImpact and 10 or 5)
+                emitter.SpreadAngle = Vector2.new(180, 180)
+                emitter.LightEmission = 1
+                emitter.Drag = 3
+                emitter.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, isImpact and .32 or .2), NumberSequenceKeypoint.new(1, 0)})
+                emitter.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, .08), NumberSequenceKeypoint.new(1, 1)})
+                emitter.Color = ColorSequence.new(tracer.rainbow and Color3.fromHSV((os.clock() * .2) % 1, 1, 1) or tracer.color, tracer.tailColor)
+                emitter.Parent = attachment
+                pcall(function() emitter:Emit(isImpact and 12 or 7) end)
+            end
+            local function pathPoints(origin, destination)
+                if tracer.method ~= "Path Finder" then return {origin, destination} end
+                local direction = destination - origin
+                if direction.Magnitude < .1 then return {origin, destination} end
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                local exclude = {}
+                for _, player in ipairs(PlayersLocal:GetPlayers()) do
+                    if player.Character then exclude[#exclude + 1] = player.Character end
+                end
+                local camera = WorkspaceLocal.CurrentCamera
+                if camera then exclude[#exclude + 1] = camera end
+                params.FilterDescendantsInstances = exclude
+                local hit = WorkspaceLocal:Raycast(origin, direction, params)
+                if not hit then return {origin, destination} end
+                local side = direction.Unit:Cross(Vector3.yAxis)
+                if side.Magnitude < .1 then side = direction.Unit:Cross(Vector3.xAxis) end
+                if side.Magnitude < .1 then return {origin, destination} end
+                side = side.Unit
+                local candidates = {
+                    hit.Position + side * 5 + Vector3.new(0, 2.5, 0),
+                    hit.Position - side * 5 + Vector3.new(0, 2.5, 0),
+                    hit.Position + Vector3.new(0, 5, 0),
+                }
+                for _, waypoint in ipairs(candidates) do
+                    local first = WorkspaceLocal:Raycast(origin, waypoint - origin, params)
+                    local second = WorkspaceLocal:Raycast(waypoint, destination - waypoint, params)
+                    if not first and not second then return {origin, waypoint, destination} end
+                end
+                return {origin, destination}
+            end
+            local function spawnTracer(origin, destination, preview)
+                if not tracer.alive or typeof(origin) ~= "Vector3" or typeof(destination) ~= "Vector3" then return end
+                if (destination - origin).Magnitude < .05 then return end
+                local bundle = {items = {}, removed = false}
+                tracer.active[bundle] = true
+                local points = pathPoints(origin, destination)
+                local tint = tracer.rainbow and Color3.fromHSV((os.clock() * .22) % 1, .9, 1) or tracer.color
+                local tail = tracer.rainbow and Color3.fromHSV(((os.clock() * .22) + .18) % 1, .9, 1) or tracer.tailColor
+                local widths = {Energy = 3.2, Laser = 1.5, Lightning = 2.8, Plasma = 2.5, Fire = 2.6, Smoke = 2.3, Stardust = 2.4}
+                local beamWidth = (widths[tracer.style] or 2.4) * math.clamp(tracer.width / 100, .4, 2.5)
+                for index = 1, #points - 1 do
+                    local a0 = Instance.new("Attachment")
+                    a0.Name = "NoirBulletTracerA"
+                    a0.WorldPosition = points[index]
+                    a0.Parent = Terrain
+                    local a1 = Instance.new("Attachment")
+                    a1.Name = "NoirBulletTracerB"
+                    a1.WorldPosition = points[index + 1]
+                    a1.Parent = Terrain
+                    local beam = Instance.new("Beam")
+                    beam.Name = "NoirBulletTracer"
+                    beam.Attachment0, beam.Attachment1 = a0, a1
+                    beam.FaceCamera = true
+                    beam.LightEmission, beam.LightInfluence = 1, 0
+                    beam.Color = ColorSequence.new(tail, tint)
+                    beam.Width0, beam.Width1 = beamWidth, math.max(.25, beamWidth * .28)
+                    beam.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, .08), NumberSequenceKeypoint.new(.78, .18), NumberSequenceKeypoint.new(1, 1)})
+                    beam.Texture = texture[tracer.style] or texture.Energy
+                    beam.TextureMode = Enum.TextureMode.Wrap
+                    beam.TextureLength = math.max(1, (points[index + 1] - points[index]).Magnitude / 8)
+                    beam.TextureSpeed = math.clamp(tracer.speed / 130, 1, 12)
+                    beam.Enabled = true
+                    beam.Parent = Terrain
+                    bundle.items[#bundle.items + 1] = a0
+                    bundle.items[#bundle.items + 1] = a1
+                    bundle.items[#bundle.items + 1] = beam
+                end
+                if tracer.muzzle then newEffect(origin, false, bundle) end
+                if tracer.impact then newEffect(destination, true, bundle) end
+                task.delay(math.clamp(tracer.life, .3, 4), function() removeBundle(bundle) end)
+                -- Hard cap protects Terrain from accumulating effects if a runtime stalls.
+                local count = 0
+                for _ in pairs(tracer.active) do count += 1 end
+                if count > 120 then
+                    for old in pairs(tracer.active) do
+                        if old ~= bundle then removeBundle(old); break end
+                    end
+                end
+            end
+            local function resolveOrigin(shooter, fallback, destination)
+                local model
+                if typeof(shooter) == "Instance" then
+                    model = shooter
+                    while model and not (model:IsA("Model") and model:FindFirstChildOfClass("Humanoid")) do model = model.Parent end
+                end
+                if model then
+                    local root = model:FindFirstChild("HumanoidRootPart")
+                    local gunAttachment = root and root:FindFirstChild("GunRaycastAttachment")
+                    if gunAttachment and gunAttachment:IsA("Attachment") then return gunAttachment.WorldPosition, model end
+                    if root and root:IsA("BasePart") then return root.Position, model end
+                    local handle = model:FindFirstChild("Handle", true)
+                    if handle and handle:IsA("BasePart") then return handle.Position, model end
+                end
+                if typeof(shooter) == "Instance" and shooter:IsA("BasePart") then return shooter.Position, model end
+                if typeof(fallback) == "Instance" and fallback:IsA("BasePart") then return fallback.Position, model end
+                if typeof(fallback) == "Vector3" then return fallback, model end
+                return nil, model
+            end
+            local function onGunFired(shooter, fallback, destination)
+                if not tracer.alive or not tracer.enabled or typeof(destination) ~= "Vector3" then return end
+                local origin, model = resolveOrigin(shooter, fallback, destination)
+                if not origin then return end
+                local character = LocalPlayer and LocalPlayer.Character
+                local isLocalShot = model ~= nil and model == character
+                if not isLocalShot and not tracer.others then return end
+                task.spawn(function()
+                    pcall(spawnTracer, origin, destination, false)
+                end)
+            end
+            task.spawn(function()
+                local services = ReplicatedStorageLocal:WaitForChild("ClientServices", 30)
+                local weaponService = services and services:WaitForChild("WeaponService", 30)
+                local event = weaponService and weaponService:WaitForChild("GunFired", 30)
+                if tracer.alive and event and event:IsA("RemoteEvent") then
+                    tracer.connections[#tracer.connections + 1] = event.OnClientEvent:Connect(function(...)
+                        local args = {...}
+                        task.spawn(function() pcall(onGunFired, table.unpack(args)) end)
+                    end)
+                end
+            end)
+            local toggle = section:AddToggle("Bullet Tracers", function(value) tracer.enabled = value == true end)
+            section:AddDropdown("Tracer Method", methodOptions, function(value) tracer.method = value end)
+            section:AddDropdown("Tracer Style", styleOptions, function(value) tracer.style = value end)
+            section:AddColorpicker("Tracer Color", tracer.color, function(value) if typeof(value) == "Color3" then tracer.color = value end end)
+            section:AddColorpicker("Tail Color", tracer.tailColor, function(value) if typeof(value) == "Color3" then tracer.tailColor = value end end)
+            section:AddToggle("Rainbow Tracers", function(value) tracer.rainbow = value == true end)
+            section:AddSlider("Tracer Width", 40, 250, tracer.width, function(value) tracer.width = tonumber(value) or 100 end)
+            section:AddSlider("Tracer Speed", 150, 1500, tracer.speed, function(value) tracer.speed = tonumber(value) or 520 end)
+            section:AddSlider("Tracer Duration", 3, 40, 12, function(value) tracer.life = (tonumber(value) or 12) / 10 end)
+            section:AddToggle("Impact Effect", function(value) tracer.impact = value == true end)
+            section:AddToggle("Muzzle Flash", function(value) tracer.muzzle = value == true end)
+            section:AddToggle("Show Other Shots", function(value) tracer.others = value == true end)
+            section:AddButton("Preview Tracer", function()
+                local camera = WorkspaceLocal.CurrentCamera
+                if camera then spawnTracer(camera.CFrame.Position, camera.CFrame.Position + camera.CFrame.LookVector * 100, true) end
+            end)
+            section:AddButton("Stop / Clear Tracers", function()
+                local bundles = {}
+                for bundle in pairs(tracer.active) do bundles[#bundles + 1] = bundle end
+                for _, bundle in ipairs(bundles) do removeBundle(bundle) end
+            end)
+            section:AddLabel("Local shots only by default. Path Finder tries a clear waypoint around nearby obstruction.")
+            local oldRuntime = NoirGenv().__NoirBulletTracerRuntime
+            if type(oldRuntime) == "table" and type(oldRuntime.Stop) == "function" then pcall(oldRuntime.Stop) end
+            local runtime = {}
+            function runtime.Stop()
+                if not tracer.alive then return end
+                tracer.alive, tracer.enabled = false, false
+                disconnectAll()
+                local bundles = {}
+                for bundle in pairs(tracer.active) do bundles[#bundles + 1] = bundle end
+                for _, bundle in ipairs(bundles) do removeBundle(bundle) end
+            end
+            NoirGenv().__NoirBulletTracerRuntime = runtime
+        end
     buildCombatControls()
 end
 
