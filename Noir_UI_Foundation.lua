@@ -117,6 +117,7 @@ local root = new("CanvasGroup", {
 }, gui)
 round(root, 12)
 outline(root, Theme.border, 0.18, 1)
+local rootScale = new("UIScale", {Scale = 0.94}, root)
 
 
 -- KITI-inspired compact icon rail.
@@ -748,6 +749,7 @@ end)
 -- Responsive scaling for smaller screens.
 local camera = workspace.CurrentCamera
 local function updateScale()
+    if not rootScale or not rootScale.Parent then return end
     local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
     local ratio = math.min(viewport.X / 840, viewport.Y / 560, 1)
     rootScale.Scale = math.clamp(ratio, 0.42, 1)
