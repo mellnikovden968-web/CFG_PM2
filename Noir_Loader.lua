@@ -11,9 +11,9 @@
 ]]
 
 local RAW = {
-    "https://raw.githubusercontent.com/mellnikovden968-web/CFG_PM2/refs/heads/main/Noir_Part1.lua",
-    "https://raw.githubusercontent.com/mellnikovden968-web/CFG_PM2/refs/heads/main/Noir_Part2.lua",
-    "https://raw.githubusercontent.com/mellnikovden968-web/CFG_PM2/refs/heads/main/Noir_Part3.lua",
+    "https://raw.githubusercontent.com/mellnikovden968-web/Gga/refs/heads/main/Noir_Part1.lua",
+    "https://raw.githubusercontent.com/mellnikovden968-web/Gga/refs/heads/main/Noir_Part2.lua",
+    "https://raw.githubusercontent.com/mellnikovden968-web/Gga/refs/heads/main/Noir_Part3.lua",
 }
 
 -- Executor environment --------------------------------------------------------

@@ -4929,10 +4929,12 @@ function fireGunAt(player, usePrediction)
     shootBusy = false
     return success
 end
--- Tering Silent Aim — mode switch
+-- Tering Silent Aim — mode switch (fixed: also hooks GetTargetPosition for proper Pulse behavior)
 do
   local TeringHookInstalled = false
   local OldNamecall = nil
+  local OldGetTarget = nil
+  local OldGetMouse = nil
   local function getMode()
     local ok, m = pcall(function() return NoirGenv().__NoirSilentMode end)
     if ok and (m=="Tering" or m=="Noir") then return m end
@@ -4940,48 +4942,84 @@ do
     if ok2 and (v=="Tering" or v=="Noir") then return v end
     return "Noir"
   end
+  local function getTeringAim()
+    local target = nil
+    pcall(function() target = selectTarget and selectTarget() or nil end)
+    if not target then pcall(function() target = findByKnife and findByKnife() or nil end) end
+    if not target or not target.Parent then return nil end
+    local part = nil
+    pcall(function() part = getAimPart and getAimPart(target) or nil end)
+    if not part or not part.Parent then return nil end
+    local aim = part.Position
+    -- use Noir's calculateAim for ping-adaptive prediction, but Tering uses more direct (no extra offset)
+    pcall(function() if calculateAim then aim = calculateAim(part) end end)
+    return aim
+  end
   local function installTeringHook()
     if TeringHookInstalled then return true end
     if type(hookmetamethod)~="function" or type(getnamecallmethod)~="function" or type(newcclosure)~="function" or type(checkcaller)~="function" then return false end
+    -- Hook FireServer for Shoot
     local ok, hook = pcall(function()
       return hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
         local method = getnamecallmethod()
         if method=="FireServer" and self.Name=="Shoot" and getMode()=="Tering" and config and config.enabled and not checkcaller() then
-          local args = {...}
-          local target = nil
-          pcall(function() target = selectTarget and selectTarget() or nil end)
-          if not target then pcall(function() target = findByKnife and findByKnife() or nil end) end
-          if target and target.Parent then
-            local part = nil
-            pcall(function() part = getAimPart and getAimPart(target) or nil end)
-            if part and part.Parent then
-              local aim = part.Position
-              pcall(function() if calculateAim then aim = calculateAim(part) end end)
-              if typeof(args[1])=="CFrame" then
-                args[1] = CFrame.lookAt(args[1].Position, aim)
-              end
-              if #args>=2 then
-                if typeof(args[2])=="CFrame" then
-                  args[2] = CFrame.new(aim)
-                elseif typeof(args[2])=="Vector3" then
-                  args[2] = aim
-                end
-              end
-              return OldNamecall(self, table.unpack(args))
+          local aim = getTeringAim()
+          if aim then
+            local args = {...}
+            if typeof(args[1])=="CFrame" then
+              args[1] = CFrame.lookAt(args[1].Position, aim)
             end
+            if #args>=2 then
+              if typeof(args[2])=="CFrame" then args[2]=CFrame.new(aim)
+              elseif typeof(args[2])=="Vector3" then args[2]=aim end
+            end
+            return OldNamecall(self, table.unpack(args))
           end
         end
         return OldNamecall(self, ...)
       end))
     end)
-    if ok and hook then OldNamecall = hook; TeringHookInstalled=true; return true end
-    return false
+    if not (ok and hook) then return false end
+    OldNamecall = hook
+    -- Hook GetTargetPosition / GetMouseTargetCFrame for Tering (Pulse style)
+    pcall(function()
+      local ok2, ws = pcall(function() return game:GetService("ReplicatedStorage"):FindFirstChild("ClientServices") and game:GetService("ReplicatedStorage").ClientServices:FindFirstChild("WeaponService") end)
+      -- fallback: try to find WeaponService via getgenv
+      local WeaponService
+      pcall(function() WeaponService = require(game:GetService("ReplicatedStorage").ClientServices.WeaponService) end)
+      if WeaponService and WeaponService.GetTargetPosition and WeaponService.GetMouseTargetCFrame then
+        OldGetTarget = WeaponService.GetTargetPosition
+        OldGetMouse = WeaponService.GetMouseTargetCFrame
+        local origTarget, origMouse = OldGetTarget, OldGetMouse
+        WeaponService.GetTargetPosition = function(self2, ...)
+          if getMode()=="Tering" and config and config.enabled then
+            local aim = getTeringAim()
+            if aim then return CFrame.new(aim) end
+          end
+          return origTarget(self2, ...)
+        end
+        WeaponService.GetMouseTargetCFrame = function(self2, ...)
+          if getMode()=="Tering" and config and config.enabled then
+            local aim = getTeringAim()
+            if aim then return CFrame.new(aim) end
+          end
+          return origMouse(self2, ...)
+        end
+        getgenv().__TeringWS = { origTarget=origTarget, origMouse=origMouse, ws=WeaponService }
+      end
+    end)
+    TeringHookInstalled=true
+    return true
   end
   NoirGenv().__TeringInstall = installTeringHook
   getgenv().__TeringInstall = installTeringHook
   task.spawn(function()
     repeat task.wait(0.5) until config and config.enabled ~= nil
     if getMode()=="Tering" then pcall(installTeringHook) end
+  end)
+  -- also ensure Noir's installHook is re-triggered when switching back to Noir
+  pcall(function()
+    local origDropdown = NoirGenv().__NoirSilentMode
   end)
 end
 
