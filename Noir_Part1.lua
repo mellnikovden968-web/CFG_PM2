@@ -508,8 +508,8 @@ do
     st.dict["Tering"] = "Tering"
     st.dict["BULLET TRACER"] = "Трейсер пуль"
     st.dict["Shoot Murder on full bag"] = "Стрелять в маньяка при полном мешке"
-    st.dict["Auto Fling Sheriff (Innocent)"] = "Авто-флинг шерифа (невиновный)"
-    st.dict["Flings sheriff when you are innocent to steal gun"] = "Флингает шерифа когда ты невиновный чтобы забрать пушку"
+    st.dict["Auto Fling Sheriff on full bag"] = "Авто-флинг шерифа при полном мешке"
+    st.dict["Flings sheriff on full bag to steal gun"] = "Флингает шерифа при полном мешке чтобы забрать пушку"
     local AR_DICT = {
         ["Home"] = "الرئيسية",
         ["Main"] = "الرئيسي",
@@ -840,8 +840,8 @@ do
     AR_DICT["Tering"] = "تيرينغ"
     AR_DICT["BULLET TRACER"] = "تتبع الرصاص"
     AR_DICT["Shoot Murder on full bag"] = "إطلاق النار على القاتل عند امتلاء الحقيبة"
-    AR_DICT["Auto Fling Sheriff (Innocent)"] = "رمي الشريف تلقائيا (بريء)"
-    AR_DICT["Flings sheriff when you are innocent to steal gun"] = "يرمي الشريف عندما تكون بريئا لسرقة السلاح"
+    AR_DICT["Auto Fling Sheriff on full bag"] = "رمي الشريف تلقائيا عند امتلاء الحقيبة"
+    AR_DICT["Flings sheriff on full bag to steal gun"] = "يرمي الشريف عند امتلاء الحقيبة لسرقة السلاح"
     AR_DICT["Touch Fling"] = AR_DICT["Touch Fling"] or "اللمس السريع"
     AR_DICT["👋 Touch Fling"] = AR_DICT["👋 Touch Fling"] or "👋 اللمس السريع"
     AR_DICT["Bind Touch Fling"] = AR_DICT["Bind Touch Fling"] or "ربط اللمس السريع"
@@ -3213,7 +3213,7 @@ do
     local autoreset_on = false
     local autokill_on = false
     local shootFull_on = false
-    local flingSheriff_on = false
+    local flingSheriffFull_on = false
     local coins_done = false
     local saw_coins = false
     local farm_target = nil
@@ -3618,7 +3618,7 @@ do
 
     -- Autofarm: shoot murder on full bag + auto fling sheriff when innocent for gun
     -- Expose flags for external access
-    pcall(function() NoirGenv().__ShootFull = shootFull_on; NoirGenv().__FlingSheriff = flingSheriff_on end)
+    pcall(function() NoirGenv().__ShootFull = shootFull_on; NoirGenv().__FlingSheriffFull = flingSheriffFull_on end)
     -- Simple fling helper for autofarm (does not depend on Part2 SkidFling)
     local function autofarmFlingTarget(targetPlr)
         if not targetPlr or not targetPlr.Parent then return false end
@@ -3694,8 +3694,8 @@ do
     task.spawn(function()
         while true do
             task.wait(0.9)
-            if not (flingSheriff_on and autofarm_on) then continue end
-            if getgenv().AUTOFARM_HOLD and coins_done then continue end -- don't interrupt full bag shooting
+            if not (flingSheriffFull_on and autofarm_on and coins_done) then continue end
+            if getgenv().AUTOFARM_HOLD then continue end
             local d = get_round_data and get_round_data() or nil
             local me = type(d)=="table" and d[lp.Name] or nil
             local isInnocent = false
@@ -3792,10 +3792,10 @@ do
             if v then task.spawn(function() task.wait(0.1) pcall(function() if notify then notify(NoirTr("Shoot Murder on full bag")..": ON", 2) end end) end) end
         end, false)
 
-        makeToggle(holder, "Auto Fling Sheriff (Innocent)", function(v)
-            flingSheriff_on = v
-            pcall(function() NoirGenv().__FlingSheriff = v end)
-            if v then task.spawn(function() task.wait(0.1) pcall(function() if notify then notify(NoirTr("Auto Fling Sheriff (Innocent)")..": ON", 2) end end) end) end
+        makeToggle(holder, "Auto Fling Sheriff on full bag", function(v)
+            flingSheriffFull_on = v
+            pcall(function() NoirGenv().__FlingSheriffFull = v end)
+            if v then task.spawn(function() task.wait(0.1) pcall(function() if notify then notify(NoirTr("Auto Fling Sheriff on full bag")..": ON", 2) end end) end) end
         end, false)
     end
 end
