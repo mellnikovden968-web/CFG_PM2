@@ -4966,14 +4966,21 @@ do
           local aim = getTeringAim()
           if aim then
             local args = {...}
-            if typeof(args[1])=="CFrame" then
-              args[1] = CFrame.lookAt(args[1].Position, aim)
+            -- FIX Pulse-style: only redirect CFrame/Vector3 shoots, skip string-based (GunClient expects string for some assets)
+            local firstType = typeof(args[1])
+            if firstType=="CFrame" or firstType=="Vector3" then
+              if firstType=="CFrame" then
+                args[1] = CFrame.lookAt(args[1].Position, aim)
+              else
+                args[1] = aim
+              end
+              if #args>=2 then
+                if typeof(args[2])=="CFrame" then args[2]=CFrame.new(aim)
+                elseif typeof(args[2])=="Vector3" then args[2]=aim end
+              end
+              return OldNamecall(self, table.unpack(args))
             end
-            if #args>=2 then
-              if typeof(args[2])=="CFrame" then args[2]=CFrame.new(aim)
-              elseif typeof(args[2])=="Vector3" then args[2]=aim end
-            end
-            return OldNamecall(self, table.unpack(args))
+            -- if first arg is string (asset id) - do not intercept, let original pass (prevents "expects string but CFrame" error)
           end
         end
         return OldNamecall(self, ...)
@@ -4994,7 +5001,7 @@ do
         WeaponService.GetTargetPosition = function(self2, ...)
           if getMode()=="Tering" and config and config.enabled then
             local aim = getTeringAim()
-            if aim then return CFrame.new(aim) end
+            if aim then return aim end -- FIX: Must return Vector3, not CFrame (was CFrame.new causing GunClient Line69 CoordinateFrame->bool error)
           end
           return origTarget(self2, ...)
         end
