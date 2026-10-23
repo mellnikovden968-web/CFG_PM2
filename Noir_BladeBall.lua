@@ -563,40 +563,89 @@ task.spawn(function()
         if not SCm then warn("[Noir AP] SwordsController not found") return end
         local PRY = SCm:WaitForChild("PRY", 15)
         if not PRY then warn("[Noir AP] PRY module not found") return end
+        print("[NoirDBG] PRY found, module:", SCm:GetFullName())
         local Parry_Function = require(PRY)
         PF = Parry_Function
+        print("[NoirDBG] require(PRY) ->", type(Parry_Function))
         local getupvals = debug.getupvalues or getupvalues
         if not getupvals then warn("[Noir AP] executor missing getupvalues") return end
         local ups = getupvals(Parry_Function)
         if not ups or #ups < 8 then warn("[Noir AP] unexpected upvalue count") return end
+        for _i = 1, #ups do
+            local _v = ups[_i]
+            local _d = type(_v)
+            if _d == "table" then _d = "table#" .. tostring(#_v) end
+            print(string.format("[NoirDBG] upvalue[%d] = %s (%s)", _i, tostring(_v), _d))
+        end
         _PARRY_PATCH.keyTable    = ups[3]
         _PARRY_PATCH.transformFn = ups[4]
         _PARRY_PATCH.netModule   = ups[6]
         _PARRY_PATCH.remoteId    = ups[7]
         _PARRY_PATCH.parryHash   = ups[8]
-        local rok = pcall(function()
-            _PARRY_PATCH.parryRemote = _PARRY_PATCH.netModule:RemoteEvent(_PARRY_PATCH.remoteId)
+        print("[NoirDBG] remoteId =", tostring(_PARRY_PATCH.remoteId))
+        print("[NoirDBG] parryHash =", tostring(_PARRY_PATCH.parryHash))
+        local _resolved = false
+        local _resThread = task.spawn(function()
+            local ok2, r = pcall(function()
+                return _PARRY_PATCH.netModule:RemoteEvent(_PARRY_PATCH.remoteId)
+            end)
+            if ok2 and r then
+                _PARRY_PATCH.parryRemote = r
+            else
+                warn("[NoirDBG] RemoteEvent() error:", tostring(r))
+            end
+            _resolved = true
         end)
-        if not rok or not _PARRY_PATCH.parryRemote then
+        local _t0 = tick()
+        while not _resolved and tick() - _t0 < 5 do task.wait(0.05) end
+        if not _resolved then
+            warn("[NoirDBG] netModule:RemoteEvent hangs (>5s) - remoteId upvalue index is stale")
+        end
+        pcall(function()
+            task.cancel(_resThread)
+        end)
+        if not _PARRY_PATCH.parryRemote then
+            pcall(function()
+                local net = ReplicatedStorage.Packages._Index["sleitnick_net@0.1.0"].net
+                _PARRY_PATCH.parryRemote = net:WaitForChild(tostring(_PARRY_PATCH.remoteId), 5)
+                if _PARRY_PATCH.parryRemote then
+                    print("[NoirDBG] remote found via net:WaitForChild")
+                end
+            end)
+        end
+        if not _PARRY_PATCH.parryRemote then
             warn("[Noir AP] remote resolution failed")
             return
         end
         _PARRY_PATCH.ready = true
         _G.__noirAPReady = true
+        print("[NoirDBG] engine READY - remote captured:", tostring(_PARRY_PATCH.parryRemote))
     end)
     if not ok then warn("[Noir AP] init error:", tostring(err)) end
 end)
 function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
-    if not _PARRY_PATCH.ready then return false end
+    if not _PARRY_PATCH.ready then
+        if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
+            _PARRY_PATCH._warnT = tick()
+            print("[NoirDBG] fire blocked: engine not ready")
+        end
+        return false
+    end
     local kt = _PARRY_PATCH.keyTable
     if not kt then return false end
     local keyIndex = kt[3]
     local currentKey = kt[1] and kt[1][keyIndex]
-    if not currentKey then return false end
+    if not currentKey then
+        print("[NoirDBG] fire blocked: no currentKey")
+        return false
+    end
     local tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey, "TIME")
     if not tok or not transformed then
         tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey)
-        if not tok or not transformed then return false end
+        if not tok or not transformed then
+            print("[NoirDBG] fire blocked: transformFn failed")
+            return false
+        end
     end
     local serverTime = workspace:GetServerTimeNow() * 100
     local timeStr = tostring(math.floor(serverTime))
@@ -608,6 +657,7 @@ function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
         tc[i] = string.char(bit32.bxor(tb, kb))
     end
     local token = table.concat(tc)
+    print(string.format("[NoirDBG] FIRE -> hash=%s keyOK=%s", tostring(_PARRY_PATCH.parryHash), tostring(currentKey ~= nil)))
     local fok = pcall(function()
         _PARRY_PATCH.parryRemote:FireServer(
             _PARRY_PATCH.parryHash,
@@ -1196,6 +1246,14 @@ function System.autoparry.start()
                         end
                     end)
                 end
+            end
+            if ball_target == LocalPlayer.Name and tick() - (System.__properties.__dbgTick or 0) > 1 then
+                System.__properties.__dbgTick = tick()
+                print(string.format(
+                    "[NoirDBG] ball@me dist=%.1f acc=%.1f curved=%s ready=%s mode=%s",
+                    distance, parry_accuracy, tostring(curved),
+                    tostring(_PARRY_PATCH.ready), tostring(EXT.AutoParryMode)
+                ))
             end
             if ball_target == LocalPlayer.Name and distance <= parry_accuracy then
                 if EXT.AutoParryMode == "Keypress" then
