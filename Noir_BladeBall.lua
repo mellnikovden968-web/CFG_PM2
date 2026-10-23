@@ -549,6 +549,34 @@ local _PARRY_PATCH = {
     keyTable = nil, transformFn = nil, netModule = nil,
     remoteId = nil, parryHash = nil, parryRemote = nil, ready = false,
 }
+local function _serVal(v, depth)
+    depth = depth or 1
+    local t = typeof(v)
+    if t == "string" then
+        if #v > 40 then return '"' .. v:sub(1, 40) .. '.."(len' .. #v .. ')' end
+        return '"' .. v .. '"'
+    end
+    if t == "table" then
+        if depth > 2 then return "{...}" end
+        local parts = {}
+        local c = 0
+        for k, val in pairs(v) do
+            c = c + 1
+            if c > 6 then parts[#parts + 1] = "..." break end
+            parts[#parts + 1] = tostring(k) .. "=" .. _serVal(val, depth + 1)
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    end
+    if t == "Instance" then
+        return v.ClassName .. "[" .. v.Name .. "]"
+    end
+    return tostring(v)
+end
+function _PARRY_PATCH.serargs(a)
+    local parts = {}
+    for i2 = 1, #a do parts[i2] = _serVal(a[i2]) end
+    return table.concat(parts, ", ")
+end
 task.spawn(function()
     local ok, err = pcall(function()
         local Controllers = ReplicatedStorage:WaitForChild("Controllers", 15)
@@ -571,55 +599,88 @@ task.spawn(function()
         if not getupvals then warn("[Noir AP] executor missing getupvalues") return end
         local ups = getupvals(Parry_Function)
         if not ups or #ups < 8 then warn("[Noir AP] unexpected upvalue count") return end
+        local _gu = debug.getupvalue or getupvalue
         for _i = 1, #ups do
             local _v = ups[_i]
             local _d = type(_v)
             if _d == "table" then _d = "table#" .. tostring(#_v) end
-            print(string.format("[NoirDBG] upvalue[%d] = %s (%s)", _i, tostring(_v), _d))
+            if typeof(_v) == "Instance" then _d = _v.ClassName end
+            local _nm = "?"
+            pcall(function() if _gu then _nm = select(1, _gu(Parry_Function, _i)) or "?" end end)
+            print(string.format("[NoirDBG] upvalue[%d] %s = %s (%s)", _i, tostring(_nm), tostring(_v), _d))
         end
         _PARRY_PATCH.keyTable    = ups[3]
         _PARRY_PATCH.transformFn = ups[4]
-        _PARRY_PATCH.netModule   = ups[6]
-        _PARRY_PATCH.remoteId    = ups[7]
         _PARRY_PATCH.parryHash   = ups[8]
-        print("[NoirDBG] remoteId =", tostring(_PARRY_PATCH.remoteId))
-        print("[NoirDBG] parryHash =", tostring(_PARRY_PATCH.parryHash))
-        local _resolved = false
-        local _resThread = task.spawn(function()
-            local ok2, r = pcall(function()
-                return _PARRY_PATCH.netModule:RemoteEvent(_PARRY_PATCH.remoteId)
-            end)
-            if ok2 and r then
-                _PARRY_PATCH.parryRemote = r
-            else
-                warn("[NoirDBG] RemoteEvent() error:", tostring(r))
+
+        local knownStrings = {}
+        for _i = 1, #ups do
+            if type(ups[_i]) == "string" then knownStrings[tostring(ups[_i])] = _i end
+        end
+
+        _PARRY_PATCH.remotes = {}
+        for _i = 1, #ups do
+            local _v = ups[_i]
+            if typeof(_v) == "Instance" and (_v.ClassName == "RemoteEvent" or _v.ClassName == "RemoteFunction") then
+                table.insert(_PARRY_PATCH.remotes, _v)
+                print("[CAPT] watching " .. _v.ClassName .. ":", _v.Name)
             end
-            _resolved = true
-        end)
-        local _t0 = tick()
-        while not _resolved and tick() - _t0 < 5 do task.wait(0.05) end
-        if not _resolved then
-            warn("[NoirDBG] netModule:RemoteEvent hangs (>5s) - remoteId upvalue index is stale")
         end
-        pcall(function()
-            task.cancel(_resThread)
-        end)
-        if not _PARRY_PATCH.parryRemote then
-            pcall(function()
-                local net = ReplicatedStorage.Packages._Index["sleitnick_net@0.1.0"].net
-                _PARRY_PATCH.parryRemote = net:WaitForChild(tostring(_PARRY_PATCH.remoteId), 5)
-                if _PARRY_PATCH.parryRemote then
-                    print("[NoirDBG] remote found via net:WaitForChild")
-                end
-            end)
-        end
-        if not _PARRY_PATCH.parryRemote then
-            warn("[Noir AP] remote resolution failed")
+        if #_PARRY_PATCH.remotes == 0 then
+            warn("[Noir AP] no remote upvalues found in PRY")
             return
         end
-        _PARRY_PATCH.ready = true
-        _G.__noirAPReady = true
-        print("[NoirDBG] engine READY - remote captured:", tostring(_PARRY_PATCH.parryRemote))
+
+        if hookmetamethod then
+            local okNM, nmErr = pcall(function()
+                local ncm
+                ncm = hookmetamethod(game, "__namecall", function(self, ...)
+                    if not _PARRY_PATCH.ready or tick() - (_PARRY_PATCH._sniffT or 0) > 1 then
+                        local okm, method = pcall(getnamecallmethod)
+                        if okm and method == "FireServer" and typeof(self) == "Instance" then
+                            for _, r in ipairs(_PARRY_PATCH.remotes) do
+                                if self == r then
+                                    local a = {...}
+                                    _PARRY_PATCH._sniffT = tick()
+                                    print("[CAPT] " .. self.ClassName .. " [" .. self.Name .. "] :FireServer(" .. _PARRY_PATCH.serargs(a) .. ")")
+                                    if not _PARRY_PATCH.ready then
+                                        if typeof(a[1]) == "string" and #a >= 4 and knownStrings[tostring(a[1])] then
+                                            _PARRY_PATCH.parryRemote = self
+                                            _PARRY_PATCH.parryHash = a[1]
+                                            _PARRY_PATCH.ready = true
+                                            _G.__noirAPReady = true
+                                            print("[CAPT] >>> parry remote ADOPTED:", self.Name, "hash from upvalue[" .. knownStrings[tostring(a[1])] .. "]")
+                                        else
+                                            print("[CAPT] (packet arg1 not a known upvalue string -> not adopting this remote)")
+                                        end
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    return ncm(self, ...)
+                end)
+            end)
+            if not okNM then warn("[Noir AP] namecall hook failed:", tostring(nmErr)) end
+        else
+            warn("[Noir AP] executor missing hookmetamethod")
+        end
+
+        pcall(function()
+            if hookfunction then
+                local _origPry
+                _origPry = hookfunction(Parry_Function, function(...)
+                    local a = {...}
+                    if tick() - (_PARRY_PATCH._pryT or 0) > 0.25 then
+                        _PARRY_PATCH._pryT = tick()
+                        print("[CAPT] PRY(...) called, args=" .. _PARRY_PATCH.serargs(a))
+                    end
+                    return _origPry(...)
+                end)
+            end
+        end)
+        print("[NoirDBG] sniffing active. Parry manually once -> remote gets adopted.")
     end)
     if not ok then warn("[Noir AP] init error:", tostring(err)) end
 end)
@@ -627,7 +688,7 @@ function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
     if not _PARRY_PATCH.ready then
         if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
             _PARRY_PATCH._warnT = tick()
-            print("[NoirDBG] fire blocked: engine not ready")
+            print("[NoirDBG] fire blocked: not ready (parry once manually so engine learns the remote)")
         end
         return false
     end
