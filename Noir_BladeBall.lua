@@ -613,66 +613,12 @@ task.spawn(function()
         _PARRY_PATCH.transformFn = ups[4]
         _PARRY_PATCH.parryHash   = ups[8]
 
-        local knownStrings = {}
-        for _i = 1, #ups do
-            if type(ups[_i]) == "string" then knownStrings[tostring(ups[_i])] = _i end
-        end
-
-        _PARRY_PATCH.remotes = {}
-        for _i = 1, #ups do
-            local _v = ups[_i]
-            if typeof(_v) == "Instance" and (_v.ClassName == "RemoteEvent" or _v.ClassName == "RemoteFunction") then
-                table.insert(_PARRY_PATCH.remotes, _v)
-                print("[CAPT] watching " .. _v.ClassName .. ":", _v.Name)
-            end
-        end
-        if #_PARRY_PATCH.remotes == 0 then
-            warn("[Noir AP] no remote upvalues found in PRY")
-            return
-        end
-
-        if hookmetamethod then
-            local okNM, nmErr = pcall(function()
-                local ncm
-                ncm = hookmetamethod(game, "__namecall", function(self, ...)
-                    if not _PARRY_PATCH.ready or tick() - (_PARRY_PATCH._sniffT or 0) > 1 then
-                        local okm, method = pcall(getnamecallmethod)
-                        if okm and method == "FireServer" and typeof(self) == "Instance" then
-                            for _, r in ipairs(_PARRY_PATCH.remotes) do
-                                if self == r then
-                                    local a = {...}
-                                    _PARRY_PATCH._sniffT = tick()
-                                    print("[CAPT] " .. self.ClassName .. " [" .. self.Name .. "] :FireServer(" .. _PARRY_PATCH.serargs(a) .. ")")
-                                    if not _PARRY_PATCH.ready then
-                                        if typeof(a[1]) == "string" and #a >= 4 and knownStrings[tostring(a[1])] then
-                                            _PARRY_PATCH.parryRemote = self
-                                            _PARRY_PATCH.parryHash = a[1]
-                                            _PARRY_PATCH.ready = true
-                                            _G.__noirAPReady = true
-                                            print("[CAPT] >>> parry remote ADOPTED:", self.Name, "hash from upvalue[" .. knownStrings[tostring(a[1])] .. "]")
-                                        else
-                                            print("[CAPT] (packet arg1 not a known upvalue string -> not adopting this remote)")
-                                        end
-                                    end
-                                    break
-                                end
-                            end
-                        end
-                    end
-                    return ncm(self, ...)
-                end)
-            end)
-            if not okNM then warn("[Noir AP] namecall hook failed:", tostring(nmErr)) end
-        else
-            warn("[Noir AP] executor missing hookmetamethod")
-        end
-
         pcall(function()
             if hookfunction then
                 local _origPry
                 _origPry = hookfunction(Parry_Function, function(...)
                     local a = {...}
-                    if tick() - (_PARRY_PATCH._pryT or 0) > 0.25 then
+                    if tick() - (_PARRY_PATCH._pryT or 0) > 0.4 then
                         _PARRY_PATCH._pryT = tick()
                         print("[CAPT] PRY(...) called, args=" .. _PARRY_PATCH.serargs(a))
                     end
@@ -680,58 +626,33 @@ task.spawn(function()
                 end)
             end
         end)
-        print("[NoirDBG] sniffing active. Parry manually once -> remote gets adopted.")
+        _PARRY_PATCH.ready = true
+        _G.__noirAPReady = true
+        print("[NoirDBG] engine READY (direct PRY call mode)")
     end)
     if not ok then warn("[Noir AP] init error:", tostring(err)) end
 end)
 function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
-    if not _PARRY_PATCH.ready then
+    if not _PARRY_PATCH.ready or type(PF) ~= "function" then
         if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
             _PARRY_PATCH._warnT = tick()
-            print("[NoirDBG] fire blocked: not ready (parry once manually so engine learns the remote)")
+            print("[NoirDBG] fire blocked: PRY not captured yet")
         end
         return false
     end
-    local kt = _PARRY_PATCH.keyTable
-    if not kt then return false end
-    local keyIndex = kt[3]
-    local currentKey = kt[1] and kt[1][keyIndex]
-    if not currentKey then
-        print("[NoirDBG] fire blocked: no currentKey")
+    local ok2, err = pcall(PF, 0.5, curveCFrame, screenPositions, mouseLocation, false)
+    if not ok2 then
+        if tick() - (_PARRY_PATCH._errT or 0) > 3 then
+            _PARRY_PATCH._errT = tick()
+            print("[NoirDBG] PRY call failed:", tostring(err))
+        end
         return false
     end
-    local tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey, "TIME")
-    if not tok or not transformed then
-        tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey)
-        if not tok or not transformed then
-            print("[NoirDBG] fire blocked: transformFn failed")
-            return false
-        end
+    _PARRY_PATCH._fired = (_PARRY_PATCH._fired or 0) + 1
+    if _PARRY_PATCH._fired == 1 or _PARRY_PATCH._fired % 50 == 0 then
+        print("[NoirDBG] FIRE x" .. tostring(_PARRY_PATCH._fired) .. " (direct PRY call OK)")
     end
-    local serverTime = workspace:GetServerTimeNow() * 100
-    local timeStr = tostring(math.floor(serverTime))
-    local tc = {}
-    for i = 1, #timeStr do
-        local ki = (i - 1) % #transformed + 1
-        local kb = string.byte(transformed, ki)
-        local tb = (string.byte(timeStr, i) + i) % 256
-        tc[i] = string.char(bit32.bxor(tb, kb))
-    end
-    local token = table.concat(tc)
-    print(string.format("[NoirDBG] FIRE -> hash=%s keyOK=%s", tostring(_PARRY_PATCH.parryHash), tostring(currentKey ~= nil)))
-    local fok = pcall(function()
-        _PARRY_PATCH.parryRemote:FireServer(
-            _PARRY_PATCH.parryHash,
-            currentKey,
-            token,
-            0.5,
-            curveCFrame,
-            screenPositions,
-            mouseLocation,
-            false
-        )
-    end)
-    return fok
+    return true
 end
 local System = {
     __properties = {
