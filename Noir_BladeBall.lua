@@ -508,7 +508,7 @@ do
             return old_gfenv(l)
         end)
     end)
-    print("[AP] BAC spoof hooks:", ok_hook and "ON" or "FAILED")
+    print("[AP] BAC spoof hooks:", ok_hook and "ON" or "FAILED", "t=" .. tostring(math.floor((tick() - T0) * 1000)) .. "ms")
 end
 local PingCache = 50
 task.spawn(function()
@@ -594,90 +594,88 @@ local function hasWord(s, list)
     end
     return false
 end
-local function isBadName(s)
-    s = string.lower(tostring(s))
-    if string.sub(s, 1, 3) == "get" then return true end
-    if string.sub(s, 1, 2) == "is" then return true end
-    if string.sub(s, 1, 3) == "has" then return true end
-    if string.sub(s, -5) == "count" then return true end
-    if string.sub(s, 1, 2) == "on" then return true end
-    return false
-end
-local function scanTbl(t, path, words)
-    if CtrlFn then return end
-    for k, v in pairs(t) do
-        if type(v) == "function" and hasWord(k, words) then
-            local p = path .. "." .. tostring(k)
-            if #ctrlCandidates < 20 then table.insert(ctrlCandidates, p) end
-            if not isBadName(k) then
-                CtrlFn = v
-                CtrlPath = p
-                return
-            end
-        end
-    end
-    for k, v in pairs(t) do
-        if CtrlFn then return end
-        if type(v) == "table" and tostring(k) ~= "_G" then
-            for k2, f in pairs(v) do
-                if type(f) == "function" and hasWord(k2, words) then
-                    local p = path .. "." .. tostring(k) .. "." .. tostring(k2)
-                    if #ctrlCandidates < 20 then table.insert(ctrlCandidates, p) end
-                    if not isBadName(k2) then
-                        CtrlFn = f
-                        CtrlPath = p
-                        return
-                    end
-                end
-            end
-        end
-    end
+local function typeTag(v)
+    local tv = type(v)
+    if tv == "function" then return "f" end
+    if tv == "table" then return "t" end
+    return string.sub(tv, 1, 1)
 end
 local function findCtrlTrigger(force)
     if ctrlScanned and not force then return end
     ctrlScanned = true
-    local sources = {}
+    print("[AP] caps: getsenv=" .. tostring(type(getsenv) == "function")
+        .. " getloadedmodules=" .. tostring(type(getloadedmodules) == "function"))
+    local nScripts, nMatched = 0, 0
     if type(getsenv) == "function" then
         pcall(function()
             local pscripts = LocalPlayer:FindFirstChild("PlayerScripts")
             if pscripts then
                 for _, d in ipairs(pscripts:GetDescendants()) do
-                    if d:IsA("LocalScript") and hasWord(d.Name, WANT_CTRL) then
-                        local oke, env = pcall(getsenv, d)
-                        if oke and type(env) == "table" then
-                            table.insert(sources, { tbl = env, path = "env:" .. d.Name })
+                    if d:IsA("LocalScript") then
+                        nScripts = nScripts + 1
+                        if hasWord(d.Name, WANT_CTRL) then
+                            nMatched = nMatched + 1
+                            local oke, env = pcall(getsenv, d)
+                            if oke and type(env) == "table" then
+                                local fns = {}
+                                for k, v in pairs(env) do
+                                    if type(v) == "function" and #fns < 25 then
+                                        table.insert(fns, tostring(k))
+                                    end
+                                end
+                                table.sort(fns)
+                                print("[AP] env " .. d.Name .. " fns(" .. tostring(#fns) .. "): " .. table.concat(fns, ", "))
+                                for _, k in ipairs(fns) do
+                                    if hasWord(k, WANT_FN_P1) then
+                                        table.insert(ctrlCandidates, "env:" .. d.Name .. "." .. k)
+                                    end
+                                end
+                            else
+                                print("[AP] env " .. d.Name .. ": getsenv failed")
+                            end
                         end
                     end
                 end
             end
         end)
     end
+    print("[AP] scripts total=" .. tostring(nScripts) .. " matched=" .. tostring(nMatched))
     if type(getloadedmodules) == "function" then
         pcall(function()
             for _, m in ipairs(getloadedmodules()) do
                 if m:IsA("ModuleScript") and hasWord(m.Name, WANT_CTRL) then
                     local okm, tbl = pcall(function() return require(m) end)
                     if okm and type(tbl) == "table" then
-                        table.insert(sources, { tbl = tbl, path = "mod:" .. m.Name })
+                        local parts = {}
+                        for k, v in pairs(tbl) do
+                            if #parts >= 40 then break end
+                            table.insert(parts, tostring(k) .. "(" .. typeTag(v) .. ")")
+                        end
+                        table.sort(parts)
+                        print("[AP] keys mod:" .. m.Name .. ": " .. table.concat(parts, ", "))
+                        for k, v in pairs(tbl) do
+                            if type(v) == "function" and hasWord(k, WANT_FN_P1) then
+                                table.insert(ctrlCandidates, "mod:" .. m.Name .. "." .. tostring(k))
+                            end
+                        end
+                        for k, v in pairs(tbl) do
+                            if type(v) == "table" and tostring(k) ~= "_G" then
+                                for k2, f in pairs(v) do
+                                    if type(f) == "function" and hasWord(k2, WANT_FN_P1) then
+                                        table.insert(ctrlCandidates, "mod:" .. m.Name .. "." .. tostring(k) .. "." .. tostring(k2))
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        print("[AP] mod:" .. m.Name .. " require failed")
                     end
                 end
             end
         end)
     end
-    for _, src in ipairs(sources) do
-        scanTbl(src.tbl, src.path, WANT_FN_P1)
-        if CtrlFn then break end
-    end
-    if not CtrlFn then
-        for _, src in ipairs(sources) do
-            scanTbl(src.tbl, src.path, WANT_FN_P2)
-            if CtrlFn then break end
-        end
-    end
-    if #ctrlCandidates > 0 then
-        print("[AP] ctrl cands: " .. table.concat(ctrlCandidates, ", "))
-    end
-    print("[AP] ctrl trigger: " .. (CtrlFn and tostring(CtrlPath) or ("not found (" .. tostring(#sources) .. " sources)")))
+    print("[AP] ctrl cands: " .. (#ctrlCandidates > 0 and table.concat(ctrlCandidates, ", ") or "none"))
+    print("[AP] scan done t=" .. tostring(math.floor((tick() - T0) * 1000)) .. "ms")
 end
 task.delay(4, function() pcall(findCtrlTrigger) end)
 local function apFire()
