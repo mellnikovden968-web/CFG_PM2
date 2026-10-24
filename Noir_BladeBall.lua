@@ -486,32 +486,7 @@ local function addInfo(holder, text)
 end
 local Players2 = LocalPlayer
 local T0 = tick()
-print("[AP] boot t0")
-do
-    local ok_hook = pcall(function()
-        if type(hookfunction) ~= "function" or type(getrenv) ~= "function" then
-            error("no hookfunction/getrenv")
-        end
-        local renv = getrenv()
-        local old_dinfo
-        old_dinfo = hookfunction(renv.debug.info, function(f, t)
-            if type(f) == "function" then
-                return "[C]"
-            elseif f == 4 and t == "s" then
-                return "ReplicatedStorage.Controllers.SwordsController "
-            end
-            return old_dinfo(f, t)
-        end)
-        local old_gfenv
-        old_gfenv = hookfunction(renv.getfenv, function(l)
-            if l ~= nil and type(l) == "number" then
-                if l >= 1 and l <= 10 then return old_gfenv(10) end
-            end
-            return old_gfenv(l)
-        end)
-    end)
-    print("[AP] BAC spoof hooks:", ok_hook and "ON" or "FAILED", "t=" .. tostring(math.floor((tick() - T0) * 1000)) .. "ms")
-end
+print("[AP] boot t0 (clean build: no hooks, no env scan)")
 local PingCache = 50
 task.spawn(function()
     local network = Stats:WaitForChild("Network", 30)
@@ -604,123 +579,13 @@ local function scanTriggerButtons(force)
         end
     end
 end
-local WANT_CTRL = { "sword", "parry", "controller", "combat", "weapon", "input" }
-local WANT_FN_P1 = { "parry", "attempt", "block", "deflect", "riposte" }
-local WANT_FN_P2 = { "attack", "swing", "slash", "ability" }
-local CtrlFn = nil
-local CtrlPath = nil
-local ctrlScanned = false
-local ctrlCandidates = {}
-local function hasWord(s, list)
-    s = string.lower(tostring(s))
-    for _, w in ipairs(list) do
-        if string.find(s, w, 1, true) then return true end
-    end
-    return false
-end
-local function typeTag(v)
-    local tv = type(v)
-    if tv == "function" then return "f" end
-    if tv == "table" then return "t" end
-    return string.sub(tv, 1, 1)
-end
-local function findCtrlTrigger(force)
-    if ctrlScanned and not force then return end
-    ctrlScanned = true
-    print("[AP] caps: getsenv=" .. tostring(type(getsenv) == "function")
-        .. " getloadedmodules=" .. tostring(type(getloadedmodules) == "function"))
-    local nScripts, nMatched = 0, 0
-    if type(getsenv) == "function" then
-        pcall(function()
-            local pscripts = LocalPlayer:FindFirstChild("PlayerScripts")
-            if pscripts then
-                for _, d in ipairs(pscripts:GetDescendants()) do
-                    if d:IsA("LocalScript") then
-                        nScripts = nScripts + 1
-                        if hasWord(d.Name, WANT_CTRL) then
-                            nMatched = nMatched + 1
-                            local oke, env = pcall(getsenv, d)
-                            if oke and type(env) == "table" then
-                                local fns = {}
-                                for k, v in pairs(env) do
-                                    if type(v) == "function" and #fns < 25 then
-                                        table.insert(fns, tostring(k))
-                                    end
-                                end
-                                table.sort(fns)
-                                print("[AP] env " .. d.Name .. " fns(" .. tostring(#fns) .. "): " .. table.concat(fns, ", "))
-                                for _, k in ipairs(fns) do
-                                    if hasWord(k, WANT_FN_P1) then
-                                        table.insert(ctrlCandidates, "env:" .. d.Name .. "." .. k)
-                                    end
-                                end
-                            else
-                                print("[AP] env " .. d.Name .. ": getsenv failed")
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-    end
-    print("[AP] scripts total=" .. tostring(nScripts) .. " matched=" .. tostring(nMatched))
-    if type(getloadedmodules) == "function" then
-        pcall(function()
-            for _, m in ipairs(getloadedmodules()) do
-                if m:IsA("ModuleScript") and hasWord(m.Name, WANT_CTRL) then
-                    local okm, tbl = pcall(function() return require(m) end)
-                    if okm and type(tbl) == "table" then
-                        local parts = {}
-                        for k, v in pairs(tbl) do
-                            if #parts >= 40 then break end
-                            table.insert(parts, tostring(k) .. "(" .. typeTag(v) .. ")")
-                        end
-                        table.sort(parts)
-                        print("[AP] keys mod:" .. m.Name .. ": " .. table.concat(parts, ", "))
-                        for k, v in pairs(tbl) do
-                            if type(v) == "function" and hasWord(k, WANT_FN_P1) then
-                                table.insert(ctrlCandidates, "mod:" .. m.Name .. "." .. tostring(k))
-                            end
-                        end
-                        for k, v in pairs(tbl) do
-                            if type(v) == "table" and tostring(k) ~= "_G" then
-                                for k2, f in pairs(v) do
-                                    if type(f) == "function" and hasWord(k2, WANT_FN_P1) then
-                                        table.insert(ctrlCandidates, "mod:" .. m.Name .. "." .. tostring(k) .. "." .. tostring(k2))
-                                    end
-                                end
-                            end
-                        end
-                    else
-                        print("[AP] mod:" .. m.Name .. " require failed")
-                    end
-                end
-            end
-        end)
-    end
-    print("[AP] ctrl cands: " .. (#ctrlCandidates > 0 and table.concat(ctrlCandidates, ", ") or "none"))
-    print("[AP] scan done t=" .. tostring(math.floor((tick() - T0) * 1000)) .. "ms")
-end
-task.delay(4, function() pcall(findCtrlTrigger) end)
 local function apFire()
     local char, root = getChar()
     if not char or not root then return end
     local mode = tostring(CFG.apTrigger or "Auto")
     if mode == "Auto" then
-        if not ctrlScanned then pcall(findCtrlTrigger) end
-        if CtrlFn then mode = "Ctrl"
-        else
-            scanTriggerButtons(false)
-            mode = (#triggerEntries > 0) and "Button" or "Tap"
-        end
-    end
-    if mode == "Ctrl" then
-        if not ctrlScanned then pcall(findCtrlTrigger) end
-        if CtrlFn then
-            task.spawn(function() pcall(CtrlFn) end)
-            return
-        end
-        mode = "Tap"
+        scanTriggerButtons(false)
+        mode = (#triggerEntries > 0) and "Button" or "Tap"
     end
     if mode == "Button" then
         scanTriggerButtons(false)
@@ -898,23 +763,18 @@ function AP.setEnabled(v)
     refreshApMobileText()
 end
 function AP.setTrigger(name)
-    if name == "Auto" or name == "Button" or name == "Tap" or name == "Ctrl" then
+    if name == "Auto" or name == "Button" or name == "Tap" then
         CFG.apTrigger = name
     else
         CFG.apTrigger = "Auto"
     end
-    scanTriggerButtons(true)
-    if name == "Ctrl" and not ctrlScanned then task.spawn(function() pcall(findCtrlTrigger) end) end
+    if APEng.enabled then scanTriggerButtons(true) end
 end
 function AP.ping()
     return PingCache
 end
 function AP.triggerText()
-    scanTriggerButtons(false)
     local base = tostring(CFG.apTrigger or "Auto")
-    if CtrlFn then
-        return base .. " (ctrl)"
-    end
     if #triggerEntries > 0 then
         return base .. " (btn x" .. tostring(#triggerEntries) .. ")"
     end
@@ -948,7 +808,7 @@ addSlider(hParry, "Parry reach", 1, 100, 1,
 reg("apAccuracy",
     function() return CFG.apAccuracy end,
     function(v) CFG.apAccuracy = math.clamp(tonumber(v) or 60, 1, 100) end)
-addCycle(hParry, "Trigger", { "Auto", "Ctrl", "Button", "Tap" },
+addCycle(hParry, "Trigger", { "Auto", "Button", "Tap" },
     function() return CFG.apTrigger end,
     function(v) AP.setTrigger(v) if repaintFns.apTrigger then pcall(repaintFns.apTrigger) end saveConfig() end, "apTrigger")
 reg("apTrigger",
