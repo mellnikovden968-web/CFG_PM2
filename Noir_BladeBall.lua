@@ -494,6 +494,31 @@ local function addInfo(holder, text)
     return val
 end
 local Players2 = LocalPlayer
+do
+    local ok_hook = pcall(function()
+        if type(hookfunction) ~= "function" or type(getrenv) ~= "function" then
+            error("no hookfunction/getrenv")
+        end
+        local renv = getrenv()
+        local old_dinfo
+        old_dinfo = hookfunction(renv.debug.info, function(f, t)
+            if type(f) == "function" then
+                return "[C]"
+            elseif f == 4 and t == "s" then
+                return "ReplicatedStorage.Controllers.SwordsController "
+            end
+            return old_dinfo(f, t)
+        end)
+        local old_gfenv
+        old_gfenv = hookfunction(renv.getfenv, function(l)
+            if l ~= nil and type(l) == "number" then
+                if l >= 1 and l <= 10 then return old_gfenv(10) end
+            end
+            return old_gfenv(l)
+        end)
+    end)
+    print("[AP] BAC spoof hooks:", ok_hook and "ON" or "FAILED")
+end
 local ControlModule = nil
 pcall(function()
     local pm = Players.PlayerScripts:WaitForChild("PlayerModule", 10)
@@ -596,15 +621,23 @@ local function apFire()
     local cam = workspace.CurrentCamera
     if not cam then return end
     local vp = cam.ViewportSize
-    local mx, my = vp.X * 0.5, vp.Y * 0.5
+    local mx = vp.X * 0.5 + math.random(-24, 24)
+    local my = vp.Y * 0.5 + math.random(-24, 24)
     if IS_MOBILE then
-        local t1 = pcall(function() VIM:SendTouchTap(mx, my, false) end)
-        if not t1 then
-            pcall(function() VIM:SendTouchTap(Vector2.new(mx, my), false) end)
+        local okTap = pcall(function()
+            local p1 = Vector2.new(mx, my)
+            VIM:SendTouchEvent(1, 0, p1)
+            task.wait(0.02 + math.random() * 0.05)
+            local p2 = Vector2.new(mx + math.random(-3, 3), my + math.random(-3, 3))
+            VIM:SendTouchEvent(1, 2, p2)
+        end)
+        if not okTap then
+            pcall(function() VIM:SendTouchTap(mx, my, false) end)
         end
     else
         pcall(function()
             VIM:SendMouseButtonEvent(mx, my, 0, true, game, 1)
+            task.wait(0.02 + math.random() * 0.05)
             VIM:SendMouseButtonEvent(mx, my, 0, false, game, 1)
         end)
     end
@@ -717,14 +750,18 @@ UserInputService.JumpRequest:Connect(function()
         pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
     end
 end)
+local lastFovApplied = -1
 task.spawn(function()
     while true do
         task.wait(0.6)
         local f = tonumber(CFG.fov) or 70
-        pcall(function()
-            local cam = workspace.CurrentCamera
-            if cam then cam.FieldOfView = f end
-        end)
+        if f ~= lastFovApplied then
+            lastFovApplied = f
+            pcall(function()
+                local cam = workspace.CurrentCamera
+                if cam then cam.FieldOfView = f end
+            end)
+        end
     end
 end)
 local Lighting = game:GetService("Lighting")
