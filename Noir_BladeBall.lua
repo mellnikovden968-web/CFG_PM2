@@ -563,12 +563,14 @@ task.spawn(function()
         local ups = getupvals(Parry_Function)
         if not ups then return end
         print("[PROBE] PRY upvalues: " .. tostring(#ups))
+        _PARRY_PATCH.watchList = {}
         for _i = 1, #ups do
             local _v = ups[_i]
             local _d = typeof(_v)
             if _d == "Instance" then
                 print(string.format("[PROBE] upvalue[%d] %s name=%s path=%s", _i, _v.ClassName, tostring(_v.Name), _v:GetFullName()))
                 if _v.ClassName == "RemoteEvent" or _v.ClassName == "RemoteFunction" then
+                    _PARRY_PATCH.watchList[_v] = _i
                     local rv = _v
                     pcall(function()
                         rv.OnClientEvent:Connect(function(...)
@@ -587,13 +589,50 @@ task.spawn(function()
                 print(string.format("[PROBE] upvalue[%d] %s", _i, _d))
             end
         end
+        local r1
+        for rv in pairs(_PARRY_PATCH.watchList) do
+            if not r1 then r1 = rv end
+        end
+        if r1 and hookfunction then
+            local okh, herr = pcall(function()
+                local origFS
+                origFS = hookfunction(r1.FireServer, function(self, ...)
+                    if _PARRY_PATCH.watchList and _PARRY_PATCH.watchList[self] then
+                        local uvIdx = _PARRY_PATCH.watchList[self]
+                        local a = {...}
+                        local sig = {}
+                        for j = 1, math.min(#a, 12) do
+                            local tv = typeof(a[j])
+                            if tv == "string" and #a[j] > 16 then tv = "str(" .. #a[j] .. ")" end
+                            sig[j] = tv
+                        end
+                        print(string.format("[PROBE] FIRE caught on upvalue[%d] %s | n=%d types=%s",
+                            uvIdx, tostring(self.Name), #a, table.concat(sig, ",")))
+                        if #a >= 6 and typeof(a[1]) == "string" and typeof(a[4]) == "number" and typeof(a[5]) == "CFrame" then
+                            print("[PROBE] >>> PARRY PACKET CONFIRMED: remote = upvalue[" .. tostring(uvIdx) .. "]")
+                            print(string.format("[PROBE] a1=%s a2=%s a4=%s a8=%s",
+                                tostring(a[1]), tostring(a[2]), tostring(a[4]), tostring(a[8])))
+                            _PARRY_PATCH.parryUpvalue = uvIdx
+                            _PARRY_PATCH.parryRemote = self
+                            _PARRY_PATCH.ready = true
+                            _G.__noirAPReady = true
+                        end
+                    end
+                    return origFS(self, ...)
+                end)
+            end)
+            if okh then print("[PROBE] lean FireServer hook ON")
+            else warn("[PROBE] hook failed:", tostring(herr)) end
+        end
     end)
     if not ok then warn("[Noir AP] probe error:", tostring(err)) end
 end)
 function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
-    if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
-        _PARRY_PATCH._warnT = tick()
-        print("[NoirDBG] fire disarmed (probe build)")
+    if not _PARRY_PATCH.ready then
+        if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
+            _PARRY_PATCH._warnT = tick()
+            print("[NoirDBG] fire disarmed (parry manually once to confirm remote)")
+        end
     end
     return false
 end
