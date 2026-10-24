@@ -485,6 +485,8 @@ local function addInfo(holder, text)
     return val
 end
 local Players2 = LocalPlayer
+local T0 = tick()
+print("[AP] boot t0")
 do
     local ok_hook = pcall(function()
         if type(hookfunction) ~= "function" or type(getrenv) ~= "function" then
@@ -550,7 +552,18 @@ local VIM = game:GetService("VirtualInputManager")
 local triggerEntries = {}
 local triggerEntriesAt = 0
 local triggerAnnounced = false
-local TRIGGER_KEYS = { "parry", "block", "attack", "action", "hitbutton", "slash" }
+local TRIGGER_KEYS = { "parry", "block", "attack", "action", "hitbutton", "slash", "shield", "guard", "defence", "defense", "\208\177\208\187\208\190\208\186", "\209\137\208\184\209\130", "\208\145\208\155\208\158\208\154", "\208\169\208\152\208\162" }
+local function fakeInputObject()
+    local cam = workspace.CurrentCamera
+    local vp = cam and cam.ViewportSize or Vector2.new(500, 500)
+    return {
+        UserInputType = Enum.UserInputType.Touch,
+        UserInputState = Enum.UserInputState.Begin,
+        Position = Vector3.new(vp.X * 0.5, vp.Y * 0.5, 0),
+        Delta = Vector3.new(),
+        KeyCode = Enum.KeyCode.Unknown,
+    }
+end
 local function scanTriggerButtons(force)
     if not getconnections then return end
     if not force and tick() - triggerEntriesAt < 3 then return end
@@ -560,14 +573,25 @@ local function scanTriggerButtons(force)
     local found = {}
     for _, inst in ipairs(pg:GetDescendants()) do
         if inst:IsA("GuiButton") then
-            local n = string.lower(inst.Name)
+            local hay = string.lower(inst.Name)
+            for _, d in ipairs(inst:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    local t = d.Text
+                    if type(t) == "string" and #t > 0 then hay = hay .. " " .. string.lower(t) end
+                end
+            end
+            local matched = false
             for _, k in ipairs(TRIGGER_KEYS) do
-                if n:find(k, 1, true) then
-                    local okc, conns = pcall(function() return getconnections(inst.MouseButton1Click) end)
-                    if okc and conns and #conns > 0 then
-                        table.insert(found, { btn = inst, conns = conns, name = inst:GetFullName() })
-                    end
-                    break
+                if hay:find(k, 1, true) then matched = true break end
+            end
+            if matched then
+                local clickConns, beganConns = {}, {}
+                local ok1, c1 = pcall(function() return getconnections(inst.MouseButton1Click) end)
+                if ok1 and c1 then clickConns = c1 end
+                local ok2, c2 = pcall(function() return getconnections(inst.InputBegan) end)
+                if ok2 and c2 then beganConns = c2 end
+                if #clickConns > 0 or #beganConns > 0 then
+                    table.insert(found, { btn = inst, click = clickConns, began = beganConns, name = inst:GetFullName() })
                 end
             end
         end
@@ -576,7 +600,7 @@ local function scanTriggerButtons(force)
     if #found > 0 and not triggerAnnounced then
         triggerAnnounced = true
         for _, e in ipairs(found) do
-            print("[AP] trigger button:", e.name)
+            print("[AP] trigger button:", e.name, "click=" .. tostring(#e.click), "began=" .. tostring(#e.began))
         end
     end
 end
@@ -702,9 +726,15 @@ local function apFire()
         scanTriggerButtons(false)
         if #triggerEntries > 0 then
             for _, e in ipairs(triggerEntries) do
-                for _, conn in ipairs(e.conns) do
+                for _, conn in ipairs(e.click) do
                     task.spawn(function()
                         pcall(function() conn:Fire() end)
+                    end)
+                end
+                for _, conn in ipairs(e.began) do
+                    task.spawn(function()
+                        local okF = pcall(function() conn:Fire(fakeInputObject()) end)
+                        if not okF then pcall(function() conn:Fire() end) end
                     end)
                 end
             end
