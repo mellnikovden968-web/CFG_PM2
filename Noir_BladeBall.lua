@@ -596,13 +596,115 @@ local function scanTriggerButtons(force)
         end
     end
 end
+local WANT_CTRL = { "sword", "parry", "controller", "combat", "weapon", "input" }
+local WANT_FN_P1 = { "parry", "attempt", "block", "deflect", "riposte", "tapparry" }
+local WANT_FN_P2 = { "attack", "swing", "slash", "swinglade", "ability" }
+local CtrlFn = nil
+local CtrlPath = nil
+local ctrlScanned = false
+local ctrlCandidates = {}
+local function hasWord(s, list)
+    s = string.lower(tostring(s))
+    for _, w in ipairs(list) do
+        if string.find(s, w, 1, true) then return true end
+    end
+    return false
+end
+local function scanTbl(t, path, words, depth)
+    if CtrlFn then return end
+    depth = depth or 0
+    for k, v in pairs(t) do
+        if type(v) == "function" and hasWord(k, words) then
+            CtrlFn = v
+            CtrlPath = path .. "." .. tostring(k)
+            return
+        end
+    end
+    if depth < 1 then
+        for k, v in pairs(t) do
+            if CtrlFn then return end
+            if type(v) == "table" then
+                for k2, f in pairs(v) do
+                    if type(f) == "function" and hasWord(k2, words) then
+                        CtrlFn = f
+                        CtrlPath = path .. "." .. tostring(k) .. "." .. tostring(k2)
+                        table.insert(ctrlCandidates, CtrlPath)
+                        return
+                    end
+                end
+            end
+        end
+    end
+end
+local function findCtrlTrigger(force)
+    if ctrlScanned and not force then return end
+    ctrlScanned = true
+    local sources = {}
+    if type(getsenv) == "function" then
+        pcall(function()
+            local containers = {}
+            local pscripts = LocalPlayer:FindFirstChild("PlayerScripts")
+            if pscripts then table.insert(containers, pscripts) end
+            for _, cont in ipairs(containers) do
+                for _, d in ipairs(cont:GetDescendants()) do
+                    if d:IsA("LocalScript") and (d.Enabled or d.Disabled == false) and hasWord(d.Name, WANT_CTRL) then
+                        local oke, env = pcall(getsenv, d)
+                        if oke and type(env) == "table" then
+                            table.insert(sources, { tbl = env, path = "env:" .. d.Name })
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    if type(getloadedmodules) == "function" then
+        pcall(function()
+            for _, m in ipairs(getloadedmodules()) do
+                if m:IsA("ModuleScript") and hasWord(m.Name, WANT_CTRL) then
+                    local okm, tbl = pcall(function() return require(m) end)
+                    if okm and type(tbl) == "table" then
+                        table.insert(sources, { tbl = tbl, path = "mod:" .. m.Name })
+                    end
+                end
+            end
+        end)
+    end
+    for _, src in ipairs(sources) do
+        scanTbl(src.tbl, src.path, WANT_FN_P1, 0)
+        if CtrlFn then break end
+    end
+    if not CtrlFn then
+        for _, src in ipairs(sources) do
+            scanTbl(src.tbl, src.path, WANT_FN_P2, 0)
+            if CtrlFn then break end
+        end
+    end
+    if CtrlFn then
+        print("[AP] ctrl trigger: " .. tostring(CtrlPath))
+    else
+        print("[AP] ctrl trigger: not found (" .. tostring(#sources) .. " sources scanned)")
+    end
+end
+task.delay(4, function() pcall(findCtrlTrigger) end)
 local function apFire()
     local char, root = getChar()
     if not char or not root then return end
     local mode = tostring(CFG.apTrigger or "Auto")
     if mode == "Auto" then
-        scanTriggerButtons(false)
-        mode = (#triggerEntries > 0) and "Button" or "Tap"
+        if not ctrlScanned then pcall(findCtrlTrigger) end
+        if CtrlFn then mode = "Ctrl"
+        else
+            scanTriggerButtons(false)
+            mode = (#triggerEntries > 0) and "Button" or "Tap"
+        end
+    end
+    if mode == "Ctrl" then
+        if not ctrlScanned then pcall(findCtrlTrigger) end
+        if CtrlFn then
+            task.spawn(function() pcall(CtrlFn) end)
+            return
+        end
+        mode = "Tap"
     end
     if mode == "Button" then
         scanTriggerButtons(false)
@@ -891,12 +993,13 @@ function AP.setEnabled(v)
     refreshApMobileText()
 end
 function AP.setTrigger(name)
-    if name == "Auto" or name == "Button" or name == "Tap" then
+    if name == "Auto" or name == "Button" or name == "Tap" or name == "Ctrl" then
         CFG.apTrigger = name
     else
         CFG.apTrigger = "Auto"
     end
     scanTriggerButtons(true)
+    if name == "Ctrl" and not ctrlScanned then task.spawn(function() pcall(findCtrlTrigger) end) end
 end
 function AP.ping()
     return PingCache
@@ -904,6 +1007,9 @@ end
 function AP.triggerText()
     scanTriggerButtons(false)
     local base = tostring(CFG.apTrigger or "Auto")
+    if CtrlFn then
+        return base .. " (ctrl)"
+    end
     if #triggerEntries > 0 then
         return base .. " (btn x" .. tostring(#triggerEntries) .. ")"
     end
@@ -939,7 +1045,7 @@ addSlider(hParry, "Parry reach", 1, 100, 1,
 reg("apAccuracy",
     function() return CFG.apAccuracy end,
     function(v) CFG.apAccuracy = math.clamp(tonumber(v) or 60, 1, 100) end)
-addCycle(hParry, "Trigger", { "Auto", "Button", "Tap" },
+addCycle(hParry, "Trigger", { "Auto", "Ctrl", "Button", "Tap" },
     function() return CFG.apTrigger end,
     function(v) AP.setTrigger(v) if repaintFns.apTrigger then pcall(repaintFns.apTrigger) end saveConfig() end, "apTrigger")
 reg("apTrigger",
