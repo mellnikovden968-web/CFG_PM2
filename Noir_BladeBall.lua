@@ -613,44 +613,111 @@ task.spawn(function()
         _PARRY_PATCH.transformFn = ups[4]
         _PARRY_PATCH.parryHash   = ups[8]
 
-        pcall(function()
-            if hookfunction then
-                local _origPry
-                _origPry = hookfunction(Parry_Function, function(...)
-                    local a = {...}
-                    if tick() - (_PARRY_PATCH._pryT or 0) > 0.4 then
-                        _PARRY_PATCH._pryT = tick()
-                        print("[CAPT] PRY(...) called, args=" .. _PARRY_PATCH.serargs(a))
-                    end
-                    return _origPry(...)
-                end)
+        local knownStrings = {}
+        for _i = 1, #ups do
+            if type(ups[_i]) == "string" then knownStrings[tostring(ups[_i])] = _i end
+        end
+
+        _PARRY_PATCH.remotes = {}
+        for _i = 1, #ups do
+            local _v = ups[_i]
+            if typeof(_v) == "Instance" and (_v.ClassName == "RemoteEvent" or _v.ClassName == "RemoteFunction") then
+                table.insert(_PARRY_PATCH.remotes, _v)
+                print("[CAPT] watching " .. _v.ClassName .. ":", _v.Name)
             end
+        end
+        if #_PARRY_PATCH.remotes == 0 then
+            warn("[Noir AP] no remote upvalues found in PRY")
+            return
+        end
+
+        local okHook, hookErr = pcall(function()
+            if not hookfunction then error("no hookfunction") end
+            local baseFS = _PARRY_PATCH.remotes[1].FireServer
+            local origFS
+            origFS = hookfunction(baseFS, function(self, ...)
+                if typeof(self) == "Instance" then
+                    for _, r in ipairs(_PARRY_PATCH.remotes) do
+                        if self == r then
+                            local a = {...}
+                            if not _PARRY_PATCH.ready then
+                                print("[CAPT] FireServer [" .. self.Name .. "] args=" .. _PARRY_PATCH.serargs(a))
+                            end
+                            if not _PARRY_PATCH.ready and typeof(a[1]) == "string" and #a >= 6 and knownStrings[tostring(a[1])] then
+                                _PARRY_PATCH.parryRemote = self
+                                _PARRY_PATCH.parryHash = a[1]
+                                _PARRY_PATCH.ready = true
+                                _G.__noirAPReady = true
+                                print("[CAPT] >>> parry remote ADOPTED (hash=upvalue[" .. tostring(knownStrings[tostring(a[1])]) .. "])")
+                            end
+                            break
+                        end
+                    end
+                end
+                return origFS(self, ...)
+            end)
         end)
-        _PARRY_PATCH.ready = true
-        _G.__noirAPReady = true
-        print("[NoirDBG] engine READY (direct PRY call mode)")
+        if not okHook then warn("[Noir AP] FireServer hook failed:", tostring(hookErr)) end
+        print("[NoirDBG] sniffing FireServer. Parry manually once -> remote gets adopted.")
     end)
     if not ok then warn("[Noir AP] init error:", tostring(err)) end
 end)
 function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
-    if not _PARRY_PATCH.ready or type(PF) ~= "function" then
+    if not _PARRY_PATCH.ready or not _PARRY_PATCH.parryRemote then
         if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
             _PARRY_PATCH._warnT = tick()
-            print("[NoirDBG] fire blocked: PRY not captured yet")
+            print("[NoirDBG] fire blocked: waiting for one manual parry (remote sniff)")
         end
         return false
     end
-    local ok2, err = pcall(PF, 0.5, curveCFrame, screenPositions, mouseLocation, false)
-    if not ok2 then
+    local kt = _PARRY_PATCH.keyTable
+    if type(kt) ~= "table" or type(_PARRY_PATCH.transformFn) ~= "function" then
+        return false
+    end
+    local keyIndex = kt[3]
+    local currentKey = kt[1] and kt[1][keyIndex]
+    if currentKey == nil then
+        return false
+    end
+    local tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey, "TIME")
+    if not tok or not transformed then
+        tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey)
+        if not tok or not transformed then
+            return false
+        end
+    end
+    local serverTime = workspace:GetServerTimeNow() * 100
+    local timeStr = tostring(math.floor(serverTime))
+    local tc = {}
+    for i = 1, #timeStr do
+        local ki = (i - 1) % #transformed + 1
+        local kb = string.byte(transformed, ki)
+        local tb = (string.byte(timeStr, i) + i) % 256
+        tc[i] = string.char(bit32.bxor(tb, kb))
+    end
+    local token = table.concat(tc)
+    local fok, ferr = pcall(function()
+        _PARRY_PATCH.parryRemote:FireServer(
+            _PARRY_PATCH.parryHash,
+            currentKey,
+            token,
+            0.5,
+            curveCFrame,
+            screenPositions,
+            mouseLocation,
+            false
+        )
+    end)
+    if not fok then
         if tick() - (_PARRY_PATCH._errT or 0) > 3 then
             _PARRY_PATCH._errT = tick()
-            print("[NoirDBG] PRY call failed:", tostring(err))
+            print("[NoirDBG] FireServer failed:", tostring(ferr))
         end
         return false
     end
     _PARRY_PATCH._fired = (_PARRY_PATCH._fired or 0) + 1
     if _PARRY_PATCH._fired == 1 or _PARRY_PATCH._fired % 50 == 0 then
-        print("[NoirDBG] FIRE x" .. tostring(_PARRY_PATCH._fired) .. " (direct PRY call OK)")
+        print("[NoirDBG] FIRE x" .. tostring(_PARRY_PATCH._fired) .. " (raw packet OK)")
     end
     return true
 end
