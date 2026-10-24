@@ -517,158 +517,44 @@ local EXT = {
     skinChangerEnabled = false,
     swordAnimations = nil,
 }
-print("[NoirDBG] BAC spoof hooks DISABLED (diagnostics build)")
-local PF = nil
-local _PARRY_PATCH = {
-    keyTable = nil, transformFn = nil, netModule = nil,
-    remoteId = nil, parryHash = nil, parryRemote = nil, ready = false,
-}
-local function _serVal(v, depth)
-    depth = depth or 1
-    local t = typeof(v)
-    if t == "string" then
-        if #v > 40 then return '"' .. v:sub(1, 40) .. '.."(len' .. #v .. ')' end
-        return '"' .. v .. '"'
-    end
-    if t == "table" then
-        if depth > 2 then return "{...}" end
-        local parts = {}
-        local c = 0
-        for k, val in pairs(v) do
-            c = c + 1
-            if c > 6 then parts[#parts + 1] = "..." break end
-            parts[#parts + 1] = tostring(k) .. "=" .. _serVal(val, depth + 1)
-        end
-        return "{" .. table.concat(parts, ", ") .. "}"
-    end
-    if t == "Instance" then
-        return v.ClassName .. "[" .. v.Name .. "]"
-    end
-    return tostring(v)
-end
-function _PARRY_PATCH.serargs(a)
-    local parts = {}
-    for i2 = 1, #a do parts[i2] = _serVal(a[i2]) end
-    return table.concat(parts, ", ")
-end
-task.spawn(function()
-    local ok, err = pcall(function()
-        local Controllers = ReplicatedStorage:WaitForChild("Controllers", 15)
-        if not Controllers then return end
-        local SCm
-        for _, child in ipairs(Controllers:GetChildren()) do
-            if child.Name:sub(1, 16) == "SwordsController" then
-                SCm = child
-                break
-            end
-        end
-        if not SCm then warn("[Noir AP] SwordsController not found") return end
-        local PRY = SCm:WaitForChild("PRY", 15)
-        if not PRY then warn("[Noir AP] PRY module not found") return end
-        print("[NoirDBG] PRY found, module:", SCm:GetFullName())
-        local Parry_Function = require(PRY)
-        PF = Parry_Function
-        print("[NoirDBG] require(PRY) ->", type(Parry_Function))
-        local getupvals = debug.getupvalues or getupvalues
-        if not getupvals then warn("[Noir AP] executor missing getupvalues") return end
-        local ups = getupvals(Parry_Function)
-        if not ups or #ups < 8 then warn("[Noir AP] unexpected upvalue count") return end
-        local _gu = debug.getupvalue or getupvalue
-        for _i = 1, #ups do
-            local _v = ups[_i]
-            local _d = type(_v)
-            if _d == "table" then _d = "table#" .. tostring(#_v) end
-            if typeof(_v) == "Instance" then _d = _v.ClassName end
-            local _nm = "?"
-            pcall(function() if _gu then _nm = select(1, _gu(Parry_Function, _i)) or "?" end end)
-            print(string.format("[NoirDBG] upvalue[%d] %s = %s (%s)", _i, tostring(_nm), tostring(_v), _d))
-        end
-        _PARRY_PATCH.keyTable    = ups[3]
-        _PARRY_PATCH.transformFn = ups[4]
-        _PARRY_PATCH.parryHash   = ups[8]
-
-        for _i = 1, #ups do
-            local _v = ups[_i]
-            if typeof(_v) == "Instance" and (_v.ClassName == "RemoteEvent" or _v.ClassName == "RemoteFunction") then
-                print("[NoirDBG] PRY upvalue remote[" .. _i .. "] =", _v.Name)
-            end
-        end
-
-        task.spawn(function()
-            local okd, src = pcall(function()
-                if not decompile then error("executor has no decompile()") end
-                return decompile(PRY)
-            end)
-            if okd and type(src) == "string" then
-                local lines = string.split(src, "\n")
-                print("[SRC] PRY decompiled, lines=" .. tostring(#lines))
-                for li = 1, math.min(#lines, 160) do
-                    print("[SRC] " .. tostring(li) .. ": " .. tostring(lines[li]))
-                    if li % 20 == 0 then task.wait() end
-                end
-            else
-                warn("[SRC] decompile failed:", tostring(src))
-            end
-        end)
-    end)
-    if not ok then warn("[Noir AP] init error:", tostring(err)) end
-end)
+local VIM = game:GetService("VirtualInputManager")
+local _PARRY_PATCH = { ready = true }
+_G.__noirAPReady = true
+print("[NoirDBG] engine READY (input-tap mode, zero hooks)")
 function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
-    if not _PARRY_PATCH.ready or not _PARRY_PATCH.parryRemote then
-        if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
-            _PARRY_PATCH._warnT = tick()
-            print("[NoirDBG] fire blocked: waiting for one manual parry (remote sniff)")
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+    local mx, my = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
+    if type(mouseLocation) == "table" and mouseLocation[1] then
+        mx = tonumber(mouseLocation[1]) or mx
+        my = tonumber(mouseLocation[2]) or my
+    end
+    local ok2, err = pcall(function()
+        if IS_MOBILE then
+            local t1 = pcall(function() VIM:SendTouchTap(mx, my, false) end)
+            if not t1 then
+                pcall(function() VIM:SendTouchTap(Vector2.new(mx, my), false) end)
+                pcall(function()
+                    VIM:SendTouchEvent(1, 0, Vector2.new(mx, my))
+                    task.wait(0.02)
+                    VIM:SendTouchEvent(1, 2, Vector2.new(mx, my))
+                end)
+            end
+        else
+            VIM:SendMouseButtonEvent(mx, my, 0, true, game, 1)
+            VIM:SendMouseButtonEvent(mx, my, 0, false, game, 1)
         end
-        return false
-    end
-    local kt = _PARRY_PATCH.keyTable
-    if type(kt) ~= "table" or type(_PARRY_PATCH.transformFn) ~= "function" then
-        return false
-    end
-    local keyIndex = kt[3]
-    local currentKey = kt[1] and kt[1][keyIndex]
-    if currentKey == nil then
-        return false
-    end
-    local tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey, "TIME")
-    if not tok or not transformed then
-        tok, transformed = pcall(_PARRY_PATCH.transformFn, currentKey)
-        if not tok or not transformed then
-            return false
-        end
-    end
-    local serverTime = workspace:GetServerTimeNow() * 100
-    local timeStr = tostring(math.floor(serverTime))
-    local tc = {}
-    for i = 1, #timeStr do
-        local ki = (i - 1) % #transformed + 1
-        local kb = string.byte(transformed, ki)
-        local tb = (string.byte(timeStr, i) + i) % 256
-        tc[i] = string.char(bit32.bxor(tb, kb))
-    end
-    local token = table.concat(tc)
-    local fok, ferr = pcall(function()
-        _PARRY_PATCH.parryRemote:FireServer(
-            _PARRY_PATCH.parryHash,
-            currentKey,
-            token,
-            0.5,
-            curveCFrame,
-            screenPositions,
-            mouseLocation,
-            false
-        )
     end)
-    if not fok then
+    if not ok2 then
         if tick() - (_PARRY_PATCH._errT or 0) > 3 then
             _PARRY_PATCH._errT = tick()
-            print("[NoirDBG] FireServer failed:", tostring(ferr))
+            print("[NoirDBG] input tap failed:", tostring(err))
         end
         return false
     end
     _PARRY_PATCH._fired = (_PARRY_PATCH._fired or 0) + 1
     if _PARRY_PATCH._fired == 1 or _PARRY_PATCH._fired % 50 == 0 then
-        print("[NoirDBG] FIRE x" .. tostring(_PARRY_PATCH._fired) .. " (raw packet OK)")
+        print("[NoirDBG] FIRE x" .. tostring(_PARRY_PATCH._fired) .. " (input tap sent)")
     end
     return true
 end
@@ -1504,7 +1390,7 @@ task.spawn(function()
     while gui and gui.Parent do
         task.wait(0.25)
         pcall(function()
-            infoEngine.Text = (_G.__noirAPReady) and "captured" or "waiting PRY"
+            infoEngine.Text = (_G.__noirAPReady) and "ready (input mode)" or "loading"
             infoPingL.Text = string.format("%.0f ms", AP.ping())
             local SysMod = AP.System
             local ball = SysMod.ball.get()
