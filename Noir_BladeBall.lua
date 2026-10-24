@@ -517,33 +517,7 @@ local EXT = {
     skinChangerEnabled = false,
     swordAnimations = nil,
 }
-do
-    local ok_hook = pcall(function()
-        if type(hookfunction) ~= "function" or type(getrenv) ~= "function" then
-            error("no hookfunction/getrenv")
-        end
-        local renv = getrenv()
-        local old_dinfo
-        old_dinfo = hookfunction(renv.debug.info, function(f, t)
-            if type(f) == "function" then
-                return "[C]"
-            elseif f == 4 and t == "s" then
-                return "ReplicatedStorage.Controllers.SwordsController "
-            end
-            return old_dinfo(f, t)
-        end)
-        local old_gfenv
-        old_gfenv = hookfunction(renv.getfenv, function(l)
-            if l ~= nil and type(l) == "number" then
-                if l >= 1 and l <= 10 then return old_gfenv(10) end
-            end
-            return old_gfenv(l)
-        end)
-    end)
-    if not ok_hook then
-        warn("[Noir AP] spoof hooks failed to install")
-    end
-end
+print("[NoirDBG] BAC spoof hooks DISABLED (diagnostics build)")
 local PF = nil
 local _PARRY_PATCH = {
     keyTable = nil, transformFn = nil, netModule = nil,
@@ -613,52 +587,29 @@ task.spawn(function()
         _PARRY_PATCH.transformFn = ups[4]
         _PARRY_PATCH.parryHash   = ups[8]
 
-        local knownStrings = {}
-        for _i = 1, #ups do
-            if type(ups[_i]) == "string" then knownStrings[tostring(ups[_i])] = _i end
-        end
-
-        _PARRY_PATCH.remotes = {}
         for _i = 1, #ups do
             local _v = ups[_i]
             if typeof(_v) == "Instance" and (_v.ClassName == "RemoteEvent" or _v.ClassName == "RemoteFunction") then
-                table.insert(_PARRY_PATCH.remotes, _v)
-                print("[CAPT] watching " .. _v.ClassName .. ":", _v.Name)
+                print("[NoirDBG] PRY upvalue remote[" .. _i .. "] =", _v.Name)
             end
         end
-        if #_PARRY_PATCH.remotes == 0 then
-            warn("[Noir AP] no remote upvalues found in PRY")
-            return
-        end
 
-        local okHook, hookErr = pcall(function()
-            if not hookfunction then error("no hookfunction") end
-            local baseFS = _PARRY_PATCH.remotes[1].FireServer
-            local origFS
-            origFS = hookfunction(baseFS, function(self, ...)
-                if typeof(self) == "Instance" then
-                    for _, r in ipairs(_PARRY_PATCH.remotes) do
-                        if self == r then
-                            local a = {...}
-                            if not _PARRY_PATCH.ready then
-                                print("[CAPT] FireServer [" .. self.Name .. "] args=" .. _PARRY_PATCH.serargs(a))
-                            end
-                            if not _PARRY_PATCH.ready and typeof(a[1]) == "string" and #a >= 6 and knownStrings[tostring(a[1])] then
-                                _PARRY_PATCH.parryRemote = self
-                                _PARRY_PATCH.parryHash = a[1]
-                                _PARRY_PATCH.ready = true
-                                _G.__noirAPReady = true
-                                print("[CAPT] >>> parry remote ADOPTED (hash=upvalue[" .. tostring(knownStrings[tostring(a[1])]) .. "])")
-                            end
-                            break
-                        end
-                    end
-                end
-                return origFS(self, ...)
+        task.spawn(function()
+            local okd, src = pcall(function()
+                if not decompile then error("executor has no decompile()") end
+                return decompile(PRY)
             end)
+            if okd and type(src) == "string" then
+                local lines = string.split(src, "\n")
+                print("[SRC] PRY decompiled, lines=" .. tostring(#lines))
+                for li = 1, math.min(#lines, 160) do
+                    print("[SRC] " .. tostring(li) .. ": " .. tostring(lines[li]))
+                    if li % 20 == 0 then task.wait() end
+                end
+            else
+                warn("[SRC] decompile failed:", tostring(src))
+            end
         end)
-        if not okHook then warn("[Noir AP] FireServer hook failed:", tostring(hookErr)) end
-        print("[NoirDBG] sniffing FireServer. Parry manually once -> remote gets adopted.")
     end)
     if not ok then warn("[Noir AP] init error:", tostring(err)) end
 end)
