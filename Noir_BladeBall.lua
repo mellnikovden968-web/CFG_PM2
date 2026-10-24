@@ -517,46 +517,85 @@ local EXT = {
     skinChangerEnabled = false,
     swordAnimations = nil,
 }
-local VIM = game:GetService("VirtualInputManager")
-local _PARRY_PATCH = { ready = true }
-_G.__noirAPReady = true
-print("[NoirDBG] engine READY (input-tap mode, zero hooks)")
-function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
-    local cam = workspace.CurrentCamera
-    if not cam then return false end
-    local mx, my = cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5
-    if type(mouseLocation) == "table" and mouseLocation[1] then
-        mx = tonumber(mouseLocation[1]) or mx
-        my = tonumber(mouseLocation[2]) or my
-    end
-    local ok2, err = pcall(function()
-        if IS_MOBILE then
-            local t1 = pcall(function() VIM:SendTouchTap(mx, my, false) end)
-            if not t1 then
-                pcall(function() VIM:SendTouchTap(Vector2.new(mx, my), false) end)
-                pcall(function()
-                    VIM:SendTouchEvent(1, 0, Vector2.new(mx, my))
-                    task.wait(0.02)
-                    VIM:SendTouchEvent(1, 2, Vector2.new(mx, my))
-                end)
+do
+    local ok_hook = pcall(function()
+        if type(hookfunction) ~= "function" or type(getrenv) ~= "function" then
+            error("no hookfunction/getrenv")
+        end
+        local renv = getrenv()
+        local old_dinfo
+        old_dinfo = hookfunction(renv.debug.info, function(f, t)
+            if type(f) == "function" then
+                return "[C]"
+            elseif f == 4 and t == "s" then
+                return "ReplicatedStorage.Controllers.SwordsController "
             end
-        else
-            VIM:SendMouseButtonEvent(mx, my, 0, true, game, 1)
-            VIM:SendMouseButtonEvent(mx, my, 0, false, game, 1)
+            return old_dinfo(f, t)
+        end)
+        local old_gfenv
+        old_gfenv = hookfunction(renv.getfenv, function(l)
+            if l ~= nil and type(l) == "number" then
+                if l >= 1 and l <= 10 then return old_gfenv(10) end
+            end
+            return old_gfenv(l)
+        end)
+    end)
+    print("[NoirDBG] BAC spoof hooks:", ok_hook and "ON" or "FAILED")
+end
+local _PARRY_PATCH = { ready = false }
+task.spawn(function()
+    local ok, err = pcall(function()
+        local Controllers = ReplicatedStorage:WaitForChild("Controllers", 15)
+        if not Controllers then return end
+        local SCm
+        for _, child in ipairs(Controllers:GetChildren()) do
+            if child.Name:sub(1, 16) == "SwordsController" then
+                SCm = child
+                break
+            end
+        end
+        if not SCm then warn("[Noir AP] SwordsController not found") return end
+        local PRY = SCm:WaitForChild("PRY", 15)
+        if not PRY then warn("[Noir AP] PRY module not found") return end
+        local Parry_Function = require(PRY)
+        local getupvals = debug.getupvalues or getupvalues
+        if not getupvals then return end
+        local ups = getupvals(Parry_Function)
+        if not ups then return end
+        print("[PROBE] PRY upvalues: " .. tostring(#ups))
+        for _i = 1, #ups do
+            local _v = ups[_i]
+            local _d = typeof(_v)
+            if _d == "Instance" then
+                print(string.format("[PROBE] upvalue[%d] %s name=%s path=%s", _i, _v.ClassName, tostring(_v.Name), _v:GetFullName()))
+                if _v.ClassName == "RemoteEvent" or _v.ClassName == "RemoteFunction" then
+                    local rv = _v
+                    pcall(function()
+                        rv.OnClientEvent:Connect(function(...)
+                            local a = {...}
+                            local parts = {}
+                            for j = 1, math.min(#a, 4) do parts[j] = tostring(a[j]) end
+                            print("[PROBE] <<< " .. tostring(rv.Name) .. " OnClientEvent(" .. table.concat(parts, ", ") .. ")")
+                        end)
+                    end)
+                end
+            elseif _d == "string" then
+                print(string.format("[PROBE] upvalue[%d] string = %s", _i, tostring(_v)))
+            elseif _d == "table" then
+                print(string.format("[PROBE] upvalue[%d] table #%d", _i, #_v))
+            else
+                print(string.format("[PROBE] upvalue[%d] %s", _i, _d))
+            end
         end
     end)
-    if not ok2 then
-        if tick() - (_PARRY_PATCH._errT or 0) > 3 then
-            _PARRY_PATCH._errT = tick()
-            print("[NoirDBG] input tap failed:", tostring(err))
-        end
-        return false
+    if not ok then warn("[Noir AP] probe error:", tostring(err)) end
+end)
+function _PARRY_PATCH.fire(curveCFrame, screenPositions, mouseLocation)
+    if tick() - (_PARRY_PATCH._warnT or 0) > 3 then
+        _PARRY_PATCH._warnT = tick()
+        print("[NoirDBG] fire disarmed (probe build)")
     end
-    _PARRY_PATCH._fired = (_PARRY_PATCH._fired or 0) + 1
-    if _PARRY_PATCH._fired == 1 or _PARRY_PATCH._fired % 50 == 0 then
-        print("[NoirDBG] FIRE x" .. tostring(_PARRY_PATCH._fired) .. " (input tap sent)")
-    end
-    return true
+    return false
 end
 local System = {
     __properties = {
@@ -605,7 +644,6 @@ function System.ball.get()
     if not balls then return nil end
     for _, ball in pairs(balls:GetChildren()) do
         if ball:GetAttribute("realBall") then
-            pcall(function() ball.CanCollide = false end)
             return ball
         end
     end
@@ -617,7 +655,6 @@ function System.ball.get_all()
     if not balls then return balls_table end
     for _, ball in pairs(balls:GetChildren()) do
         if ball:GetAttribute("realBall") then
-            pcall(function() ball.CanCollide = false end)
             table.insert(balls_table, ball)
         end
     end
