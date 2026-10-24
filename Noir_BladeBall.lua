@@ -15,15 +15,6 @@ local DEFAULTS = {
     apAccuracy    = 60,
     apTrigger     = "Auto",
     apBtnPos      = "",
-    wsOn          = false,
-    wsValue       = 40,
-    jpOn          = false,
-    jpValue       = 140,
-    infJump       = false,
-    flyOn         = false,
-    flySpeed      = 60,
-    fov           = 70,
-    fpsBoost      = false,
 }
 local CFG = {}
 for k, v in pairs(DEFAULTS) do CFG[k] = v end
@@ -519,13 +510,6 @@ do
     end)
     print("[AP] BAC spoof hooks:", ok_hook and "ON" or "FAILED")
 end
-local ControlModule = nil
-pcall(function()
-    local pm = Players.PlayerScripts:WaitForChild("PlayerModule", 10)
-    if pm then
-        ControlModule = require(pm:WaitForChild("ControlModule", 10))
-    end
-end)
 local PingCache = 50
 task.spawn(function()
     local network = Stats:WaitForChild("Network", 30)
@@ -597,8 +581,8 @@ local function scanTriggerButtons(force)
     end
 end
 local WANT_CTRL = { "sword", "parry", "controller", "combat", "weapon", "input" }
-local WANT_FN_P1 = { "parry", "attempt", "block", "deflect", "riposte", "tapparry" }
-local WANT_FN_P2 = { "attack", "swing", "slash", "swinglade", "ability" }
+local WANT_FN_P1 = { "parry", "attempt", "block", "deflect", "riposte" }
+local WANT_FN_P2 = { "attack", "swing", "slash", "ability" }
 local CtrlFn = nil
 local CtrlPath = nil
 local ctrlScanned = false
@@ -610,25 +594,38 @@ local function hasWord(s, list)
     end
     return false
 end
-local function scanTbl(t, path, words, depth)
+local function isBadName(s)
+    s = string.lower(tostring(s))
+    if string.sub(s, 1, 3) == "get" then return true end
+    if string.sub(s, 1, 2) == "is" then return true end
+    if string.sub(s, 1, 3) == "has" then return true end
+    if string.sub(s, -5) == "count" then return true end
+    if string.sub(s, 1, 2) == "on" then return true end
+    return false
+end
+local function scanTbl(t, path, words)
     if CtrlFn then return end
-    depth = depth or 0
     for k, v in pairs(t) do
         if type(v) == "function" and hasWord(k, words) then
-            CtrlFn = v
-            CtrlPath = path .. "." .. tostring(k)
-            return
+            local p = path .. "." .. tostring(k)
+            if #ctrlCandidates < 20 then table.insert(ctrlCandidates, p) end
+            if not isBadName(k) then
+                CtrlFn = v
+                CtrlPath = p
+                return
+            end
         end
     end
-    if depth < 1 then
-        for k, v in pairs(t) do
-            if CtrlFn then return end
-            if type(v) == "table" then
-                for k2, f in pairs(v) do
-                    if type(f) == "function" and hasWord(k2, words) then
+    for k, v in pairs(t) do
+        if CtrlFn then return end
+        if type(v) == "table" and tostring(k) ~= "_G" then
+            for k2, f in pairs(v) do
+                if type(f) == "function" and hasWord(k2, words) then
+                    local p = path .. "." .. tostring(k) .. "." .. tostring(k2)
+                    if #ctrlCandidates < 20 then table.insert(ctrlCandidates, p) end
+                    if not isBadName(k2) then
                         CtrlFn = f
-                        CtrlPath = path .. "." .. tostring(k) .. "." .. tostring(k2)
-                        table.insert(ctrlCandidates, CtrlPath)
+                        CtrlPath = p
                         return
                     end
                 end
@@ -642,12 +639,10 @@ local function findCtrlTrigger(force)
     local sources = {}
     if type(getsenv) == "function" then
         pcall(function()
-            local containers = {}
             local pscripts = LocalPlayer:FindFirstChild("PlayerScripts")
-            if pscripts then table.insert(containers, pscripts) end
-            for _, cont in ipairs(containers) do
-                for _, d in ipairs(cont:GetDescendants()) do
-                    if d:IsA("LocalScript") and (d.Enabled or d.Disabled == false) and hasWord(d.Name, WANT_CTRL) then
+            if pscripts then
+                for _, d in ipairs(pscripts:GetDescendants()) do
+                    if d:IsA("LocalScript") and hasWord(d.Name, WANT_CTRL) then
                         local oke, env = pcall(getsenv, d)
                         if oke and type(env) == "table" then
                             table.insert(sources, { tbl = env, path = "env:" .. d.Name })
@@ -670,20 +665,19 @@ local function findCtrlTrigger(force)
         end)
     end
     for _, src in ipairs(sources) do
-        scanTbl(src.tbl, src.path, WANT_FN_P1, 0)
+        scanTbl(src.tbl, src.path, WANT_FN_P1)
         if CtrlFn then break end
     end
     if not CtrlFn then
         for _, src in ipairs(sources) do
-            scanTbl(src.tbl, src.path, WANT_FN_P2, 0)
+            scanTbl(src.tbl, src.path, WANT_FN_P2)
             if CtrlFn then break end
         end
     end
-    if CtrlFn then
-        print("[AP] ctrl trigger: " .. tostring(CtrlPath))
-    else
-        print("[AP] ctrl trigger: not found (" .. tostring(#sources) .. " sources scanned)")
+    if #ctrlCandidates > 0 then
+        print("[AP] ctrl cands: " .. table.concat(ctrlCandidates, ", "))
     end
+    print("[AP] ctrl trigger: " .. (CtrlFn and tostring(CtrlPath) or ("not found (" .. tostring(#sources) .. " sources)")))
 end
 task.delay(4, function() pcall(findCtrlTrigger) end)
 local function apFire()
@@ -782,123 +776,6 @@ function APEng.start()
 end
 function APEng.stop()
     if APEng.conn then APEng.conn:Disconnect() APEng.conn = nil end
-end
-local fly = { bv = nil, bg = nil, conn = nil }
-local function flySet(on)
-    local char, root, hum = getChar()
-    if on then
-        if not root then return end
-        if not fly.bv then
-            fly.bv = Instance.new("BodyVelocity")
-            fly.bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-        end
-        if not fly.bg then
-            fly.bg = Instance.new("BodyGyro")
-            fly.bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-            fly.bg.P = 5e4
-            fly.bg.D = 600
-        end
-        fly.bv.Velocity = Vector3.zero
-        fly.bv.Parent = root
-        fly.bg.CFrame = root.CFrame
-        fly.bg.Parent = root
-        if fly.conn then fly.conn:Disconnect() end
-        fly.conn = RunService.Heartbeat:Connect(function()
-            local cam = workspace.CurrentCamera
-            if not cam or not root or not root.Parent then return end
-            local mv = Vector3.zero
-            if ControlModule then
-                local okm, r = pcall(function() return ControlModule:GetMoveVector() end)
-                if okm and r then mv = r end
-            end
-            local speed = tonumber(CFG.flySpeed) or 60
-            fly.bv.Velocity = cam.CFrame:VectorToWorldSpace(mv) * speed
-            fly.bg.CFrame = CFrame.new(root.Position, root.Position + cam.CFrame.LookVector)
-        end)
-    else
-        if fly.conn then fly.conn:Disconnect() fly.conn = nil end
-        if fly.bv then fly.bv:Destroy() fly.bv = nil end
-        if fly.bg then fly.bg:Destroy() fly.bg = nil end
-    end
-end
-LocalPlayer.CharacterAdded:Connect(function()
-    if CFG.flyOn then
-        task.wait(1)
-        if CFG.flyOn then flySet(true) end
-    end
-end)
-task.spawn(function()
-    while true do
-        task.wait(0.25)
-        local char, root, hum = getChar()
-        if hum then
-            if CFG.wsOn then
-                pcall(function() hum.WalkSpeed = tonumber(CFG.wsValue) or 40 end)
-            end
-            if CFG.jpOn then
-                pcall(function()
-                    pcall(function() hum.UseJumpPower = true end)
-                    hum.JumpPower = tonumber(CFG.jpValue) or 140
-                end)
-            end
-        end
-    end
-end)
-UserInputService.JumpRequest:Connect(function()
-    if not CFG.infJump then return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
-    end
-end)
-local lastFovApplied = -1
-task.spawn(function()
-    while true do
-        task.wait(0.6)
-        local f = tonumber(CFG.fov) or 70
-        if f ~= lastFovApplied then
-            lastFovApplied = f
-            pcall(function()
-                local cam = workspace.CurrentCamera
-                if cam then cam.FieldOfView = f end
-            end)
-        end
-    end
-end)
-local Lighting = game:GetService("Lighting")
-local fpsState = {}
-local function fpsApply(on)
-    if on then
-        pcall(function()
-            fpsState.shadows = Lighting.GlobalShadows
-            Lighting.GlobalShadows = false
-        end)
-        for _, eff in ipairs(Lighting:GetChildren()) do
-            if eff:IsA("BloomEffect") or eff:IsA("BlurEffect") or eff:IsA("ColorCorrectionEffect")
-               or eff:IsA("DepthOfFieldEffect") or eff:IsA("SunRaysEffect") then
-                pcall(function()
-                    if eff.Enabled then
-                        fpsState[eff] = true
-                        eff.Enabled = false
-                    end
-                end)
-            end
-        end
-        pcall(function()
-            settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-        end)
-    else
-        pcall(function()
-            if fpsState.shadows ~= nil then Lighting.GlobalShadows = fpsState.shadows end
-        end)
-        for k in pairs(fpsState) do
-            if typeof(k) == "Instance" then
-                pcall(function() k.Enabled = true end)
-            end
-            fpsState[k] = nil
-        end
-    end
 end
 local AP = nil
 local apMobile = nil
@@ -1021,8 +898,6 @@ function AP.ballInfo()
     return ball
 end
 AP.getBallSpeed = apBallSpeed
-AP.flySet = flySet
-AP.fpsApply = fpsApply
 function AP.getMobilePos()
     return apBtnPosStr
 end
@@ -1052,49 +927,6 @@ reg("apTrigger",
     function() return CFG.apTrigger end,
     function(v) AP.setTrigger(tostring(v)) end)
 reg("apBtnPos", function() return AP.getMobilePos() end, function(v) AP.setMobilePos(v) end)
-local hMove = section(pages.combat, "MOVEMENT", 2)
-addToggle(hMove, "Speed",
-    function() return CFG.wsOn end,
-    function(v) setCfg("wsOn", v) end, "wsOn")
-reg("wsOn", function() return CFG.wsOn end, function(v) CFG.wsOn = v == true end)
-addSlider(hMove, "WalkSpeed", 16, 250, 1,
-    function() return CFG.wsValue end,
-    function(v) setCfg("wsValue", v) end,
-    function(v) return tostring(math.floor(v)) end, "wsValue")
-reg("wsValue", function() return CFG.wsValue end, function(v) CFG.wsValue = math.clamp(tonumber(v) or 40, 16, 250) end)
-addToggle(hMove, "Jump power",
-    function() return CFG.jpOn end,
-    function(v) setCfg("jpOn", v) end, "jpOn")
-reg("jpOn", function() return CFG.jpOn end, function(v) CFG.jpOn = v == true end)
-addSlider(hMove, "JumpPower", 50, 400, 5,
-    function() return CFG.jpValue end,
-    function(v) setCfg("jpValue", v) end,
-    function(v) return tostring(math.floor(v)) end, "jpValue")
-reg("jpValue", function() return CFG.jpValue end, function(v) CFG.jpValue = math.clamp(tonumber(v) or 140, 50, 400) end)
-addToggle(hMove, "Infinite jump",
-    function() return CFG.infJump end,
-    function(v) setCfg("infJump", v) end, "infJump")
-reg("infJump", function() return CFG.infJump end, function(v) CFG.infJump = v == true end)
-local hFly = section(pages.combat, "FLIGHT", 2)
-addToggle(hFly, "Fly",
-    function() return CFG.flyOn end,
-    function(v) setCfg("flyOn", v) AP.flySet(v) end, "flyOn")
-reg("flyOn", function() return CFG.flyOn end, function(v) CFG.flyOn = v == true if CFG.flyOn then AP.flySet(true) end end)
-addSlider(hFly, "Fly speed", 20, 300, 5,
-    function() return CFG.flySpeed end,
-    function(v) setCfg("flySpeed", v) end,
-    function(v) return tostring(math.floor(v)) end, "flySpeed")
-reg("flySpeed", function() return CFG.flySpeed end, function(v) CFG.flySpeed = math.clamp(tonumber(v) or 60, 20, 300) end)
-local hVis = section(pages.combat, "VISUALS", 2)
-addSlider(hVis, "FOV", 60, 120, 1,
-    function() return CFG.fov end,
-    function(v) setCfg("fov", v) end,
-    function(v) return tostring(math.floor(v)) end, "fov")
-reg("fov", function() return CFG.fov end, function(v) CFG.fov = math.clamp(tonumber(v) or 70, 60, 120) end)
-addToggle(hVis, "FPS booster",
-    function() return CFG.fpsBoost end,
-    function(v) setCfg("fpsBoost", v) AP.fpsApply(v) end, "fpsBoost")
-reg("fpsBoost", function() return CFG.fpsBoost end, function(v) CFG.fpsBoost = v == true if CFG.fpsBoost then AP.fpsApply(true) end end)
 local stLive = section(pages.status, "LIVE (AUTO PARRY)", 1)
 local infoTrig = addInfo(stLive, "Trigger")
 local infoPingL = addInfo(stLive, "Ping")
