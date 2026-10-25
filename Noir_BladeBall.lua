@@ -11056,10 +11056,10 @@ function styleCircularButton(b, diameter)
     end)
     b.MouseButton1Down:Connect(function()
         sound:Play()
-        TweenService:Create(b, TweenInfo.new(.14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(27, 27, 31), Size = UDim2.fromOffset(diameter + 6, diameter + 6) }):Play()
+        TweenService:Create(b, TweenInfo.new(.14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(27, 27, 31), Size = UDim2.fromOffset((b:GetAttribute("NoirD") or diameter) + 6, (b:GetAttribute("NoirD") or diameter) + 6) }):Play()
     end)
     b.MouseButton1Up:Connect(function()
-        TweenService:Create(b, TweenInfo.new(.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(8, 8, 10), Size = UDim2.fromOffset(diameter, diameter) }):Play()
+        TweenService:Create(b, TweenInfo.new(.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(8, 8, 10), Size = UDim2.fromOffset(b:GetAttribute("NoirD") or diameter, b:GetAttribute("NoirD") or diameter) }):Play()
     end)
     return b
 end
@@ -12162,51 +12162,111 @@ do
     sSpam:AddParagraph("Triggerbot", "Автоматически жмёт блок в тот момент, когда мяч уже нацелен и летит в тебя — реакция срабатывает по триггеру, без постоянного авто-парри. Полезен как «подстраховка» рядом с Auto Parry.")
     sSpam:AddLabel("Manual Spam/Auto Spam: жмут блок серией — выбери режим Remote/Keypress ниже.")
 
-    -- ============ MAIN • SKIN CHANGER ============
-    local ASSETS = game:GetService("ReplicatedStorage")
-    local swordNames, explosionNames = {}, {}
-    pcall(function()
-        local m = require(ASSETS.Shared.ReplicatedInstances.Swords)
-        for k in pairs(m) do if type(k) == "string" then table.insert(swordNames, k) end end
-    end)
-    pcall(function()
-        local em = ASSETS.Shared.ReplicatedInstances:FindFirstChild("Explosions")
-        if em and em:IsA("ModuleScript") then
-            local m = require(em)
-            for k in pairs(m) do if type(k) == "string" then table.insert(explosionNames, k) end end
+    -- ============ MAIN • SKIN CHANGER (ported stage_3 impl: EquipSwordTo + controller sync) ============
+    local sSkin = tab:AddSection("MAIN • SKIN CHANGER", "real sword swap - model + animations + FX")
+    genv.swordModel = type(genv.swordModel) == "string" and genv.swordModel or ""
+    genv.swordAnimations = type(genv.swordAnimations) == "string" and genv.swordAnimations or ""
+    genv.swordFX = type(genv.swordFX) == "string" and genv.swordFX or ""
+
+    task.spawn(function()
+        local rs = game:GetService("ReplicatedStorage")
+        local swordInstances, swordsController = nil, nil
+        pcall(function()
+            local mod = rs:WaitForChild("Shared", 10)
+            mod = mod and mod:WaitForChild("ReplicatedInstances", 10)
+            mod = mod and mod:WaitForChild("Swords", 10)
+            if mod then swordInstances = require(mod) end
+        end)
+        if not swordInstances then return end
+        pcall(function()
+            local ok, conns = pcall(getconnections, rs.Remotes.ParrySuccessAll.OnClientEvent)
+            if ok and conns then
+                for _, v in ipairs(conns) do
+                    if v.Function and islclosure and islclosure(v.Function) then
+                        local ok2, up = pcall(getupvalues, v.Function)
+                        if ok2 and #up == 1 and type(up[1]) == "table" then
+                            swordsController = up[1]
+                            break
+                        end
+                    end
+                end
+            end
+        end)
+        local function setSword()
+            if not genv.skinChanger then return end
+            if not LocalPlayer.Character then return end
+            pcall(function()
+                local f = rawget(swordInstances, "EquipSwordTo")
+                if type(f) == "function" then
+                    local ups = getupvalues(f)
+                    for i = 1, #ups do
+                        if type(ups[i]) == "boolean" then
+                            setupvalue(f, i, false)
+                            break
+                        end
+                    end
+                end
+            end)
+            pcall(function()
+                swordInstances:EquipSwordTo(LocalPlayer.Character, genv.swordModel)
+            end)
+            task.spawn(function()
+                local attempts = 0
+                while not swordsController and attempts < 20 do
+                    task.wait(0.5) attempts = attempts + 1
+                end
+                if not swordsController then return end
+                pcall(function()
+                    if swordsController.SetSword then
+                        swordsController:SetSword(genv.swordAnimations ~= "" and genv.swordAnimations or genv.swordModel)
+                    end
+                end)
+                pcall(function()
+                    local targetSword = genv.swordFX ~= "" and genv.swordFX or genv.swordModel
+                    if rs.Remotes:FindFirstChild("FireSwordInfo") then
+                        rs.Remotes.FireSwordInfo:FireServer(targetSword)
+                    end
+                    if swordsController.currentSword ~= nil then
+                        pcall(function() swordsController.currentSword = targetSword end)
+                    end
+                    if swordsController.SwordFX ~= nil then
+                        pcall(function() swordsController.SwordFX = targetSword end)
+                    end
+                end)
+            end)
         end
+        getgenv()._ZX_SetSword = setSword
+        LocalPlayer.CharacterAdded:Connect(function()
+            task.wait(1)
+            if genv.skinChanger and genv.swordModel ~= "" then setSword() end
+        end)
     end)
-    table.sort(swordNames)
-    table.sort(explosionNames)
-    if #swordNames == 0 then swordNames = { "Default" } end
-    if #explosionNames == 0 then explosionNames = { "Default" } end
-    local sSkin = tab:AddSection("MAIN • SKIN CHANGER", "visual sword & explosion swap")
-    local function applySword(name)
-        genv.swordModel = name
-        genv.swordAnimations = name
-        genv.swordFX = name
-        genv.skinChanger = true
-        if genv.updateSword then task.spawn(genv.updateSword) end
-        if genv.saveLastEquippedSword then pcall(genv.saveLastEquippedSword, name) end
-    end
-    local function applyExplosion(name)
-        genv.explosionFX = name
-        genv.explosionChanger = true
-        if genv.updateExplosion then task.spawn(genv.updateExplosion) end
-        if genv.saveLastEquippedExplosion then pcall(genv.saveLastEquippedExplosion, name) end
-    end
+
     sSkin:AddToggle("Skin Changer", function(on)
         genv.skinChanger = on
-        if on and genv.swordModel and genv.swordModel ~= "" and genv.updateSword then task.spawn(genv.updateSword) end
+        if on and genv.swordModel ~= "" and genv._ZX_SetSword then genv._ZX_SetSword() end
         Notify(on and "Skin Changer enabled" or "Skin Changer disabled")
     end)
-    sSkin:AddDropdown("Sword Skin", swordNames, function(v) applySword(v) end)
+    sSkin:AddTextBox("Sword Model Name", function(value)
+        value = tostring(value or "")
+        if value == "" then return end
+        genv.swordModel = value
+        genv.swordAnimations = value
+        genv.swordFX = value
+        if genv.skinChanger and genv._ZX_SetSword then genv._ZX_SetSword() end
+    end)
+    sSkin:AddLabel("Type exact sword name (e.g. 'Awakened Clockwork Sword'). Re-applies after respawn.")
     sSkin:AddToggle("Explosion Changer", function(on)
         genv.explosionChanger = on
         if on and genv.explosionFX and genv.explosionFX ~= "" and genv.updateExplosion then task.spawn(genv.updateExplosion) end
     end)
-    sSkin:AddDropdown("Explosion Skin", explosionNames, function(v) applyExplosion(v) end)
-    sSkin:AddLabel("Skins apply locally; re-equip sword if nothing changed.")
+    sSkin:AddTextBox("Explosion Name", function(value)
+        value = tostring(value or "")
+        if value == "" then return end
+        genv.explosionFX = value
+        genv.explosionChanger = true
+        if genv.updateExplosion then task.spawn(genv.updateExplosion) end
+    end)
 
     -- ============ floating screen buttons (same round style) ============
     local screenButtons = {}
@@ -12214,6 +12274,7 @@ do
         local b = New("TextButton", { Parent = gui, Name = name, AnchorPoint = Vector2.new(1, .5),
             Position = UDim2.new(1, -20, .5, yOff), Size = UDim2.fromOffset(56, 56),
             Text = text, TextColor3 = C.text, TextSize = 22, Font = Enum.Font.GothamBold, Visible = false })
+        b:SetAttribute("NoirD", 56)
         styleCircularButton(b, 56)
         local stateRing = New("UIStroke", { Parent = b, Color = C.accent, Transparency = 1, Thickness = 3,
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
@@ -12277,6 +12338,7 @@ do
     end)
     sBtn:AddSlider("Trigger Button Size", 40, 90, 56, function(v)
         local px = math.floor(tonumber(v) or 56)
+        trigBtn.button:SetAttribute("NoirD", px)
         trigBtn.button.Size = UDim2.fromOffset(px, px)
     end)
     sBtn:AddToggle("Spam Button", function(on)
@@ -12285,6 +12347,7 @@ do
     end)
     sBtn:AddSlider("Spam Button Size", 40, 90, 56, function(v)
         local px = math.floor(tonumber(v) or 56)
+        spamBtn.button:SetAttribute("NoirD", px)
         spamBtn.button.Size = UDim2.fromOffset(px, px)
     end)
     sBtn:AddLabel("Round buttons: tap to toggle, drag to move.")
