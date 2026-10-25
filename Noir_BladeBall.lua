@@ -9219,339 +9219,581 @@ end
 --========================================================--
 
 
-
--- ============ NOIR MENU v2 (replaces HOTHX/Virex UI; stage_6 engine untouched) ============
+-- ============================================================
+-- NOIR MENU · stage_6 engine bindings (animated Noir style)
+-- ============================================================
 do
-    local T = {
-        bg      = Color3.fromRGB(14, 13, 12),
-        bar     = Color3.fromRGB(21, 19, 17),
-        row     = Color3.fromRGB(26, 24, 22),
-        rowHi   = Color3.fromRGB(32, 29, 26),
-        btn     = Color3.fromRGB(40, 36, 32),
-        accent  = Color3.fromRGB(255, 126, 26),
-        accent2 = Color3.fromRGB(255, 190, 120),
-        text    = Color3.fromRGB(238, 233, 226),
-        dim     = Color3.fromRGB(148, 140, 130),
-        off     = Color3.fromRGB(52, 48, 44),
-        good    = Color3.fromRGB(120, 220, 120),
+    local Players = game:GetService("Players")
+    local UserInputService = game:GetService("UserInputService")
+    local TweenService = game:GetService("TweenService")
+    local RunService = game:GetService("RunService")
+    local LocalPlayer = Players.LocalPlayer
+    local genv = (typeof(getgenv) == "function" and getgenv()) or _G
+
+    local C = {
+        base = Color3.fromRGB(10, 9, 8), surface = Color3.fromRGB(15, 13, 11), panel = Color3.fromRGB(10, 9, 8),
+        card = Color3.fromRGB(15, 13, 11), border = Color3.fromRGB(50, 34, 23), accent = Color3.fromRGB(224, 116, 24),
+        accent2 = Color3.fromRGB(255, 170, 54), text = Color3.fromRGB(245, 242, 238), dim = Color3.fromRGB(130, 124, 118),
+        off = Color3.fromRGB(30, 26, 22), btn = Color3.fromRGB(20, 17, 14),
     }
-    local function cn(cls, props)
-        local o = Instance.new(cls)
-        if type(props) == "table" then
-            for k, v in pairs(props) do pcall(function() o[k] = v end) end
+
+    local function cn(a, b)
+        local o = Instance.new(a)
+        for k, v in pairs(b or {}) do
+            local ok = pcall(function() o[k] = v end)
         end
         return o
     end
-    local function corner(o, r) return cn("UICorner", { Parent = o, CornerRadius = UDim.new(0, r or 7) }) end
-    local function stroke(o, c, tr) return cn("UIStroke", { Parent = o, Color = c or T.accent2, Transparency = tr or .62, Thickness = 1 }) end
-    local function pad(o, l, r, t, b) return cn("UIPadding", { Parent = o, PaddingLeft = UDim.new(0, l or 0), PaddingRight = UDim.new(0, r or l or 0), PaddingTop = UDim.new(0, t or 0), PaddingBottom = UDim.new(0, b or t or 0) }) end
-
-    local guiParent2
-    pcall(function() guiParent2 = gethui and gethui() end)
-    if not guiParent2 then pcall(function() guiParent2 = CoreGui end) end
-    if not guiParent2 then guiParent2 = LocalPlayer:FindFirstChildOfClass("PlayerGui") end
-
-    local gui = cn("ScreenGui", { Name = "NoirS6Menu", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 997 })
-    pcall(function() gui.Parent = guiParent2 end)
-
-    local win = cn("Frame", {
-        Parent = gui, Size = UDim2.new(0, 340, 0, 436), Position = UDim2.new(0.5, -170, 0.5, -218),
-        BackgroundColor3 = T.bg, BackgroundTransparency = .04, BorderSizePixel = 0, ClipsDescendants = true,
-    })
-    corner(win, 14)
-    stroke(win, T.accent, .45).Thickness = 1.2
-
-    local bar = cn("Frame", { Parent = win, Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = T.bar, BackgroundTransparency = .08, BorderSizePixel = 0 })
-    corner(bar, 14)
-    cn("Frame", { Parent = bar, Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -14), BackgroundColor3 = T.bar, BackgroundTransparency = .08, BorderSizePixel = 0 })
-    local dot = cn("Frame", { Parent = bar, Size = UDim2.fromOffset(10, 10), Position = UDim2.fromOffset(14, 14), BackgroundColor3 = T.accent, BorderSizePixel = 0 })
-    corner(dot, 5)
-    cn("TextLabel", {
-        Parent = bar, Size = UDim2.new(1, -110, 0, 20), Position = UDim2.fromOffset(32, 6), BackgroundTransparency = 1,
-        Text = "BLADE BALL", TextColor3 = T.text, TextSize = 15, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    cn("TextLabel", {
-        Parent = bar, Size = UDim2.new(1, -110, 0, 16), Position = UDim2.fromOffset(32, 26), BackgroundTransparency = 1,
-        Text = "noir build · stage6 engine", TextColor3 = T.dim, TextSize = 10, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    local statPill = cn("TextLabel", {
-        Parent = bar, Size = UDim2.fromOffset(56, 20), Position = UDim2.new(1, -102, 0.5, -10), BackgroundColor3 = T.row,
-        BackgroundTransparency = .2, Text = "IDLE", TextColor3 = T.dim, TextSize = 10, Font = Enum.Font.GothamBold,
-    })
-    corner(statPill, 10)
-    local closeX = cn("TextButton", {
-        Parent = bar, Size = UDim2.fromOffset(30, 24), Position = UDim2.new(1, -40, 0.5, -12),
-        BackgroundColor3 = T.btn, Text = "×", TextColor3 = T.text, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false,
-    })
-    corner(closeX, 8)
-    closeX.MouseButton1Click:Connect(function() win.Visible = false end)
-
-    local list = cn("ScrollingFrame", {
-        Parent = win, Size = UDim2.new(1, -18, 1, -62), Position = UDim2.fromOffset(9, 56),
-        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2,
-        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollBarImageColor3 = T.accent, ScrollBarImageTransparency = .3,
-    })
-    local lay = cn("UIListLayout", { Parent = list, Padding = UDim.new(0, 5) })
-
-    local liveRows = {}
-    local function mkSection(text)
-        cn("TextLabel", {
-            Parent = list, Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1,
-            Text = "  " .. text, TextColor3 = T.accent2, TextSize = 11, Font = Enum.Font.GothamBold,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
+    local function corner(x, r) cn("UICorner", { CornerRadius = UDim.new(0, r or 12), Parent = x }) end
+    local function stroke(x, col, tr, t)
+        return cn("UIStroke", { Parent = x, Color = col or C.border, Transparency = tr or 0, Thickness = t or 1 })
     end
-    local function mkRow(text, h)
-        local row = cn("Frame", { Parent = list, Size = UDim2.new(1, 0, 0, h or 32), BackgroundColor3 = T.row, BackgroundTransparency = .18, BorderSizePixel = 0 })
-        corner(row, 8)
-        cn("TextLabel", {
-            Parent = row, Size = UDim2.new(1, -116, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1,
-            Text = text, TextColor3 = T.text, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        return row
-    end
-    local function mkToggle(text, get, set)
-        local row = mkRow(text)
-        local b = cn("TextButton", {
-            Parent = row, Size = UDim2.fromOffset(48, 22), Position = UDim2.new(1, -58, 0.5, -11),
-            BackgroundColor3 = T.off, Text = "", AutoButtonColor = false,
-        })
-        corner(b, 11)
-        local knob = cn("Frame", { Parent = b, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = T.dim, BorderSizePixel = 0 })
-        corner(knob, 8)
-        local function paint()
-            local on = get() == true
-            b.BackgroundColor3 = on and T.accent or T.off
-            knob.Position = on and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-            knob.BackgroundColor3 = on and Color3.fromRGB(16, 12, 8) or T.dim
-        end
-        b.MouseButton1Click:Connect(function() set(not get()) paint() end)
-        paint()
-    end
-    local function mkCycle(text, options, get, set)
-        local row = mkRow(text)
-        local b = cn("TextButton", {
-            Parent = row, Size = UDim2.fromOffset(104, 22), Position = UDim2.new(1, -110, 0.5, -11),
-            BackgroundColor3 = T.btn, Text = tostring(get()), TextColor3 = T.accent2, TextSize = 11,
-            Font = Enum.Font.GothamBold, AutoButtonColor = false,
-        })
-        corner(b, 8)
-        b.MouseButton1Click:Connect(function()
-            local cur, idx = get(), 1
-            for i, o in ipairs(options) do if o == cur then idx = i break end end
-            idx = idx % #options + 1
-            set(options[idx])
-            b.Text = tostring(options[idx])
-        end)
-    end
-    local function mkSlider(text, min, max, get, set)
-        local row = cn("Frame", { Parent = list, Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = T.row, BackgroundTransparency = .18, BorderSizePixel = 0 })
-        corner(row, 8)
-        local lbl = cn("TextLabel", {
-            Parent = row, Size = UDim2.new(1, -20, 0, 18), Position = UDim2.fromOffset(10, 4), BackgroundTransparency = 1,
-            Text = text, TextColor3 = T.text, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        local track = cn("Frame", { Parent = row, Size = UDim2.new(1, -20, 0, 5), Position = UDim2.fromOffset(10, 32), BackgroundColor3 = T.off, BorderSizePixel = 0 })
-        corner(track, 3)
-        local fill = cn("Frame", { Parent = track, Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = T.accent, BorderSizePixel = 0 })
-        corner(fill, 3)
-        local knob = cn("Frame", { Parent = track, Size = UDim2.fromOffset(13, 13), Position = UDim2.new(0, -6, 0.5, 0), AnchorPoint = Vector2.new(0, .5), BackgroundColor3 = T.accent2, BorderSizePixel = 0 })
-        corner(knob, 7)
-        stroke(knob, T.accent, .3)
-        local function upd(v)
-            local tt = math.clamp((v - min) / (max - min), 0, 1)
-            fill.Size = UDim2.new(tt, 0, 1, 0)
-            knob.Position = UDim2.new(tt, 0, .5, 0)
-            lbl.Text = text .. "  ·  " .. tostring(math.floor(v + 0.5))
-        end
-        local dragging = false
-        local function applyX(x)
-            local p = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
-            local v = min + p * (max - min)
-            set(v)
-            upd(v)
-        end
-        local function isPress(i) return i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 end
-        row.InputBegan:Connect(function(i) if isPress(i) then dragging = true applyX(i.Position.X) end end)
-        row.InputEnded:Connect(function(i) if isPress(i) then dragging = false end end)
-        UserInputService.InputChanged:Connect(function(i)
-            if dragging and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then applyX(i.Position.X) end
-        end)
-        upd(get())
-    end
-    local function mkInfo(text, fn)
-        local row = mkRow(text)
-        local val = cn("TextLabel", {
-            Parent = row, Size = UDim2.new(0, 104, 1, 0), Position = UDim2.new(1, -110, 0, 0), BackgroundTransparency = 1,
-            Text = "-", TextColor3 = T.accent2, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Right,
-        })
-        table.insert(liveRows, function() val.Text = tostring(fn()) end)
+    local function tw(o, t, style, dir, props)
+        TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props):Play()
     end
 
-    -- ===== engine wiring (stage_6 knobs) =====
-    local function setStat(t, c) statPill.Text = t statPill.TextColor3 = c end
-
-    mkSection("AUTO PARRY")
-    mkToggle("Enabled", function() return System.__properties.__autoparry_enabled end, function(on)
-        System.__properties.__autoparry_enabled = on
-        System.__properties.__play_animation = on
-        if on then System.autoparry.start() else System.autoparry.stop() end
-        setStat(on and "ARMED" or "IDLE", on and T.accent or T.dim)
-        Notify("Auto Parry", on and "Enabled" or "Disabled", 2)
-    end)
-    mkCycle("Parry mode", { "Remote", "Keypress" }, function() return getgenv().AutoParryMode or "Remote" end, function(v) getgenv().AutoParryMode = v end)
-    mkSlider("Accuracy", 1, 100, function() return System.__properties.__accuracy end, function(v)
-        System.__properties.__accuracy = math.floor(v + 0.5)
-        pcall(update_divisor)
-    end)
-    mkCycle("Parry type", CURVE_NAMES, function() return Selected_Parry_Type end, function(v) Selected_Parry_Type = v CurveType = v end)
-    mkToggle("Random accuracy", function() return System.__properties.__randomized_accuracy_enabled end, function(on)
-        System.__properties.__randomized_accuracy_enabled = on
-        if on then pcall(update_randomized_accuracy) end
-    end)
-    mkToggle("Auto ability", function() return getgenv().AutoAbility == true end, function(on) getgenv().AutoAbility = on end)
-
-    mkSection("DETECTION")
-    mkToggle("Random curve", function() return System.__properties.__connections.__random_curve ~= nil end, function(on)
-        if on then
-            if not System.__properties.__connections.__random_curve then
-                System.__properties.__connections.__random_curve = RunService.PreSimulation:Connect(function()
-                    Selected_Parry_Type = CURVE_NAMES[math.random(1, #CURVE_NAMES)]
-                end)
-            end
-        elseif System.__properties.__connections.__random_curve then
-            System.__properties.__connections.__random_curve:Disconnect()
-            System.__properties.__connections.__random_curve = nil
-            Selected_Parry_Type = CurveType
+    local rotors = {}
+    RunService.Heartbeat:Connect(function(dt)
+        for _, gr in ipairs(rotors) do
+            pcall(function() gr.Rotation = (gr.Rotation + dt * 40) % 360 end)
         end
     end)
-    mkToggle("Infinity detection", function() return System.__config.__detections.__infinity == true end, function(on) System.__config.__detections.__infinity = on end)
-    mkToggle("Death slash detection", function() return System.__config.__detections.__deathslash == true end, function(on) System.__config.__detections.__deathslash = on end)
-    mkToggle("Time hole detection", function() return System.__config.__detections.__timehole == true end, function(on) System.__config.__detections.__timehole = on end)
-    mkToggle("Slashes of fury", function() return System.__config.__detections.__slashesoffury == true end, function(on) System.__config.__detections.__slashesoffury = on end)
-    mkToggle("Phantom detection", function() return System.__config.__detections.__phantom == true end, function(on) System.__config.__detections.__phantom = on end)
-
-    mkSection("SPAM / TRIGGER")
-    mkToggle("Triggerbot", function() return System.__triggerbot.__enabled == true end, function(on) System.triggerbot.enable(on) end)
-    mkCycle("Auto spam mode", { "Remote", "Keypress" }, function() return getgenv().AutoSpamMode or "Remote" end, function(v) getgenv().AutoSpamMode = v end)
-    mkToggle("Auto spam", function() return System.__properties.__auto_spam_enabled end, function(on)
-        if on then System.auto_spam.start() else System.auto_spam.stop() end
-    end)
-    mkCycle("Manual spam mode", { "Remote", "Keypress" }, function() return getgenv().ManualSpamMode or "Remote" end, function(v) getgenv().ManualSpamMode = v end)
-    mkToggle("Manual spam", function() return System.__properties.__manual_spam_enabled end, function(on)
-        if on then System.manual_spam.start() else System.manual_spam.stop() end
-    end)
-
-    mkSection("STATUS")
-    mkInfo("Capture", function()
-        return (_capturedRemote and _capturedRemote.Name) or "press block once"
-    end)
-    mkInfo("Auto parry", function() return System.__properties.__autoparry_enabled and "on" or "off" end)
-    mkInfo("Active parries", function() return System.__properties.__parries end)
-    mkInfo("Ping", function()
-        local ok, v = pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end)
-        return (ok and type(v) == "number") and (tostring(math.floor(v + 0.5)) .. " ms") or "--"
-    end)
-    mkInfo("Ball speed", function()
-        local b = System.ball.get()
-        if not b then return "-" end
-        local z = b:FindFirstChild("zoomies")
-        local ok, vv = pcall(function() return z and z.VectorVelocity.Magnitude end)
-        local sp = (ok and type(vv) == "number") and vv or b.AssemblyLinearVelocity.Magnitude
-        return tostring(math.floor(sp + 0.5))
-    end)
-    mkInfo("Targeted at me", function()
-        local b = System.ball.get()
-        return (b and b:GetAttribute("target") == LocalPlayer.Name) and "yes" or "no"
-    end)
-
-    task.spawn(function()
-        while gui.Parent do
-            task.wait(0.5)
-            for _, fn in ipairs(liveRows) do pcall(fn) end
-        end
-    end)
-
-    local function dragify(handle, target)
-        local dragging, startP, startPos = false, nil, nil
-        handle.InputBegan:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = true startP = i.Position startPos = target.Position
-            end
-        end)
-        handle.InputEnded:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-        end)
-        UserInputService.InputChanged:Connect(function(i)
-            if dragging and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
-                local d = i.Position - startP
-                target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-            end
-        end)
+    local function ringStroke(x, thickness, transparency)
+        local s = cn("UIStroke", { Parent = x, Color = Color3.fromRGB(255, 255, 255), Thickness = thickness or 1.2,
+            Transparency = transparency or .55, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local gr = cn("UIGradient", { Parent = s, Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 40)),
+            ColorSequenceKeypoint.new(.22, Color3.fromRGB(250, 250, 252)),
+            ColorSequenceKeypoint.new(.48, Color3.fromRGB(70, 70, 78)),
+            ColorSequenceKeypoint.new(.72, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(45, 45, 52)),
+        }) })
+        table.insert(rotors, gr)
+        return s
     end
-    dragify(bar, win)
 
-    -- ===== floating dock: menu + triggerbot + manual spam =====
-    local dockMoved = false
-    local dock = cn("Frame", {
-        Parent = gui, Size = UDim2.fromOffset(58, 178), Position = UDim2.new(1, -74, 0.5, -89),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    })
-    cn("UIListLayout", { Parent = dock, Padding = UDim.new(0, 8), HorizontalAlignment = Enum.HorizontalAlignment.Center })
-    local function dockBtn(letter, tip, get, set)
-        local b = cn("TextButton", {
-            Parent = dock, Size = UDim2.fromOffset(54, 54), BackgroundColor3 = T.off, BackgroundTransparency = .08,
-            Text = "", AutoButtonColor = false,
-        })
-        corner(b, 27)
-        stroke(b, T.accent2, .5)
-        cn("TextLabel", {
-            Parent = b, Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 6), BackgroundTransparency = 1,
-            Text = letter, TextColor3 = T.dim, TextSize = 20, Font = Enum.Font.GothamBlack,
-        })
-        cn("TextLabel", {
-            Parent = b, Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -18), BackgroundTransparency = 1,
-            Text = tip, TextColor3 = T.dim, TextSize = 8, Font = Enum.Font.GothamBold,
-        })
-        local lbl1 = b:FindFirstChildOfClass("TextLabel")
-        local lbl2
-        for _, c in ipairs(b:GetChildren()) do if c:IsA("TextLabel") and c ~= lbl1 then lbl2 = c end end
-        local function paint()
-            local on = get and get() == true
-            b.BackgroundColor3 = on and T.accent or T.off
-            lbl1.TextColor3 = on and Color3.fromRGB(14, 11, 8) or T.dim
-            if lbl2 then lbl2.TextColor3 = on and Color3.fromRGB(30, 20, 10) or T.dim end
+    local gui = cn("ScreenGui", { Name = "NoirS6Menu", ResetOnSpawn = false, IgnoreGuiInset = true,
+        DisplayOrder = 999, ZIndexBehavior = Enum.ZIndexBehavior.Sibling })
+    do
+        local ok, hui = pcall(function() return gethui and gethui() end)
+        if ok and hui then gui.Parent = hui
+        else
+            local ok2, core = pcall(function() return game:GetService("CoreGui") end)
+            if ok2 and core then local okp = pcall(function() gui.Parent = core end) end
+            if not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
         end
-        b.MouseButton1Click:Connect(function()
-            if dockMoved then return end
-            if set then set(not (get and get())) paint() else win.Visible = not win.Visible end
+    end
+
+    local view = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+    local winW = 420
+    local winH = math.clamp(view.Y - 110, 420, 560)
+
+    local win = cn("Frame", { Parent = gui, Name = "NoirWindow", AnchorPoint = Vector2.new(.5, .5),
+        Position = UDim2.new(.5, 0, .5, 0), Size = UDim2.fromOffset(winW, winH),
+        BackgroundColor3 = C.base, BackgroundTransparency = .04, BorderSizePixel = 0, Active = true, ClipsDescendants = true })
+    corner(win, 20)
+    stroke(win, C.accent, .55, 1)
+    cn("UIGradient", { Parent = win, Rotation = 115, Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(26, 22, 18)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 9, 8)),
+    }) })
+    local winScale = cn("UIScale", { Parent = win, Scale = 1 })
+
+    local header = cn("Frame", { Parent = win, Size = UDim2.new(1, 0, 0, 60), BackgroundTransparency = 1, Active = true })
+    local dot = cn("Frame", { Parent = header, Position = UDim2.fromOffset(18, 17), Size = UDim2.fromOffset(14, 14),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+    corner(dot, 7)
+    ringStroke(dot, 1.4, .35)
+    cn("TextLabel", { Parent = header, Position = UDim2.fromOffset(42, 10), Size = UDim2.fromOffset(240, 22),
+        BackgroundTransparency = 1, Text = "BLADE BALL", TextColor3 = C.text, TextSize = 16,
+        Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left })
+    cn("TextLabel", { Parent = header, Position = UDim2.fromOffset(42, 32), Size = UDim2.fromOffset(240, 16),
+        BackgroundTransparency = 1, Text = "noir build · stage6 engine", TextColor3 = C.dim, TextSize = 11,
+        Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left })
+    local status = cn("TextLabel", { Parent = header, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -56, 0, 18),
+        Size = UDim2.fromOffset(66, 24), BackgroundColor3 = C.surface, BackgroundTransparency = .2,
+        Text = "IDLE", TextColor3 = C.dim, TextSize = 11, Font = Enum.Font.GothamBold })
+    corner(status, 12)
+    stroke(status, C.border, .5, 1)
+
+    local function circularize(b, d)
+        b.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+        b.BackgroundTransparency = .82
+        b.BorderSizePixel = 0
+        b.AutoButtonColor = false
+        corner(b, math.floor(d / 2))
+        ringStroke(b, 2, 0)
+        cn("UIStroke", { Parent = b, Color = Color3.fromRGB(105, 105, 112), Transparency = .5, Thickness = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local baseScale = cn("UIScale", { Parent = b, Scale = 1 })
+        local snd = cn("Sound", { Name = "NoirClick", SoundId = "rbxassetid://3868133279", Volume = .35, Parent = b })
+        b.MouseButton1Down:Connect(function()
+            snd:Play()
+            tw(baseScale, .12, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { Scale = .9 })
+            tw(b, .14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { BackgroundColor3 = Color3.fromRGB(27, 27, 31), BackgroundTransparency = .6 })
         end)
-        if get then paint() end
+        b.MouseButton1Up:Connect(function()
+            tw(baseScale, .34, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { Scale = 1 })
+            tw(b, .32, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { BackgroundColor3 = Color3.fromRGB(8, 8, 10), BackgroundTransparency = .82 })
+        end)
         return b
     end
 
-    dockBtn("≡", "MENU", nil, nil)
-    dockBtn("T", "TRIG",
-        function() return System.__triggerbot.__enabled == true end,
-        function(on) System.triggerbot.enable(on) end)
-    dockBtn("S", "SPAM",
-        function() return System.__properties.__manual_spam_enabled end,
-        function(on) if on then System.manual_spam.start() else System.manual_spam.stop() end end)
+    local closeBtn = cn("TextButton", { Parent = header, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 13),
+        Size = UDim2.fromOffset(34, 34), Text = "×", TextColor3 = C.text, TextSize = 20, Font = Enum.Font.GothamBold })
+    circularize(closeBtn, 34)
 
-    -- drag the whole dock
-    local ddrag, ds, dps = false, nil, nil
-    dock.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.Touch then
-            ddrag = true dockMoved = false ds = i.Position dps = dock.Position
+    local dragging, dragStart, startPos = false, nil, nil
+    header.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true dragStart = i.Position startPos = win.Position
         end
     end)
-    dock.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch then ddrag = false end end)
     UserInputService.InputChanged:Connect(function(i)
-        if ddrag and i.UserInputType == Enum.UserInputType.Touch then
-            local d = i.Position - ds
-            if math.abs(d.X) > 8 or math.abs(d.Y) > 8 then dockMoved = true end
-            dock.Position = UDim2.new(dps.X.Scale, dps.X.Offset + d.X, dps.Y.Scale, dps.Y.Offset + d.Y)
+        if dragging and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
+            local d = i.Position - dragStart
+            local v = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+            local half = win.AbsoluteSize / 2
+            local x = math.clamp(startPos.X.Offset + d.X, half.X + 10, v.X - half.X - 10)
+            local y = math.clamp(startPos.Y.Offset + d.Y, half.Y + 8, v.Y - half.Y - 8)
+            win.Position = UDim2.fromOffset(math.floor(x + .5), math.floor(y + .5))
         end
     end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+
+    local scroll = cn("ScrollingFrame", { Parent = win, Position = UDim2.fromOffset(10, 66),
+        Size = UDim2.new(1, -20, 1, -76), BackgroundTransparency = 1, BorderSizePixel = 0,
+        ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent, ScrollBarImageTransparency = .35,
+        CanvasSize = UDim2.fromOffset(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y })
+    cn("UIListLayout", { Parent = scroll, Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder })
+    cn("UIPadding", { Parent = scroll, PaddingRight = UDim.new(0, 4) })
+
+    local sectionN = 0
+    local function section(name, desc)
+        sectionN += 1
+        local card = cn("Frame", { Parent = scroll, LayoutOrder = sectionN, Size = UDim2.new(1, 0, 0, 44),
+            BackgroundColor3 = C.surface, BackgroundTransparency = .18, BorderSizePixel = 0, AutomaticSize = Enum.AutomaticSize.Y })
+        corner(card, 14)
+        stroke(card, C.border, .55, 1)
+        cn("UIPadding", { Parent = card, PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
+            PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10) })
+        local bar = cn("Frame", { Parent = card, Size = UDim2.fromOffset(3, 16), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+        corner(bar, 2)
+        cn("TextLabel", { Parent = card, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -10, 0, 16),
+            BackgroundTransparency = 1, Text = string.upper(name), TextColor3 = C.accent2, TextSize = 12,
+            Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left })
+        local lh = 16
+        if desc and desc ~= "" then
+            cn("TextLabel", { Parent = card, Position = UDim2.fromOffset(10, 16), Size = UDim2.new(1, -10, 0, 13),
+                BackgroundTransparency = 1, Text = desc, TextColor3 = C.dim, TextSize = 10,
+                Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd })
+            lh = 29
+        end
+        local holder = cn("Frame", { Parent = card, Position = UDim2.fromOffset(0, lh + 6), Size = UDim2.new(1, 0, 0, 0),
+            BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y })
+        cn("UIListLayout", { Parent = holder, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder })
+        return holder
+    end
+
+    local function rowL(parent, label, h)
+        local r = cn("Frame", { Parent = parent, Size = UDim2.new(1, 0, 0, h or 30), BackgroundColor3 = C.btn,
+            BackgroundTransparency = .55, BorderSizePixel = 0 })
+        corner(r, 10)
+        stroke(r, C.border, .8, 1)
+        cn("TextLabel", { Parent = r, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(.62, 0, 1, 0),
+            BackgroundTransparency = 1, Text = label, TextColor3 = C.text, TextSize = 13,
+            Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left })
+        return r
+    end
+
+    local function addToggleOpt(parent, label, get, set)
+        local r = rowL(parent, label, 32)
+        local pill = cn("TextButton", { Parent = r, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -12, .5, 0),
+            Size = UDim2.fromOffset(40, 22), BackgroundColor3 = C.off, Text = "", AutoButtonColor = false })
+        corner(pill, 11)
+        local pStroke = stroke(pill, C.border, .3, 1)
+        local dotf = cn("Frame", { Parent = pill, AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 3, .5, 0),
+            Size = UDim2.fromOffset(16, 16), BackgroundColor3 = C.text, BorderSizePixel = 0 })
+        corner(dotf, 8)
+        local state = get() and true or false
+        local function paint(anim)
+            if anim == false then
+                pill.BackgroundColor3 = state and C.accent or C.off
+                pStroke.Color = state and C.accent2 or C.border
+                dotf.Position = state and UDim2.new(1, -19, .5, 0) or UDim2.new(0, 3, .5, 0)
+            else
+                tw(pill, .32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { BackgroundColor3 = state and C.accent or C.off })
+                tw(pStroke, .32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { Color = state and C.accent2 or C.border })
+                tw(dotf, .34, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { Position = state and UDim2.new(1, -19, .5, 0) or UDim2.new(0, 3, .5, 0) })
+            end
+        end
+        local lastClick = 0
+        pill.Activated:Connect(function()
+            local now = os.clock()
+            if now - lastClick < .15 then return end
+            lastClick = now
+            state = not state
+            paint(true)
+            pcall(function() set(state) end)
+        end)
+        paint(false)
+        return { set = function(v) state = v and true or false paint(false) end }
+    end
+
+    local function addCycleOpt(parent, label, values, get, set)
+        local r = rowL(parent, label, 34)
+        local b = cn("TextButton", { Parent = r, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -12, .5, 0),
+            Size = UDim2.fromOffset(136, 26), BackgroundColor3 = C.accent, BackgroundTransparency = 1,
+            Text = tostring(get()), TextColor3 = C.accent2, TextSize = 12, Font = Enum.Font.GothamBold, AutoButtonColor = false })
+        corner(b, 13)
+        stroke(b, C.accent, .4, 1)
+        local bScale = cn("UIScale", { Parent = b, Scale = 1 })
+        local lastClick = 0
+        b.Activated:Connect(function()
+            local now = os.clock()
+            if now - lastClick < .15 then return end
+            lastClick = now
+            local cur, nxt = get(), values[1]
+            for i, v in ipairs(values) do if v == cur then nxt = values[(i % #values) + 1] break end end
+            pcall(function() set(nxt) end)
+            tw(bScale, .1, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { Scale = .9 })
+            tw(b, .12, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { BackgroundTransparency = .75, BackgroundColor3 = C.surface })
+            task.delay(.14, function()
+                if b.Parent then
+                    b.Text = tostring(get())
+                    tw(bScale, .32, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { Scale = 1 })
+                    tw(b, .3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { BackgroundTransparency = 1 })
+                end
+            end)
+        end)
+        return b
+    end
+
+    local function addSliderOpt(parent, label, min, max, get, set)
+        local r = cn("Frame", { Parent = parent, Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = C.btn,
+            BackgroundTransparency = .55, BorderSizePixel = 0 })
+        corner(r, 10)
+        stroke(r, C.border, .8, 1)
+        local val = cn("TextLabel", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 4),
+            Size = UDim2.fromOffset(56, 14), BackgroundTransparency = 1, Text = tostring(get()), TextColor3 = C.accent2,
+            TextSize = 13, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right })
+        cn("TextLabel", { Parent = r, Position = UDim2.fromOffset(12, 2), Size = UDim2.new(.7, 0, 0, 16),
+            BackgroundTransparency = 1, Text = label, TextColor3 = C.text, TextSize = 13,
+            Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left })
+        local track = cn("Frame", { Parent = r, Position = UDim2.new(0, 12, 1, -16), Size = UDim2.new(1, -24, 0, 4),
+            BackgroundColor3 = C.off, BorderSizePixel = 0, Active = true })
+        corner(track, 2)
+        local fill = cn("Frame", { Parent = track, Size = UDim2.fromScale(.5, 1), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+        corner(fill, 2)
+        local knob = cn("Frame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(.5, 0, .5, 0),
+            Size = UDim2.fromOffset(16, 16), BackgroundColor3 = C.accent2, BorderSizePixel = 0, ZIndex = 3 })
+        corner(knob, 8)
+        stroke(knob, C.border, .3, 1)
+        local kScale = cn("UIScale", { Parent = knob, Scale = 1 })
+        local function apply(a, commit)
+            a = math.clamp(a, 0, 1)
+            fill.Size = UDim2.fromScale(a, 1)
+            knob.Position = UDim2.new(a, 0, .5, 0)
+            local v = math.floor(min + (max - min) * a + .5)
+            val.Text = tostring(v)
+            pcall(function() set(v) end)
+        end
+        do
+            local cur = tonumber(get()) or min
+            apply((cur - min) / (max - min), false)
+        end
+        local drag = false
+        local function posToAlpha(px)
+            local abs = track.AbsolutePosition.X
+            local w = track.AbsoluteSize.X
+            if w <= 0 then return 0 end
+            return math.clamp((px - abs) / w, 0, 1)
+        end
+        local function handle(i)
+            if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+                drag = true
+                tw(kScale, .15, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { Scale = 1.35 })
+                apply(posToAlpha(i.Position.X), true)
+            end
+        end
+        track.InputBegan:Connect(handle)
+        knob.InputBegan:Connect(handle)
+        UserInputService.InputChanged:Connect(function(i)
+            if drag and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
+                apply(posToAlpha(i.Position.X), true)
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(i)
+            if drag and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1) then
+                drag = false
+                tw(kScale, .3, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { Scale = 1 })
+            end
+        end)
+        return r
+    end
+
+    local statusRows = {}
+    local function addInfo(parent, label, fn)
+        local r = rowL(parent, label, 26)
+        local v = cn("TextLabel", { Parent = r, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -12, .5, 0),
+            Size = UDim2.fromOffset(190, 18), BackgroundTransparency = 1, Text = "—", TextColor3 = C.dim, TextSize = 12,
+            Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Right })
+        table.insert(statusRows, { v, fn })
+        return v
+    end
+
+    local gget = function(k, d)
+        local ok, v = pcall(function() return genv[k] end)
+        if ok and v ~= nil then return v end
+        return d
+    end
+
+    local function apEnabled() return System.__properties.__autoparry_enabled == true end
+    local function prop(k) return System.__properties[k] end
+    local function setProp(k, v) pcall(function() System.__properties[k] = v end) end
+    local function startStop(obj, on)
+        pcall(function()
+            if on then obj.start() else obj.stop() end
+        end)
+    end
+
+    do
+        local sMain = section("Auto parry", "core combat automation")
+        addToggleOpt(sMain, "Enabled",
+            function() return apEnabled() end,
+            function(on)
+                setProp("__autoparry_enabled", on)
+                if not on then setProp("__play_animation", false) end
+                pcall(function() if System.is_solo_active() then System.is_solo_active().clear(ctx) end end)
+                startStop(System.autoparry, on)
+                pcall(function() status.Text = on and "ARMED" or "IDLE"; status.TextColor3 = on and C.accent2 or C.dim end)
+                pcall(function() Notify(on and "Auto Parry enabled" or "Auto Parry off", on and 2.5 or 2) end)
+            end)
+        addCycleOpt(sMain, "Parry mode", { "Remote", "Keypress" },
+            function() return tostring(gget("AutoParryMode", "Remote")) end,
+            function(v) genv.AutoParryMode = v end)
+        addSliderOpt(sMain, "Accuracy", 1, 100,
+            function() return tonumber(prop("__accuracy")) or 50 end,
+            function(v)
+                setProp("__accuracy", v)
+                pcall(function() if _G.update_divisor then _G.update_divisor() end end)
+                pcall(function() if System.autoparry.update_divisor then System.autoparry.update_divisor() end end)
+            end)
+        addCycleOpt(sMain, "Parry type", CURVE_NAMES,
+            function() return tostring(gget("Selected_Parry_Type", "Camera")) end,
+            function(v) Selected_Parry_Type = v CurveType = v end)
+        addToggleOpt(sMain, "Random accuracy",
+            function() return prop("__randomized_accuracy_enabled") == true end,
+            function(on)
+                setProp("__randomized_accuracy_enabled", on)
+                pcall(function() update_randomized_accuracy() end)
+            end)
+        addToggleOpt(sMain, "Auto ability",
+            function() return gget("AutoAbility", false) == true end,
+            function(on) genv.AutoAbility = on end)
+
+        local sDet = section("Detection", "special ball events")
+        addToggleOpt(sDet, "Random curve",
+            function() return prop("__connections").__random_curve ~= nil end,
+            function(on)
+                local c = prop("__connections")
+                if on then
+                    if c.__random_curve then c.__random_curve:Disconnect() end
+                    c.__random_curve = System.run_service.PreSimulation:Connect(function()
+                        if c.__random_curve == nil then return end
+                        if prop("__autoparry_enabled") and #prop("__parries") > 0 then
+                            CurveType = CURVE_NAMES[math.random(1, #CURVE_NAMES)]
+                            Selected_Parry_Type = CurveType
+                        end
+                    end)
+                else
+                    if c.__random_curve then c.__random_curve:Disconnect() c.__random_curve = nil end
+                end
+            end)
+        local detKeys = { { "Infinity detection", "__infinity" }, { "Death slash detection", "__deathslash" },
+            { "Time hole detection", "__timehole" }, { "Slashes of fury", "__slashesoffury" }, { "Phantom detection", "__phantom" } }
+        for _, dk in ipairs(detKeys) do
+            addToggleOpt(sDet, dk[1],
+                function() return System.__config.__detections[dk[2]] == true end,
+                function(on) pcall(function() System.__config.__detections[dk[2]] = on end) end)
+        end
+
+        local sSpam = section("Spam / trigger", "press patterns")
+        local trig = addToggleOpt(sSpam, "Triggerbot",
+            function() return System.__triggerbot.__enabled == true end,
+            function(on)
+                pcall(function() System.triggerbot.enable(on) end)
+                System.__triggerbot.__enabled = on
+            end)
+        addCycleOpt(sSpam, "Auto spam mode", { "Remote", "Keypress" },
+            function() return tostring(gget("AutoSpamMode", "Remote")) end,
+            function(v) genv.AutoSpamMode = v end)
+        local aspam = addToggleOpt(sSpam, "Auto spam",
+            function() return prop("__auto_spam_enabled") == true end,
+            function(on)
+                setProp("__auto_spam_enabled", on)
+                startStop(System.auto_spam, on)
+            end)
+        addCycleOpt(sSpam, "Manual spam mode", { "Remote", "Keypress" },
+            function() return tostring(gget("ManualSpamMode", "Remote")) end,
+            function(v) genv.ManualSpamMode = v end)
+        local mspam = addToggleOpt(sSpam, "Manual spam",
+            function() return prop("__manual_spam_enabled") == true end,
+            function(on)
+                setProp("__manual_spam_enabled", on)
+                startStop(System.manual_spam, on)
+            end)
+        genv.__noirDock = { trig = trig, mspam = mspam }
+
+        local sStat = section("Status", "live telemetry")
+        addInfo(sStat, "Capture", function()
+            return (_capturedRemote and _capturedRemote.Name) or "press block once"
+        end)
+        addInfo(sStat, "Auto parry", function() return apEnabled() and "ON" or "off" end)
+        addInfo(sStat, "Active parries", function() return tostring(#prop("__parries")) end)
+        addInfo(sStat, "Ping", function()
+            local ok, p = pcall(function()
+                return LocalPlayer:GetNetworkPing() * 1000
+            end)
+            return (ok and p) and string.format("%dms", math.floor(p + .5)) or "n/a"
+        end)
+        addInfo(sStat, "Ball speed", function()
+            local ok, b = pcall(function() return System.ball.get() end)
+            if ok and b then
+                local ok2, z = pcall(function() return b:FindFirstChild("zoomies") end)
+                if ok2 and z then
+                    local ok3, v = pcall(function() return z.AssemblyLinearVelocity.Magnitude end)
+                    if ok3 and v then return string.format("%.1f studs/s", v) end
+                end
+            end
+            return "no ball"
+        end)
+        addInfo(sStat, "Targeted at me", function()
+            local ok, b = pcall(function() return System.ball.get() end)
+            if ok and b then
+                local ok2, t = pcall(function() return b:GetAttribute("target") end)
+                return (ok2 and t == LocalPlayer.Name) and "YES" or "no"
+            end
+            return "n/a"
+        end)
+    end
+
+    local statusOrder = sectionN + 1
+    do
+        local open = apEnabled()
+        status.Text = open and "ARMED" or "IDLE"
+        status.TextColor3 = open and C.accent2 or C.dim
+    end
+    task.spawn(function()
+        while gui.Parent do
+            task.wait(.45)
+            for _, r in ipairs(statusRows) do
+                local ok, txt = pcall(r[2])
+                if ok then pcall(function() r[1].Text = tostring(txt) end) end
+            end
+            local on = apEnabled()
+            local want = on and "ARMED" or "IDLE"
+            if status.Text ~= want then
+                status.Text = want
+                tw(status, .3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { TextColor3 = on and C.accent2 or C.dim })
+            end
+        end
+    end)
+
+    -- ===== floating dock buttons (individually draggable) =====
+    local winVisible = true
+    local function showWin()
+        winVisible = true
+        win.Visible = true
+        winScale.Scale = .72
+        tw(winScale, .46, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { Scale = 1 })
+    end
+    local function hideWin()
+        winVisible = false
+        tw(winScale, .28, Enum.EasingStyle.Quart, Enum.EasingDirection.In, { Scale = .72 })
+        task.delay(.28, function() if not winVisible and win.Parent then win.Visible = false end end)
+    end
+    closeBtn.MouseButton1Click:Connect(hideWin)
+
+    local function dockBtn(txt, label, yOff, get, set)
+        local holder = cn("Frame", { Parent = gui, AnchorPoint = Vector2.new(1, .5),
+            Position = UDim2.new(1, -18, .5, yOff), Size = UDim2.fromOffset(56, 74), BackgroundTransparency = 1, Active = true })
+        local b = cn("TextButton", { Parent = holder, Size = UDim2.fromOffset(56, 56), Text = txt,
+            TextColor3 = C.text, TextSize = 21, Font = Enum.Font.GothamBold })
+        circularize(b, 56)
+        cn("TextLabel", { Parent = holder, Position = UDim2.fromOffset(0, 60), Size = UDim2.fromOffset(56, 12),
+            BackgroundTransparency = 1, Text = label, TextColor3 = C.dim, TextSize = 10, Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Center })
+        local activeStroke = cn("UIStroke", { Parent = b, Color = C.accent, Transparency = 1, Thickness = 2,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local function paint(anim)
+            local on = get and get() or false
+            if anim == false then
+                activeStroke.Transparency = on and 0 or 1
+                b.TextColor3 = on and C.accent2 or C.text
+            else
+                tw(activeStroke, .3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { Transparency = on and 0 or 1 })
+                tw(b, .3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out, { TextColor3 = on and C.accent2 or C.text })
+            end
+        end
+        paint(false)
+        local moved, draggingB, dstart, hstart = false, false, nil, nil
+        b.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingB = true moved = false dstart = i.Position hstart = holder.Position
+            end
+        end)
+        b.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingB = false
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(i)
+            if draggingB and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
+                local d = i.Position - dstart
+                if math.abs(d.X) > 6 or math.abs(d.Y) > 6 then moved = true end
+                holder.Position = UDim2.new(hstart.X.Scale, hstart.X.Offset + d.X, hstart.Y.Scale, hstart.Y.Offset + d.Y)
+            end
+        end)
+        b.MouseButton1Click:Connect(function()
+            if moved then moved = false return end
+            if holder == nil then return end
+            if set then
+                local cur = get and get() or false
+                pcall(function() set(not cur) end)
+                paint(true)
+            else
+                if winVisible then hideWin() else showWin() end
+            end
+        end)
+        return { button = b, paint = paint, holder = holder }
+    end
+
+    dockBtn("≡", "MENU", -120, nil, nil)
+    dockBtn("T", "TRIG", -30,
+        function() return System.__triggerbot.__enabled == true end,
+        function(on)
+            pcall(function() System.triggerbot.enable(on) end)
+            System.__triggerbot.__enabled = on
+            pcall(function() genv.__noirDock.trig.set(on) end)
+        end)
+    dockBtn("S", "SPAM", 60,
+        function() return prop("__manual_spam_enabled") == true end,
+        function(on)
+            setProp("__manual_spam_enabled", on)
+            startStop(System.manual_spam, on)
+            pcall(function() genv.__noirDock.mspam.set(on) end)
+        end)
+
+    win.Visible = true
+    winScale.Scale = .72
+    tw(winScale, .46, Enum.EasingStyle.Back, Enum.EasingDirection.Out, { Scale = 1 })
+
+    genv.NoirS6 = {
+        toggle = function() if winVisible then hideWin() else showWin() end end,
+        gui = gui,
+    }
 end
