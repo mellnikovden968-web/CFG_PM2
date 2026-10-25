@@ -12123,7 +12123,7 @@ do
             if c.__random_curve then c.__random_curve:Disconnect() end
             c.__random_curve = RunService.PreSimulation:Connect(function()
                 if c.__random_curve == nil then return end
-                if prop("__autoparry_enabled") and #prop("__parries") > 0 then
+                if prop("__autoparry_enabled") and (tonumber(prop("__parries")) or 0) > 0 then
                     CurveType = CURVE_NAMES[math.random(1, #CURVE_NAMES)]
                     Selected_Parry_Type = CurveType
                 end
@@ -12383,7 +12383,7 @@ do
             task.wait(1)
             pcall(function() labCapture:SetValue("Capture: " .. ((_capturedRemote and _capturedRemote.Name) or "press block once")) end)
             pcall(function() labAP:SetValue("Auto Parry: " .. (prop("__autoparry_enabled") and "ON" or "off")) end)
-            pcall(function() labParries:SetValue("Active Parries: " .. tostring(#prop("__parries"))) end)
+            pcall(function() labParries:SetValue("Active Parries: " .. tostring(prop("__parries"))) end)
             pcall(function()
                 local p = LocalPlayer:GetNetworkPing() * 1000
                 labPing:SetValue("Ping: " .. tostring(math.floor(p + .5)) .. "ms")
@@ -12447,6 +12447,15 @@ local function __noirFeatures()
     local LocalPlayer = game:GetService("Players").LocalPlayer
     local RunService = game:GetService("RunService")
     local UIS = game:GetService("UserInputService")
+    local Lighting = game:GetService("Lighting")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local SoundService = game:GetService("SoundService")
+    local Stats = game:GetService("Stats")
+    local CoreGui = game:GetService("CoreGui")
+    local HttpService = game:GetService("HttpService")
+    local TweenService = game:GetService("TweenService")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local Player = LocalPlayer
 
     local Library = { _config = { _flags = {} } }
     function Library.SendNotification(self, t)
@@ -12653,10 +12662,11 @@ local stats_overlay_module = VisualsTab:create_module({
 
                 local Panel = Instance.new('Frame')
                 Panel.Name = 'Panel'
-                Panel.Size = UDim2.new(0, (2*89), 0, (2*43))
+                Panel.Size = UDim2.new(0, 146, 0, 66)
                 Panel.Position = UDim2.new(0, (19+1), 0.5, -(73-30))
-                Panel.BackgroundColor3 = Color3.fromRGB(bit32.bxor(31,19), (83-71), (3+9))
+                Panel.BackgroundColor3 = Color3.fromRGB(10, 9, 8); Panel.BackgroundTransparency = 0.12
                 Panel.BorderSizePixel = 0
+                do local sk = Instance.new('UIStroke'); sk.Color = Color3.fromRGB(224,116,24); sk.Transparency = 0.3; sk.Thickness = 1; sk.Parent = Panel end
                 Panel.Active = true
                 Panel.Parent = OverlayGui
                 Instance.new('UICorner', Panel).CornerRadius = UDim.new(0, (31-19))
@@ -12671,7 +12681,8 @@ local stats_overlay_module = VisualsTab:create_module({
                 TitleLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
                 TitleLabel.Text = "FPS & PING"
                 TitleLabel.TextColor3 = Color3.fromRGB((79+141), (250-30), bit32.bxor(31,195))
-                TitleLabel.TextSize = (81-71)
+                TitleLabel.TextSize = 9
+                TitleLabel.TextColor3 = Color3.fromRGB(255, 170, 54)
                 TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
                 TitleLabel.Parent = Panel
 
@@ -12689,7 +12700,7 @@ local stats_overlay_module = VisualsTab:create_module({
                 local function makeChip(tag)
                     local Chip = Instance.new('Frame')
                     Chip.Size = UDim2.new(0, (2*35), 0, (2*18))
-                    Chip.BackgroundColor3 = Color3.fromRGB((7+17), (54-30), bit32.bxor(31,7))
+                    Chip.BackgroundColor3 = Color3.fromRGB(15, 13, 11)
                     Chip.BorderSizePixel = 0
                     Chip.Parent = ChipHolder
                     Instance.new('UICorner', Chip).CornerRadius = UDim.new(0, (81-71))
