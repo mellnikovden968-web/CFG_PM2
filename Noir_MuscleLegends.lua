@@ -2,7 +2,6 @@ pcall(function()
     local g = (type(getgenv) == "function" and getgenv()) or _G
     g.__NoirHubRuntimeLock = nil
 end)
-
 local function __noirW1a()
 if type(NoirGenv) ~= "\x66unction" then
     NoirGenv = function()
@@ -1719,7 +1718,7 @@ text(status, "\x4eoir Client • v4", 15, UDim2.fromOffset(16, 45))
 
 local header = New("\x46rame", { Parent = win, Position = UDim2.fromOffset(79, 0), Size = UDim2.new(1, -79, 0, 60), BackgroundTransparency = 1 })
 local headerTitle = text(header, "\x4eOIR HUB", 24, UDim2.fromOffset(28, 24)); headerTitle.Visible = false
-local headerSub = text(header, "Muscle Legends \x2022 automation suite", 13, UDim2.fromOffset(29, 56), true); headerSub.Visible = false
+local headerSub = text(header, "Noir Hub", 13, UDim2.fromOffset(29, 56), true); headerSub.Visible = false
 local creatorImage = ""
 do
     local customAsset = (type(getcustomasset) == "\x66unction" and getcustomasset) or (type(getsynasset) == "\x66unction" and getsynasset)
@@ -2144,7 +2143,7 @@ local playerText = text(playerCard, "\x30", 42, UDim2.fromOffset(22, 50)); playe
 local infoCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 332), Size = UDim2.new(1, 0, 1, -348), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
 corner(infoCard, 18); stroke(infoCard, C.border, .5)
 text(infoCard, "\x51UICK START", 18, UDim2.fromOffset(24, 22))
-text(infoCard, "\x4fpen Main for player tools, World for gun & fling tools, Visuals\x20for ESP.", 14, UDim2.fromOffset(25, 54), true)
+text(infoCard, "\x4fpen Train for farm tools, Combat for pvp tools, Misc\x20for everything else.", 14, UDim2.fromOffset(25, 54), true)
 text(infoCard, "\x53ettings are saved automatically to Noir Hub/configs.", 14, UDim2.fromOffset(25, 78), true)
 local frameCounter, lastFps = 0, os.clock()
 RunService.RenderStepped:Connect(function()
@@ -2369,12 +2368,15 @@ function host.CreateTab()
     function tab:AddSection(name, description)
         yieldDuringBuild()
         local __BULLET = string.char(226, 128, 162)
+        local P_TRAIN = "TRAIN " .. __BULLET .. " "
+        local P_COMBAT = "COMBAT " .. __BULLET .. " "
+        local P_MISC = "MISC " .. __BULLET .. " "
         local col, page = nil, "\x61im"
-        if string.sub(name, 1, 7) == ("TRAIN " .. __BULLET .. " ") then
+        if string.sub(name, 1, #P_TRAIN) == P_TRAIN then
             sectionCount += 1; col = cols[(sectionCount - 1) % 2 + 1]; page = "\x61im"
-        elseif string.sub(name, 1, 8) == ("COMBAT " .. __BULLET .. " ") then
+        elseif string.sub(name, 1, #P_COMBAT) == P_COMBAT then
             worldSectionCount += 1; col = worldCols[(worldSectionCount - 1) % 2 + 1]; page = "\x77orld"
-        elseif string.sub(name, 1, 6) == ("MISC " .. __BULLET .. " ") then
+        elseif string.sub(name, 1, #P_MISC) == P_MISC then
             miscSectionCount += 1; col = miscCols[(miscSectionCount - 1) % 2 + 1]; page = "\x6disc"
         end
         if not col then
@@ -2957,9 +2959,8 @@ __noirW1b()
 end
 __noirW1a()
 
--- ===== adapter =====
 
--- ===== Syniox -> Noir adapter =====
+-- ===== UI bridge =====
 local __NC = NoirGenv().__NoirCore
 local library = (function()
     if not __NC or not __NC.host then return nil end
@@ -2969,8 +2970,23 @@ local library = (function()
         Rebirths = "MISC \xE2\x80\xA2 ",
         Kill = "COMBAT \xE2\x80\xA2 ", Rock = "COMBAT \xE2\x80\xA2 ", Boss = "COMBAT \xE2\x80\xA2 ",
         Stats = "MISC \xE2\x80\xA2 ", Pets = "MISC \xE2\x80\xA2 ",
-        Misc = "MISC \xE2\x80\xA2 ", Teleport = "MISC \xE2\x80\xA2 ", Credits = "MISC \xE2\x80\xA2 ",
+        Misc = "MISC \xE2\x80\xA2 ", Teleport = "MISC \xE2\x80\xA2 ",
     }
+    local function dummyApi()
+        local dummy = {}
+        local function noop() return nil end
+        local lbl = setmetatable({}, {
+            __index = function() return "" end,
+            __newindex = function() end,
+        })
+        function dummy:AddLabel() return lbl end
+        function dummy:AddSwitch() return { Set = noop } end
+        function dummy:AddButton() return nil end
+        function dummy:AddTextBox() return nil end
+        function dummy:AddDropdown() return { Add = noop, Clear = noop } end
+        function dummy:AddFolder() return dummy end
+        return dummy
+    end
     local function labelProxy(kitLabel)
         local proxy = {}
         local meta = {
@@ -3034,6 +3050,7 @@ local library = (function()
     function lib:AddWindow(_title, _opts)
         local wnd = {}
         function wnd:AddTab(name)
+            if name == "Credits" then return dummyApi() end
             local prefix = PAGE_FOR[name] or "MISC \xE2\x80\xA2 "
             local section = __tabHost:AddSection(prefix .. tostring(name), "")
             currentPrefix = prefix
@@ -3044,7 +3061,6 @@ local library = (function()
     return lib
 end)()
 
--- ===== ported source (stage_5, 1:1) =====
 
 local Services = {
     Players = game:GetService("Players"),
@@ -3113,7 +3129,7 @@ local State = {
     autoFortuneWheelActive = false
 }
 
-local window = library:AddWindow("Syniox Public | Muscle Legends || HELLO - ".. PlayerData.DisplayName, {
+local window = library:AddWindow("Noir Hub | Muscle Legends || HELLO - ".. PlayerData.DisplayName, {
     title_bar = {
         Color3.fromRGB(160, 0, 0), 
         Color3.fromRGB(40, 0, 0),  
@@ -6481,7 +6497,7 @@ Tabs.Misc:AddButton("🚀 FPS Booster", function()
     end
 
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "FPS Boosted & Lighting Balanced!",
         Duration = 3
     })
@@ -6496,8 +6512,8 @@ Tabs.Misc:AddSwitch("⏳ Anti Afk", function(Value)
     local PlayerGui = Player:FindFirstChildOfClass("PlayerGui")
     
     if Value then
-        if PlayerGui:FindFirstChild("Syniox_GUI") then 
-            PlayerGui.Syniox_GUI:Destroy() 
+        if PlayerGui:FindFirstChild("Noir_GUI") then 
+            PlayerGui.Noir_GUI:Destroy() 
         end
 
         local TweenService = Services.TweenService
@@ -6505,7 +6521,7 @@ Tabs.Misc:AddSwitch("⏳ Anti Afk", function(Value)
         local RunService = Services.RunService
 
         local ScreenGui = Instance.new("ScreenGui", PlayerGui)
-        ScreenGui.Name = "Syniox_GUI"
+        ScreenGui.Name = "Noir_GUI"
 
         local MainFrame = Instance.new("Frame", ScreenGui)
         MainFrame.Size = UDim2.new(0, 190, 0, 210)
@@ -6521,7 +6537,7 @@ Tabs.Misc:AddSwitch("⏳ Anti Afk", function(Value)
         local Title = Instance.new("TextLabel", MainFrame)
         Title.Size = UDim2.new(1, -40, 0, 40)
         Title.Position = UDim2.new(0, 15, 0, 0)
-        Title.Text = "SYNIOX | AFK"
+        Title.Text = "NOIR | AFK"
         Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         Title.Font = Enum.Font.GothamBold
         Title.TextSize = 13
@@ -6614,8 +6630,8 @@ Tabs.Misc:AddSwitch("⏳ Anti Afk", function(Value)
 
         TweenService:Create(MainFrame, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.02, 0, 0.4, 0)}):Play()
     else
-        if PlayerGui:FindFirstChild("Syniox_GUI") then
-            PlayerGui.Syniox_GUI:Destroy()
+        if PlayerGui:FindFirstChild("Noir_GUI") then
+            PlayerGui.Noir_GUI:Destroy()
         end
     end
 end)
@@ -6701,7 +6717,7 @@ scriptFolder:AddButton("⚡ Infinite Yield", function()
     loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Infinite Yield Loaded!",
         Duration = 3
     })
@@ -6711,7 +6727,7 @@ scriptFolder:AddButton("🕺 Emote Script", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/7yd7/Hub/refs/heads/Branch/GUIS/Emotes.lua"))()
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub V2",
+        Title = "Noir Hub V2",
         Text = "Emote Script Activated!",
         Duration = 5
     })
@@ -6936,7 +6952,7 @@ Tabs.Teleport:AddButton("🏠 Spawn", function()
     humanoidRootPart.CFrame = CFrame.new(2, 8, 115)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Spawn",
         Duration = 2
     })
@@ -6948,7 +6964,7 @@ Tabs.Teleport:AddButton("🔮 Secret Area", function()
     humanoidRootPart.CFrame = CFrame.new(1947, 2, 6191)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Secret Area",
         Duration = 2
     })
@@ -6960,7 +6976,7 @@ Tabs.Teleport:AddButton("🏝️ Tiny Island", function()
     humanoidRootPart.CFrame = CFrame.new(-34, 7, 1903)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Tiny Island",
         Duration = 2
     })
@@ -6972,7 +6988,7 @@ Tabs.Teleport:AddButton("❄️ Frozen Island", function()
     humanoidRootPart.CFrame = CFrame.new(-2600.00244, 3.67686558, -403.884369, 0.0873617008, 1.0482899e-09, 0.99617666, 3.07204253e-08, 1, -3.7464023e-09, -0.99617666, 3.09302628e-08, 0.0873617008)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Frozen Island",
         Duration = 2
     })
@@ -6984,7 +7000,7 @@ Tabs.Teleport:AddButton("⚡ Mythical Island", function()
     humanoidRootPart.CFrame = CFrame.new(2255, 7, 1071)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Mythical Island",
         Duration = 2
     })
@@ -6996,7 +7012,7 @@ Tabs.Teleport:AddButton("🔥 Hell Island", function()
     humanoidRootPart.CFrame = CFrame.new(-6768, 7, -1287)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Hell Island",
         Duration = 2
     })
@@ -7008,7 +7024,7 @@ Tabs.Teleport:AddButton("🛡️ Legend Island", function()
     humanoidRootPart.CFrame = CFrame.new(4604, 991, -3887)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Legend Island",
         Duration = 2
     })
@@ -7020,7 +7036,7 @@ Tabs.Teleport:AddButton("👑 Muscle King", function()
     humanoidRootPart.CFrame = CFrame.new(-8646, 17, -5738)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Muscle King",
         Duration = 2
     })
@@ -7032,7 +7048,7 @@ Tabs.Teleport:AddButton("🌴 Jungle Island", function()
     humanoidRootPart.CFrame = CFrame.new(-8659, 6, 2384)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Jungle Island",
         Duration = 2
     })
@@ -7044,7 +7060,7 @@ Tabs.Teleport:AddButton("⚙️ Industrial Gym", function()
     humanoidRootPart.CFrame = CFrame.new(-5350, 57, 4929)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Industrial Gym",
         Duration = 2
     })
@@ -7058,7 +7074,7 @@ Tabs.Teleport:AddButton("⚔️ Brawl Regular", function()
     humanoidRootPart.CFrame = CFrame.new(-1849, 20, -6335)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Brawl Regular",
         Duration = 2
     })
@@ -7070,7 +7086,7 @@ Tabs.Teleport:AddButton("🏜️ Brawl Desert", function()
     humanoidRootPart.CFrame = CFrame.new(960, 17, -7398)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Brawl Desert",
         Duration = 2
     })
@@ -7082,57 +7098,13 @@ Tabs.Teleport:AddButton("🌋 Brawl Lava", function()
     humanoidRootPart.CFrame = CFrame.new(4471, 119, -8836)
     
     Services.StarterGui:SetCore("SendNotification", {
-        Title = "Syniox Hub",
+        Title = "Noir Hub",
         Text = "Teleported to Brawl Lava",
         Duration = 2
     })
 end)
 
-local title = Tabs.Credits:AddLabel("✨ Syniox Hub V2")
-title.TextColor3 = Color3.fromRGB(255, 215, 0)
-
-local dev = Tabs.Credits:AddLabel("👤 Developer: Yusuf")
-dev.TextColor3 = Color3.fromRGB(255, 50, 50)
-
-Tabs.Credits:AddLabel("--------------------------")
-
-local thanks = Tabs.Credits:AddLabel("🤝 Special Thanks to: Halis & Henne")
-thanks.TextColor3 = Color3.fromRGB(0, 255, 255)
-
-local support = Tabs.Credits:AddLabel("❤️ Thanks for the support!")
-support.TextColor3 = Color3.fromRGB(255, 105, 180)
-
-Tabs.Credits:AddLabel("--------------------------")
-
-local useMsg = Tabs.Credits:AddLabel("🙏 Thank you for using Syniox Hub!")
-useMsg.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-Tabs.Credits:AddLabel("👇 My Discord Server Link Here")
-
-Tabs.Credits:AddButton("Discord Link", function()
-    setclipboard("https://discord.gg/DbAU5Z6HPd")
-end)
-
-Tabs.Credits:AddLabel(" ")
-Tabs.Credits:AddLabel("==================================")
-
-local bigTitle = Tabs.Credits:AddLabel("🚀 SYNIOX HUB V3 🚀")
-
-pcall(function()
-    bigTitle.TextSize = 25
-    bigTitle.Font = Enum.Font.GothamBold
-end)
-
-task.spawn(function()
-    while true do
-        for i = 0, 1, 0.005 do
-            bigTitle.TextColor3 = Color3.fromHSV(i, 1, 1)
-            task.wait()
-        end
-    end
-end)
-
-Tabs.Credits:AddLabel("==================================")
+local title = 
 -- ===== Noir open animation + runtime lock =====
 task.defer(function()
     local core2 = NoirGenv().__NoirCore
@@ -7148,7 +7120,7 @@ task.defer(function()
     win2.Visible = true
     local scaleObj = win2:FindFirstChildWhichIsA("UIScale")
     if scaleObj then scaleObj.Scale = .68 end
-    TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .22, Rotation = 0 }):Play()
+    TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .38, Rotation = 0 }):Play()
     if scaleObj then
         TweenService2:Create(scaleObj, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
     end
@@ -7162,6 +7134,6 @@ task.spawn(function()
     end
 end)
 if library and NoirGenv().__NoirCore then
-    pcall(function() NoirGenv().__NoirCore.host.Notify("Noir ML loaded", 3) end)
+    pcall(function() NoirGenv().__NoirCore.host.Notify("Noir Hub loaded", 3) end)
 end
-print("[NoirML] build ok")
+print("Noir Hub | Muscle Legends")
