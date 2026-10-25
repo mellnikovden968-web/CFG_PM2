@@ -1,3 +1,9 @@
+-- clear stale runtime lock from previous executions
+pcall(function()
+    local g = (type(getgenv) == "function" and getgenv()) or _G
+    g.__NoirHubRuntimeLock = nil
+end)
+
 local function __noirW1a()
 if type(NoirGenv) ~= "\x66unction" then
     NoirGenv = function()
@@ -4448,6 +4454,25 @@ task.spawn(function()
     while alive do
         task.wait(5)
         if env.__NoirHubRuntimeLock then env.__NoirHubRuntimeLock.heartbeat = os.clock() end
+    end
+end)
+
+task.defer(function()
+    local core2 = NoirGenv().__NoirCore
+    local win2 = core2 and core2.win
+    if not win2 then return end
+    local okRun = pcall(function() RunService.RenderStepped:Wait() end)
+    if not win2.Parent then return end
+    local targetPosition = win2.Position
+    win2.Position = targetPosition + UDim2.fromOffset(0, 32)
+    win2.BackgroundTransparency = 1
+    win2.Rotation = -1.2
+    win2.Visible = true
+    local scaleObj = win2:FindFirstChildWhichIsA("UIScale")
+    if scaleObj then scaleObj.Scale = .68 end
+    TweenService:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .04, Rotation = 0 }):Play()
+    if scaleObj then
+        TweenService:Create(scaleObj, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
     end
 end)
 
