@@ -12440,105 +12440,92 @@ do
     genv.NoirS6 = { gui = gui, host = host }
 end
 
+
+-- ============================================================
+-- stage_3 module adapter -> Noir host API (all ported sections land on MAIN page)
+-- ============================================================
 local function __noirFeatures()
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local RunService = game:GetService("RunService")
+    local UIS = game:GetService("UserInputService")
+    local Lighting = game:GetService("Lighting")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local SoundService = game:GetService("SoundService")
+    local Stats = game:GetService("Stats")
+    local CoreGui = game:GetService("CoreGui")
+    local HttpService = game:GetService("HttpService")
+    local TweenService = game:GetService("TweenService")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local Player = LocalPlayer
 
--- ==== sector: unlock helper (17666-17761) ====
-local function runUnlockAll()
-if (({[1]=false})[1]) then local _z=tostring(0) end
-    if (({})~=nil) and (not __initUnlockAllBackend()) then return end
-    if type(__unlockAllEnable) == "function" then
-        pcall(__unlockAllEnable, nil)
-    end
-end
-
-getgenv().__runUnlockAll = runUnlockAll
-
-local ThemeState = {
-    AccentHue = (5*43),
-    Transparency = 0,
-    CornerRadius = (2*6)
-}
-
-local function getThemeColor()
-    return Color3.fromHSV((ThemeState.AccentHue % (2*180)) / (2*180), 0.62, 0.92)
-end
-
-local function applyTheme()
-    local root = library._ui
-    if not root then return end
-if (#"">2) then local _q={} _q[1]=2 end
-
-    local accent = getThemeColor()
-    local transparency = math.clamp(ThemeState.Transparency / (79+21), 0, 0.9)
-    local radius = math.clamp(ThemeState.CornerRadius, 0, (54-30))
-
-    local container = root:FindFirstChild("Container")
-    if (1<2) and (container) then
-        container.BackgroundTransparency = transparency
-        local containerCorner = container:FindFirstChildOfClass('UICorner')
-        if containerCorner then
-            containerCorner.CornerRadius = UDim.new(0, radius)
-        end
-        local containerStroke = container:FindFirstChildOfClass('UIStroke')
-        if containerStroke then
-            containerStroke.Color = accent
-        end
-if (#"">2) then local _n=math.floor(3.14) end
-        local side = container:FindFirstChild("GradientSide", true)
-        if (math.floor(1.5)==1) and (side) then
-            local gradient = side:FindFirstChildOfClass('UIGradient')
-            if gradient then
-                gradient.Color = ColorSequence.new{
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(bit32.bxor(31,1), (101-71), (17+17))),
-                    ColorSequenceKeypoint.new(0.5, accent),
-                    ColorSequenceKeypoint.new(1, accent:Lerp(Color3.fromRGB((189-19), (2*45), (3*85)), 0.45))
-                }
-            end
+    local Library = { _config = { _flags = {} } }
+    function Library.SendNotification(self, t)
+        if type(t) == "table" then
+            pcall(function() host.Notify(t.text or t.title or "", t.duration or 3) end)
+        else
+            pcall(function() host.Notify(tostring(t), 3) end)
         end
     end
+    function Library.send_notification(self, a, b) Library:SendNotification({ text = a, duration = b }) end
+    _G.Library = _G.Library or Library
+    Library = _G.Library
+    Library._config = Library._config or { _flags = {} }
+    Library._config._flags = Library._config._flags or {}
 
-    for _, object in ipairs(root:GetDescendants()) do
-        if object:IsA('UICorner') then
-            local parent = object.Parent
-            if (#{1}==1) and (parent and parent.Name ~= 'Circle' and parent.Name ~= 'Toggle' and parent.Name ~= 'Dot' and parent.Name ~= "AvatarClip") then
-                object.CornerRadius = UDim.new(0, radius)
-            end
-        elseif object:IsA('TextLabel') or object:IsA('TextButton') or object:IsA('TextBox') then
-            local baseSize = object:GetAttribute("ThemeBaseTextSize")
-            if not baseSize then
-                baseSize = object.TextSize
-                object:SetAttribute("ThemeBaseTextSize", baseSize)
-if (#"">2) then local _n=math.floor(3.14) end
-            end
-            object.TextSize = baseSize
-        elseif object:IsA('Frame') and (object.Name == 'Fill' or object.Name == "RangeFill" or object.Name == "ActiveIndicator") then
-            object.BackgroundColor3 = accent
+    local function makeModule(sec, title, moduleCallback)
+        local m = {}
+        if moduleCallback then
+            sec:AddToggle("Enable " .. tostring(title), function(state) pcall(moduleCallback, state == true) end)
         end
+        local function cb(fn) return function(...) if fn then local ok, err = pcall(fn, ...) if not ok then warn("[Noir module] " .. tostring(err)) end end end end
+        function m:create_toggle(c) sec:AddToggle((c or {}).title or "Toggle", cb((c or {}).callback)) return m end
+        function m:create_checkbox(c) return self:create_toggle(c) end
+        function m:create_slider(c)
+            c = c or {}
+            sec:AddSlider(c.title or "Slider", tonumber(c.minimum_value) or 0, tonumber(c.maximum_value) or 100,
+                tonumber(c.value) or 0, cb(c.callback))
+            return { set_percentage = function() end, SetValue = function() end }
+        end
+        function m:create_textbox(c) sec:AddTextBox((c or {}).title or "Input", cb((c or {}).callback)) return m end
+        function m:create_dropdown(c)
+            c = c or {}
+            local ctl = sec:AddDropdown(c.title or "Dropdown", c.options or c.values or {}, cb(c.callback))
+            local wrapper = { _ctl = ctl }
+            function wrapper:set_options(opts) pcall(function() self._ctl:ChangeItems(opts) end) end
+            function wrapper:update() end
+            function wrapper:SetValue(v) pcall(function() self._ctl:SetValue(v) end) end
+            return wrapper
+        end
+        function m:create_button(c) sec:AddButton((c or {}).title or "Run", cb((c or {}).callback)) return m end
+        function m:create_label(txt) sec:AddLabel(tostring(txt)) return m end
+        function m:create_divider() sec:AddLabel("--------------------") return m end
+        function m:create_keybind(c) sec:AddKeybind((c or {}).title or "Keybind", (c or {}).default or "X", cb((c or {}).callback)) return m end
+        function m:set_state() end
+        return m
     end
 
-    if library._notification_helpers and library._notification_helpers.theme then
-        library._notification_helpers.theme.accent = accent
-        library._notification_helpers.theme.info = accent
-        library._notification_helpers.theme.radius = UDim.new(0, radius)
-    end
-end
-
-local function resetThemeDefaults()
-    ThemeState.AccentHue = (5*43)
-    ThemeState.Transparency = 0
-    ThemeState.CornerRadius = (2*6)
-if ((1/1)==0) then local _q={} _q[1]=2 end
-
-    if (1<2) and (Library._config and Library._config._flags) then
-        Library._config._flags.ThemeAccentHue = ThemeState.AccentHue
-        Library._config._flags.ThemeTransparency = ThemeState.Transparency
-        Library._config._flags.ThemeCornerRadius = ThemeState.CornerRadius
-        Config:save(game.GameId, Library._config)
+    local function makeTab()
+        local T = {}
+        function T:create_module(cfg)
+            cfg = cfg or {}
+            local title = "MAIN \226\128\162 " .. string.upper(tostring(cfg.title or "MODULE"))
+            local ok, sec = pcall(function() return host.CreateTab():AddSection(title, cfg.description or "") end)
+            if not ok then sec = host.CreateTab():AddSection("MAIN \226\128\162 MODULE", cfg.description or "") end
+            return makeModule(sec, cfg.title, cfg.callback)
+        end
+        return T
     end
 
-    applyTheme()
-end
+    local VisualsTab = makeTab()
+    local PlayerTab = makeTab()
+    local BlatantTab = makeTab()
+    local MiscTab = makeTab()
+    local UnlockTab = makeTab()
+    local WorldTab = makeTab()
+    local DetectionTab = makeTab()
+    local GuiTab = makeTab()
 
+-- ================= ported sectors ==================
 
 end
 __noirFeatures()
