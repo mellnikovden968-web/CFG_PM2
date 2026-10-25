@@ -1,3 +1,12 @@
+
+
+
+
+
+
+
+
+
 local Players           = cloneref(game:GetService('Players'))  
 local ReplicatedStorage = cloneref(game:GetService('ReplicatedStorage'))  
 local UserInputService  = cloneref(game:GetService('UserInputService'))  
@@ -16063,3 +16072,19 @@ getgenv()._ZX_SetupWorldTab()
 
 end
 __noirFeatures()
+
+do
+    pcall(function()
+        local env = (type(getgenv) == "function" and getgenv()) or _G
+        if type(env) ~= "table" then return end
+        local t = os.clock()
+        env.__NoirHubRuntimeLock = { state = "running", startedAt = t, heartbeat = t }
+        task.spawn(function()
+            while task.wait(5) do
+                local lock = env.__NoirHubRuntimeLock
+                if type(lock) ~= "table" or lock.state ~= "running" then break end
+                lock.heartbeat = os.clock()
+            end
+        end)
+    end)
+end
