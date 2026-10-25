@@ -11118,11 +11118,11 @@ local dragging, dragStart, startPos
 header.Active = true
 header.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true; dragStart = input.Position; startPos = win.Position
+        dragging = input; dragStart = input.Position; startPos = win.Position
     end
 end)
 UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+    if dragging == input then
         local delta = input.Position - dragStart
         local view = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
         local half = win.AbsoluteSize / 2
@@ -11134,8 +11134,8 @@ UIS.InputChanged:Connect(function(input)
 end)
 UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        if dragging then NoirPersistence.SetPosition("\x77indow", win.Position) end
-        dragging = false
+        if input == dragging then NoirPersistence.SetPosition("\x77indow", win.Position) end
+        if input == dragging then dragging = false end
     end
 end)
 
@@ -11146,11 +11146,11 @@ styleCircularButton(restore, 62)
 local restoreDragging, restoreMoved, restoreStart, restorePos = false, false, nil, nil
 restore.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        restoreDragging = true; restoreMoved = false; restoreStart = input.Position; restorePos = restore.Position
+        restoreDragging = input; restoreMoved = false; restoreStart = input.Position; restorePos = restore.Position
     end
 end)
 UIS.InputChanged:Connect(function(input)
-    if restoreDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+    if restoreDragging == input then
         local delta = input.Position - restoreStart
         if delta.Magnitude > 7 then restoreMoved = true end
         local view = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
@@ -11160,7 +11160,7 @@ UIS.InputChanged:Connect(function(input)
     end
 end)
 UIS.InputEnded:Connect(function(input)
-    if restoreDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+    if restoreDragging == input then
         restoreDragging = false; NoirPersistence.SetPosition("\x72estore", restore.Position)
     end
 end)
@@ -11745,16 +11745,16 @@ function host.CreateTab()
             local drag = false
             track.InputBegan:Connect(function(i)
                 if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-                    drag = true; set(min + (max - min) * math.clamp((i.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1))
+                    drag = i; set(min + (max - min) * math.clamp((i.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1))
                 end
             end)
             UIS.InputChanged:Connect(function(i)
-                if drag and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
+                if drag == i then
                     set(min + (max - min) * math.clamp((i.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1))
                 end
             end)
             UIS.InputEnded:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+                if i == drag then drag = false end
             end)
             return { SetValue = function(_, v, persist) set(v, persist) end, GetValue = function() return current end }
         end
@@ -12097,7 +12097,7 @@ do
     local tab = host.CreateTab()
 
     -- ============ MAIN • AUTO PARRY ============
-    local sMain = tab:AddSection("MAIN • AUTO PARRY", "core combat automation")
+    local sMain = tab:AddSection("AUTO PARRY", "core combat automation")
     sMain:AddToggle("Enabled", function(on)
         setProp("__autoparry_enabled", on)
         if not on then setProp("__play_animation", false) end
@@ -12135,7 +12135,7 @@ do
     sMain:AddToggle("Auto Ability", function(on) genv.AutoAbility = on end)
 
     -- ============ MAIN • DETECTION ============
-    local sDet = tab:AddSection("MAIN • DETECTION", "special ball events")
+    local sDet = tab:AddSection("DETECTION", "special ball events")
     local detKeys = { { "Infinity Detection", "__infinity" }, { "Death Slash Detection", "__deathslash" },
         { "Time Hole Detection", "__timehole" }, { "Slashes Of Fury", "__slashesoffury" }, { "Phantom Detection", "__phantom" } }
     for _, dk in ipairs(detKeys) do
@@ -12143,7 +12143,7 @@ do
     end
 
     -- ============ MAIN • SPAM / TRIGGER ============
-    local sSpam = tab:AddSection("MAIN • SPAM / TRIGGER", "press patterns")
+    local sSpam = tab:AddSection("SPAM / TRIGGER", "press patterns")
     sSpam:AddToggle("Triggerbot", function(on)
         pcall(function() System.triggerbot.enable(on) end)
         System.__triggerbot.__enabled = on
@@ -12163,7 +12163,7 @@ do
     sSpam:AddLabel("Manual Spam/Auto Spam: жмут блок серией — выбери режим Remote/Keypress ниже.")
 
     -- ============ MAIN • SKIN CHANGER (ported stage_3 impl: EquipSwordTo + controller sync) ============
-    local sSkin = tab:AddSection("MAIN • SKIN CHANGER", "real sword swap - model + animations + FX")
+    local sSkin = tab:AddSection("SKIN CHANGER", "real sword swap - model + animations + FX")
     genv.swordModel = type(genv.swordModel) == "string" and genv.swordModel or ""
     genv.swordAnimations = type(genv.swordAnimations) == "string" and genv.swordAnimations or ""
     genv.swordFX = type(genv.swordFX) == "string" and genv.swordFX or ""
@@ -12239,6 +12239,24 @@ do
         LocalPlayer.CharacterAdded:Connect(function()
             task.wait(1)
             if genv.skinChanger and genv.swordModel ~= "" then setSword() end
+            task.wait(1.5)
+            if genv.skinChanger and genv.swordModel ~= "" then setSword() end
+        end)
+        task.spawn(function()
+            while true do
+                task.wait(2.5)
+                if genv.skinChanger and genv.swordModel ~= "" and genv._ZX_SetSword then
+                    local cur = nil
+                    pcall(function()
+                        cur = LocalPlayer.Character and (LocalPlayer.Character:GetAttribute("CurrentlyEquippedSword")
+                            or LocalPlayer.Character:GetAttribute("CurrentlyEquippedSwordName")
+                            or LocalPlayer:GetAttribute("CurrentlyEquippedSword"))
+                    end)
+                    if LocalPlayer.Character and cur and cur ~= genv.swordModel then
+                        pcall(function() genv._ZX_SetSword() end)
+                    end
+                end
+            end
         end)
     end)
 
@@ -12290,21 +12308,21 @@ do
                 b.TextColor3 = textGoal
             end
         end
-        local dragging, moved, dStart, dPos = false, false, nil, nil
+        local dragging, moved, dStart, dPos = nil, false, nil, nil
         b.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = true moved = false dStart = i.Position dPos = b.Position
+                dragging = i moved = false dStart = i.Position dPos = b.Position
             end
         end)
         UIS.InputChanged:Connect(function(i)
-            if dragging and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
+            if i == dragging then
                 local d = i.Position - dStart
                 if d.Magnitude > 7 then moved = true end
                 b.Position = UDim2.new(dPos.X.Scale, dPos.X.Offset + d.X, dPos.Y.Scale, dPos.Y.Offset + d.Y)
             end
         end)
         UIS.InputEnded:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+            if i == dragging then dragging = nil end
         end)
         b.MouseButton1Click:Connect(function()
             if moved then moved = false return end
@@ -12331,7 +12349,7 @@ do
         end)
 
     -- ============ MISC • SCREEN BUTTONS ============
-    local sBtn = tab:AddSection("MISC • SCREEN BUTTONS", "floating on-screen quick buttons")
+    local sBtn = tab:AddSection("SCREEN BUTTONS", "floating on-screen quick buttons")
     sBtn:AddToggle("Trigger Button", function(on)
         trigBtn.button.Visible = on
         if on then trigBtn.paint(false) end
@@ -12353,7 +12371,7 @@ do
     sBtn:AddLabel("Round buttons: tap to toggle, drag to move.")
 
     -- ============ MISC • STATUS ============
-    local sStat = tab:AddSection("MISC • STATUS", "live telemetry")
+    local sStat = tab:AddSection("STATUS", "live telemetry")
     local labCapture = sStat:AddLabel("Capture: —")
     local labAP = sStat:AddLabel("Auto Parry: —")
     local labParries = sStat:AddLabel("Active Parries: —")
@@ -12420,3 +12438,3682 @@ do
 
     genv.NoirS6 = { gui = gui, host = host }
 end
+
+
+-- ============================================================
+-- stage_3 module adapter -> Noir host API (all ported sections land on MAIN page)
+-- ============================================================
+local function __noirFeatures()
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local RunService = game:GetService("RunService")
+    local UIS = game:GetService("UserInputService")
+
+    local Library = { _config = { _flags = {} } }
+    function Library.SendNotification(self, t)
+        if type(t) == "table" then
+            pcall(function() host.Notify(t.text or t.title or "", t.duration or 3) end)
+        else
+            pcall(function() host.Notify(tostring(t), 3) end)
+        end
+    end
+    function Library.send_notification(self, a, b) Library:SendNotification({ text = a, duration = b }) end
+    _G.Library = _G.Library or Library
+    Library = _G.Library
+    Library._config = Library._config or { _flags = {} }
+    Library._config._flags = Library._config._flags or {}
+
+    local function makeModule(sec, title, moduleCallback)
+        local m = {}
+        if moduleCallback then
+            sec:AddToggle("Enable " .. tostring(title), function(state) pcall(moduleCallback, state == true) end)
+        end
+        local function cb(fn) return function(...) if fn then local ok, err = pcall(fn, ...) if not ok then warn("[Noir module] " .. tostring(err)) end end end end
+        function m:create_toggle(c) sec:AddToggle((c or {}).title or "Toggle", cb((c or {}).callback)) return m end
+        function m:create_checkbox(c) return self:create_toggle(c) end
+        function m:create_slider(c)
+            c = c or {}
+            sec:AddSlider(c.title or "Slider", tonumber(c.minimum_value) or 0, tonumber(c.maximum_value) or 100,
+                tonumber(c.value) or 0, cb(c.callback))
+            return { set_percentage = function() end, SetValue = function() end }
+        end
+        function m:create_textbox(c) sec:AddTextBox((c or {}).title or "Input", cb((c or {}).callback)) return m end
+        function m:create_dropdown(c)
+            c = c or {}
+            local ctl = sec:AddDropdown(c.title or "Dropdown", c.options or c.values or {}, cb(c.callback))
+            local wrapper = { _ctl = ctl }
+            function wrapper:set_options(opts) pcall(function() self._ctl:ChangeItems(opts) end) end
+            function wrapper:update() end
+            function wrapper:SetValue(v) pcall(function() self._ctl:SetValue(v) end) end
+            return wrapper
+        end
+        function m:create_button(c) sec:AddButton((c or {}).title or "Run", cb((c or {}).callback)) return m end
+        function m:create_label(txt) sec:AddLabel(tostring(txt)) return m end
+        function m:create_divider() sec:AddLabel("--------------------") return m end
+        function m:create_keybind(c) sec:AddKeybind((c or {}).title or "Keybind", (c or {}).default or "X", cb((c or {}).callback)) return m end
+        function m:set_state() end
+        return m
+    end
+
+    local function makeTab()
+        local T = {}
+        function T:create_module(cfg)
+            cfg = cfg or {}
+            local title = "MAIN \226\128\162 " .. string.upper(tostring(cfg.title or "MODULE"))
+            local ok, sec = pcall(function() return host.CreateTab():AddSection(title, cfg.description or "") end)
+            if not ok then sec = host.CreateTab():AddSection("MAIN \226\128\162 MODULE", cfg.description or "") end
+            return makeModule(sec, cfg.title, cfg.callback)
+        end
+        return T
+    end
+
+    local VisualsTab = makeTab()
+    local PlayerTab = makeTab()
+    local BlatantTab = makeTab()
+    local MiscTab = makeTab()
+    local UnlockTab = makeTab()
+    local WorldTab = makeTab()
+    local DetectionTab = makeTab()
+    local GuiTab = makeTab()
+
+-- ================= ported sectors ==================
+
+-- ==== sector: unlock helper (17666-17761) ====
+local function runUnlockAll()
+if (({[1]=false})[1]) then local _z=tostring(0) end
+    if (({})~=nil) and (not __initUnlockAllBackend()) then return end
+    if type(__unlockAllEnable) == "function" then
+        pcall(__unlockAllEnable, nil)
+    end
+end
+
+getgenv().__runUnlockAll = runUnlockAll
+
+local ThemeState = {
+    AccentHue = (5*43),
+    Transparency = 0,
+    CornerRadius = (2*6)
+}
+
+local function getThemeColor()
+    return Color3.fromHSV((ThemeState.AccentHue % (2*180)) / (2*180), 0.62, 0.92)
+end
+
+local function applyTheme()
+    local root = library._ui
+    if not root then return end
+if (#"">2) then local _q={} _q[1]=2 end
+
+    local accent = getThemeColor()
+    local transparency = math.clamp(ThemeState.Transparency / (79+21), 0, 0.9)
+    local radius = math.clamp(ThemeState.CornerRadius, 0, (54-30))
+
+    local container = root:FindFirstChild("Container")
+    if (1<2) and (container) then
+        container.BackgroundTransparency = transparency
+        local containerCorner = container:FindFirstChildOfClass('UICorner')
+        if containerCorner then
+            containerCorner.CornerRadius = UDim.new(0, radius)
+        end
+        local containerStroke = container:FindFirstChildOfClass('UIStroke')
+        if containerStroke then
+            containerStroke.Color = accent
+        end
+if (#"">2) then local _n=math.floor(3.14) end
+        local side = container:FindFirstChild("GradientSide", true)
+        if (math.floor(1.5)==1) and (side) then
+            local gradient = side:FindFirstChildOfClass('UIGradient')
+            if gradient then
+                gradient.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(bit32.bxor(31,1), (101-71), (17+17))),
+                    ColorSequenceKeypoint.new(0.5, accent),
+                    ColorSequenceKeypoint.new(1, accent:Lerp(Color3.fromRGB((189-19), (2*45), (3*85)), 0.45))
+                }
+            end
+        end
+    end
+
+    for _, object in ipairs(root:GetDescendants()) do
+        if object:IsA('UICorner') then
+            local parent = object.Parent
+            if (#{1}==1) and (parent and parent.Name ~= 'Circle' and parent.Name ~= 'Toggle' and parent.Name ~= 'Dot' and parent.Name ~= "AvatarClip") then
+                object.CornerRadius = UDim.new(0, radius)
+            end
+        elseif object:IsA('TextLabel') or object:IsA('TextButton') or object:IsA('TextBox') then
+            local baseSize = object:GetAttribute("ThemeBaseTextSize")
+            if not baseSize then
+                baseSize = object.TextSize
+                object:SetAttribute("ThemeBaseTextSize", baseSize)
+if (#"">2) then local _n=math.floor(3.14) end
+            end
+            object.TextSize = baseSize
+        elseif object:IsA('Frame') and (object.Name == 'Fill' or object.Name == "RangeFill" or object.Name == "ActiveIndicator") then
+            object.BackgroundColor3 = accent
+        end
+    end
+
+    if library._notification_helpers and library._notification_helpers.theme then
+        library._notification_helpers.theme.accent = accent
+        library._notification_helpers.theme.info = accent
+        library._notification_helpers.theme.radius = UDim.new(0, radius)
+    end
+end
+
+local function resetThemeDefaults()
+    ThemeState.AccentHue = (5*43)
+    ThemeState.Transparency = 0
+    ThemeState.CornerRadius = (2*6)
+if ((1/1)==0) then local _q={} _q[1]=2 end
+
+    if (1<2) and (Library._config and Library._config._flags) then
+        Library._config._flags.ThemeAccentHue = ThemeState.AccentHue
+        Library._config._flags.ThemeTransparency = ThemeState.Transparency
+        Library._config._flags.ThemeCornerRadius = ThemeState.CornerRadius
+        Config:save(game.GameId, Library._config)
+    end
+
+    applyTheme()
+end
+
+
+-- ==== sector: unlock_all (17828-17840) ====
+local unlock_all_module = UnlockTab:create_module({
+    title = "Unlock All",
+    description = "Unlock all Swords, Explosions and Emotes",
+    flag = "UnlockAll",
+    section = "left",
+    callback = function(state)
+        getgenv().unlockAllEnabled = state
+        if state and getgenv().__runUnlockAll then
+            task.spawn(getgenv().__runUnlockAll)
+        end
+    end
+})
+
+
+-- ==== sector: stats_overlay (17851-18037) ====
+local stats_overlay_module = VisualsTab:create_module({
+    title = "FPS and Ping",
+    description = "Show your FPS and Ping",
+    flag = "StatsOverlayModule",
+    section = "right",
+    callback = function(state)
+        if ((3*3)==9) and (state) then
+
+            System = System or {}
+            System.__properties = System.__properties or {}
+            System.__properties.__connections = System.__properties.__connections or {}
+
+            if not System.__properties.__stats_overlay then
+                local OverlayGui = Instance.new('ScreenGui')
+                OverlayGui.Name = "AzureStatsOverlay"
+                OverlayGui.ResetOnSpawn = false
+                OverlayGui.IgnoreGuiInset = true
+                OverlayGui.DisplayOrder = (3*33)
+                OverlayGui.Parent = CoreGui
+
+                local Panel = Instance.new('Frame')
+                Panel.Name = 'Panel'
+                Panel.Size = UDim2.new(0, (2*89), 0, (2*43))
+                Panel.Position = UDim2.new(0, (19+1), 0.5, -(73-30))
+                Panel.BackgroundColor3 = Color3.fromRGB(bit32.bxor(31,19), (83-71), (3+9))
+                Panel.BorderSizePixel = 0
+                Panel.Active = true
+                Panel.Parent = OverlayGui
+                Instance.new('UICorner', Panel).CornerRadius = UDim.new(0, (31-19))
+                local PanelStroke = Instance.new('UIStroke', Panel)
+                PanelStroke.Color = Color3.fromRGB((2*35), (2*35), (2*35))
+                PanelStroke.Thickness = 1
+
+                local TitleLabel = Instance.new('TextLabel')
+                TitleLabel.BackgroundTransparency = 1
+                TitleLabel.Size = UDim2.new(1, 0, 0, (2*9))
+                TitleLabel.Position = UDim2.new(0, 0, 0, 6)
+                TitleLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+                TitleLabel.Text = "FPS & PING"
+                TitleLabel.TextColor3 = Color3.fromRGB((79+141), (250-30), bit32.bxor(31,195))
+                TitleLabel.TextSize = (81-71)
+                TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+                TitleLabel.Parent = Panel
+
+                local ChipHolder = Instance.new('Frame')
+                ChipHolder.BackgroundTransparency = 1
+                ChipHolder.Position = UDim2.new(0, (5+5), 0, (45-19))
+                ChipHolder.Size = UDim2.new(1, -(2*10), 0, (2*22))
+                ChipHolder.Parent = Panel
+                local ChipLayout = Instance.new('UIListLayout', ChipHolder)
+                ChipLayout.FillDirection = Enum.FillDirection.Horizontal
+                ChipLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                ChipLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                ChipLayout.Padding = UDim.new(0, 6)
+
+                local function makeChip(tag)
+                    local Chip = Instance.new('Frame')
+                    Chip.Size = UDim2.new(0, (2*35), 0, (2*18))
+                    Chip.BackgroundColor3 = Color3.fromRGB((7+17), (54-30), bit32.bxor(31,7))
+                    Chip.BorderSizePixel = 0
+                    Chip.Parent = ChipHolder
+                    Instance.new('UICorner', Chip).CornerRadius = UDim.new(0, (81-71))
+                    local CS = Instance.new('UIStroke', Chip)
+                    CS.Color = Color3.fromRGB((15+45), (79-19), (2*30))
+                    CS.Thickness = 1
+
+                    local Dot = Instance.new('Frame')
+                    Dot.Name = 'Dot'
+                    Dot.Size = UDim2.new(0, 4, 0, 4)
+                    Dot.Position = UDim2.new(0, 6, 0, 5)
+                    Dot.BackgroundColor3 = Color3.fromRGB((2*50), (2*110), (2*65))
+                    Dot.BorderSizePixel = 0
+                    Dot.Parent = Chip
+                    Instance.new('UICorner', Dot).CornerRadius = UDim.new(1, 0)
+
+                    local Tag = Instance.new('TextLabel')
+                    Tag.BackgroundTransparency = 1
+                    Tag.Size = UDim2.new(1, -8, 0, 9)
+                    Tag.Position = UDim2.new(0, 4, 0, 3)
+                    Tag.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
+                    Tag.Text = tag
+                    Tag.TextColor3 = Color3.fromRGB((79+101), (210-30), bit32.bxor(31,171))
+                    Tag.TextSize = 8
+                    Tag.TextXAlignment = Enum.TextXAlignment.Center
+                    Tag.Parent = Chip
+
+                    local Val = Instance.new('TextLabel')
+                    Val.Name = 'Val'
+                    Val.BackgroundTransparency = 1
+                    Val.Size = UDim2.new(1, 0, 0, (87-71))
+                    Val.Position = UDim2.new(0, 0, 0, (15+1))
+                    Val.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+                    Val.Text = '--'
+                    Val.TextColor3 = Color3.fromRGB((259-19), (2*120), (2*120))
+                    Val.TextSize = (1+12)
+                    Val.TextXAlignment = Enum.TextXAlignment.Center
+                    Val.Parent = Chip
+
+                    return Val, Dot
+                end
+
+                local FpsVal, FpsDot   = makeChip('FPS')
+                local PingVal, PingDot = makeChip('PING')
+
+                Panel.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        local dragStart = input.Position
+                        local startPos  = Panel.Position
+                        local moving    = true
+                        input.Changed:Connect(function()
+                            if (#{1}==1) and (input.UserInputState == Enum.UserInputState.End) then moving = false end
+                        end)
+                        local conn
+                        conn = UserInputService.InputChanged:Connect(function(inp)
+                            if not moving then conn:Disconnect() return end
+                            if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+                                local delta = inp.Position - dragStart
+                                Panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                            end
+                        end)
+                    end
+                end)
+
+                System.__properties.__stats_overlay = {
+                    gui = OverlayGui,
+                    fpsVal = FpsVal, fpsDot = FpsDot,
+                    pingVal = PingVal, pingDot = PingDot,
+                }
+            end
+
+            System.__properties.__stats_overlay.gui.Enabled = true
+
+            if ((1+1)==2) and (not System.__properties.__connections.__stats_overlay) then
+                local frameCount = 0
+                local elapsed    = 0
+                local smoothFps  = 0
+
+                local fpsConn = RunService.RenderStepped:Connect(function(dt)
+                    frameCount += 1
+                    elapsed    += dt
+                    if elapsed >= 0.5 then
+                        smoothFps  = math.round(frameCount / elapsed)
+                        frameCount = 0
+                        elapsed    = 0
+                    end
+                end)
+                System.__properties.__connections.__stats_overlay_fps = fpsConn
+
+                System.__properties.__connections.__stats_overlay = task.spawn(function()
+                    while System.__properties.__stats_overlay do
+                        local o = System.__properties.__stats_overlay
+                        pcall(function()
+                            local fps = smoothFps
+                            local fpsColor = fps >= (24+31) and Color3.fromRGB((130-30),bit32.bxor(31,195),(201-71)) or fps >= (15+15) and Color3.fromRGB((249-19),(2*100),(2*40)) or Color3.fromRGB((2*110),(2*40),(79+1))
+                            o.fpsVal.Text = tostring(fps)
+                            o.fpsVal.TextColor3 = fpsColor
+                            o.fpsDot.BackgroundColor3 = fpsColor
+
+                            local ping = math.round(Players.LocalPlayer:GetNetworkPing() * (1030-30))
+                            local pingColor = ping <= bit32.bxor(31,79) and Color3.fromRGB((171-71),(35+185),(149-19)) or ping <= (2*75) and Color3.fromRGB((2*115),(2*100),(2*40)) or Color3.fromRGB((79+141),(110-30),bit32.bxor(31,79))
+                            o.pingVal.Text = tostring(ping)
+                            o.pingVal.TextColor3 = pingColor
+                            o.pingDot.BackgroundColor3 = pingColor
+                        end)
+                        task.wait(0.5)
+                    end
+                end)
+            end
+
+        else
+            if (math.floor(1.5)==1) and (System.__properties.__connections.__stats_overlay) then
+                System.__properties.__connections.__stats_overlay = nil
+            end
+            if System.__properties.__connections.__stats_overlay_fps then
+                pcall(function() System.__properties.__connections.__stats_overlay_fps:Disconnect() end)
+                System.__properties.__connections.__stats_overlay_fps = nil
+            end
+            if System.__properties.__stats_overlay then
+                pcall(function() System.__properties.__stats_overlay.gui:Destroy() end)
+                System.__properties.__stats_overlay = nil
+            end
+        end
+    end
+})
+
+    local infinite_jump_enabled = false
+
+
+-- ==== sector: blatant_exploits (18038-18296) ====
+    local blatant_exploits_module = BlatantTab:create_module({
+        title = "Infinite Jump",
+        description = "Character Infinite Jump",
+        flag = "infinitejump",
+        section = "left",
+        callback = function(state)
+            infinite_jump_enabled = state
+            if (#{1}==1) and (state) then
+                if not getgenv().InfiniteJumpConnection then
+                    getgenv().InfiniteJumpConnection = UserInputService.JumpRequest:Connect(function()
+                        if infinite_jump_enabled then
+                            local char = Players.LocalPlayer and Players.LocalPlayer.Character
+                            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                            if humanoid and humanoid.Health > 0 then
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                            end
+                        end
+                    end)
+                end
+            else
+                if getgenv().InfiniteJumpConnection then
+                    getgenv().InfiniteJumpConnection:Disconnect()
+                    getgenv().InfiniteJumpConnection = nil
+                end
+            end
+        end,
+    })
+
+    local original_fog_end = Lighting.FogEnd
+local original_fog_start = Lighting.FogStart
+local postprocessing_backup = {}
+local decals_backup = {}
+local scene_backup = {}
+local sound_backup = nil
+local lighting_backup = nil
+local fog_backup = nil
+local sound_service = cloneref(game:GetService('SoundService'))
+if ((1/1)==0) then for _i=1,0 do end end
+local fps_boost_loop = nil
+local fps_boost_enabled = false
+
+local function apply_disable_fog(state)
+    if state then
+        Lighting.FogEnd = math.huge
+        Lighting.FogStart = math.huge
+    else
+        Lighting.FogEnd = original_fog_end
+        Lighting.FogStart = original_fog_start
+    end
+end
+
+local function apply_disable_postprocessing(state)
+    if (math.floor(1.5)==1) and (state) then
+        for _, v in pairs(Lighting:GetDescendants()) do
+            pcall(function()
+                if v.Enabled ~= nil then
+                    postprocessing_backup[v] = v.Enabled
+                    v.Enabled = false
+                end
+            end)
+        end
+
+        fog_backup = {
+            FogEnd = Lighting.FogEnd,
+            FogStart = Lighting.FogStart,
+            FogColor = Lighting.FogColor
+        }
+
+        pcall(function()
+            Lighting.FogEnd = math.huge
+            Lighting.FogStart = math.huge
+            Lighting.FogColor = Color3.new(0, 0, 0)
+        end)
+    else
+        for v, enabled in pairs(postprocessing_backup) do
+            pcall(function()
+                if v and v.Parent and v.Enabled ~= nil then
+                    v.Enabled = enabled
+                end
+            end)
+if (1<-1) then local _j=1+1 end
+        end
+        postprocessing_backup = {}
+
+        if ((1+1)==2) and (fog_backup) then
+            pcall(function()
+                Lighting.FogEnd = fog_backup.FogEnd
+                Lighting.FogStart = fog_backup.FogStart
+                Lighting.FogColor = fog_backup.FogColor
+            end)
+            fog_backup = nil
+        end
+    end
+end
+
+local function apply_remove_decals(state)
+    if state then
+        for _, v in pairs(workspace:GetDescendants()) do
+            pcall(function()
+                if v:IsA("Decal") or v:IsA("Texture") then
+                    decals_backup[v] = {Texture = v.Texture, Transparency = v.Transparency}
+                    pcall(function() v.Texture = "" end)
+                    pcall(function() v.Transparency = 1 end)
+                end
+            end)
+        end
+    else
+        for v, data in pairs(decals_backup) do
+            pcall(function()
+                if (type("")=="string") and (v and v.Parent) then
+                    if data.Texture ~= nil then pcall(function() v.Texture = data.Texture end) end
+                    if data.Transparency ~= nil then pcall(function() v.Transparency = data.Transparency end) end
+                end
+            end)
+if (({[1]=false})[1]) then local _z=tostring(0) end
+        end
+        decals_backup = {}
+    end
+end
+
+local function is_character_object(obj)
+    if ((1+1)==2) and (not obj) then
+        return false
+    end
+
+    local local_character = Players.LocalPlayer and Players.LocalPlayer.Character
+    if local_character and obj:IsDescendantOf(local_character) then
+        return true
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer and player.Character and obj:IsDescendantOf(player.Character) then
+            return true
+        end
+    end
+if (#"">2) then local _q={} _q[1]=2 end
+
+    return false
+end
+
+local function apply_fps_boost(state)
+    fps_boost_enabled = state
+
+    if (0==0) and (fps_boost_loop) then
+        fps_boost_loop:Disconnect()
+        fps_boost_loop = nil
+    end
+
+    if not state then
+        apply_disable_fog(false)
+        apply_disable_postprocessing(false)
+        apply_remove_decals(false)
+
+        if lighting_backup then
+            Lighting.Technology = lighting_backup.Technology
+            Lighting.Brightness = lighting_backup.Brightness
+            Lighting.ExposureCompensation = lighting_backup.ExposureCompensation
+            Lighting.GlobalShadows = lighting_backup.GlobalShadows
+            Lighting.OutdoorAmbient = lighting_backup.OutdoorAmbient
+            Lighting.Ambient = lighting_backup.Ambient
+            Lighting.ColorShift_Bottom = lighting_backup.ColorShift_Bottom
+            Lighting.ColorShift_Top = lighting_backup.ColorShift_Top
+            Lighting.ClockTime = lighting_backup.ClockTime
+            Lighting.ShadowSoftness = lighting_backup.ShadowSoftness
+            lighting_backup = nil
+        end
+
+        for obj, values in pairs(scene_backup) do
+            pcall(function()
+                if (({})~=nil) and (obj and obj.Parent) then
+                    if values.Enabled ~= nil then
+                        obj.Enabled = values.Enabled
+                    end
+                    if values.CastShadow ~= nil then
+                        obj.CastShadow = values.CastShadow
+                    end
+                    if (1<2) and (values.Material ~= nil) then
+                        obj.Material = values.Material
+                    end
+                end
+            end)
+if (#"">2) then local _n=math.floor(3.14) end
+        end
+        scene_backup = {}
+
+        if sound_service and sound_backup ~= nil then
+            sound_service.Volume = sound_backup
+            sound_backup = nil
+        end
+
+        return
+    end
+
+    apply_disable_fog(true)
+    apply_disable_postprocessing(true)
+    apply_remove_decals(true)
+
+    lighting_backup = {
+        Technology = Lighting.Technology,
+        Brightness = Lighting.Brightness,
+        ExposureCompensation = Lighting.ExposureCompensation,
+        GlobalShadows = Lighting.GlobalShadows,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        Ambient = Lighting.Ambient,
+        ColorShift_Bottom = Lighting.ColorShift_Bottom,
+        ColorShift_Top = Lighting.ColorShift_Top,
+        ClockTime = Lighting.ClockTime,
+        ShadowSoftness = Lighting.ShadowSoftness
+    }
+
+    Lighting.Technology = Enum.Technology.Compatibility
+    Lighting.Brightness = 0.18
+    Lighting.ExposureCompensation = -1.2
+    Lighting.GlobalShadows = false
+    Lighting.OutdoorAmbient = Color3.fromRGB((106-71), (10+25), (54-19))
+if (#"">2) then local _n=math.floor(3.14) end
+    Lighting.Ambient = Color3.fromRGB((5*7), (5*7), (5*7))
+    Lighting.ColorShift_Bottom = Color3.new(0, 0, 0)
+    Lighting.ColorShift_Top = Color3.new(0, 0, 0)
+    Lighting.ClockTime = (2*7)
+    Lighting.ShadowSoftness = 0
+
+    if sound_service and sound_backup == nil then
+        sound_backup = sound_service.Volume
+        sound_service.Volume = 0.03
+    end
+
+    fps_boost_loop = RunService.Heartbeat:Connect(function()
+        if (math.floor(1.5)==1) and (not fps_boost_enabled) then
+            return
+        end
+
+        for _, obj in pairs(workspace:GetDescendants()) do
+            pcall(function()
+                if is_character_object(obj) then
+                    return
+                end
+
+                if obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Highlight") or obj:IsA("SurfaceGui") or obj:IsA("BillboardGui") or obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") or obj:IsA("Explosion") or obj:IsA("Weld") or obj:IsA("UIStroke") or obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("ImageLabel") then
+                    local stored = scene_backup[obj]
+                    if (#{1}==1) and (not stored) then
+                        scene_backup[obj] = {Enabled = obj.Enabled}
+                    end
+                    obj.Enabled = false
+                elseif obj:IsA("Part") then
+                    local stored = scene_backup[obj]
+                    if not stored then
+                        scene_backup[obj] = {CastShadow = obj.CastShadow, Material = obj.Material}
+                    end
+                    obj.CastShadow = false
+                    obj.Material = Enum.Material.SmoothPlastic
+                elseif obj:IsA("Atmosphere") then
+                    obj.Density = 0
+                end
+            end)
+        end
+    end)
+end
+
+
+-- ==== sector: misc_a (18297-18307) ====
+MiscTab:create_module({
+    title = "FPS Booster",
+    description = "Lower your Graphics to improve FPS",
+    flag = "FPSBooster",
+    section = "right",
+    callback = function(state)
+        apply_fps_boost(state)
+    end
+})
+
+local low_graphics_original_quality = nil
+
+-- ==== sector: misc_b (18308-18336) ====
+MiscTab:create_module({
+    title = "Low Graphics",
+    description = "Reduce Rendering quality and shadows",
+    flag = "LowGraphics",
+    section = "right",
+    callback = function(state)
+        if state then
+            pcall(function()
+                low_graphics_original_quality = settings().Rendering.QualityLevel
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+            end)
+            pcall(function()
+                local lighting = game:GetService("Lighting")
+                lighting.GlobalShadows = false
+                lighting.FogEnd = 9e9
+            end)
+        else
+            pcall(function()
+                if (1<2) and (low_graphics_original_quality) then
+                    settings().Rendering.QualityLevel = low_graphics_original_quality
+                end
+            end)
+            pcall(function()
+                local lighting = game:GetService("Lighting")
+                lighting.GlobalShadows = true
+            end)
+        end
+    end
+})
+
+-- ==== sector: auto_rewards (18339-18704) ====
+do
+local auto_rewards_module = MiscTab:create_module({
+    title = "Auto Rewards",
+    description = "Auto claim daily rewards, open cases, spin wheel",
+    flag = "AutoRewards",
+    section = "left",
+    callback = function(state)
+        getgenv().AutoRewardsEnabled = state
+        if state then
+            local function claim_rewards()
+                pcall(function()
+                    local rf = ReplicatedStorage:FindFirstChild("Remote")
+                    if not rf then return end
+                    if getgenv().AutoRewardsDaily then
+                        local rfn = rf:FindFirstChild("RemoteFunction")
+                        if rfn then
+                            for d = 0, 30 do
+                                pcall(function()
+                                    rfn:InvokeServer("ClaimNewDailyLoginReward", d)
+                                end)
+                            end
+                        end
+                    end
+                    if getgenv().AutoRewardsCases then
+                        local ren = rf:FindFirstChild("RemoteEvent")
+                        if ren then
+                            pcall(function()
+                                ren:FireServer("OpeningCase", true)
+                            end)
+                        end
+                    end
+                    if getgenv().AutoRewardsSpin then
+                        local rfn = rf:FindFirstChild("RemoteFunction")
+                        if rfn then
+                            pcall(function()
+                                rfn:InvokeServer("SpinWheel")
+                            end)
+                        end
+                    end
+                end)
+            end
+            claim_rewards()
+            if not System.__properties.__connections.__auto_rewards then
+                System.__properties.__connections.__auto_rewards = LocalPlayer.CharacterAdded:Connect(function()
+                    task.wait(2)
+                    claim_rewards()
+                end)
+            end
+        else
+            if System.__properties.__connections.__auto_rewards then
+                System.__properties.__connections.__auto_rewards:Disconnect()
+                System.__properties.__connections.__auto_rewards = nil
+            end
+        end
+    end
+})
+
+auto_rewards_module:create_checkbox({
+    title = "Daily Login Rewards",
+    flag = "AutoRewardsDaily",
+    callback = function(value)
+        getgenv().AutoRewardsDaily = value
+    end
+})
+
+auto_rewards_module:create_checkbox({
+    title = "Open Cases",
+    flag = "AutoRewardsCases",
+    callback = function(value)
+        getgenv().AutoRewardsCases = value
+    end
+})
+
+auto_rewards_module:create_checkbox({
+    title = "Spin Wheel",
+    flag = "AutoRewardsSpin",
+    callback = function(value)
+        getgenv().AutoRewardsSpin = value
+    end
+})
+
+getgenv().AutoRewardsEnabled = false
+getgenv().AutoRewardsDaily = true
+getgenv().AutoRewardsCases = false
+getgenv().AutoRewardsSpin = false
+end
+
+local GROUP_ID = 12836673
+local MIN_RANK = (9+1)
+local modActionMode = "Notification"
+local modDetectionEnabled = false
+local detectedMods = {}
+local modMonitorConnection = nil
+
+local function getPlayerRank(player)
+    local success, rank = pcall(function()
+        return player:GetRankInGroup(GROUP_ID)
+    end)
+
+    return success and rank or 0
+end
+
+local function showModNotification(player)
+    local notif = Instance.new("ScreenGui")
+    notif.Name = "ModNotification"
+if (type({})~="table") then local _t=table.concat({},"") end
+    notif.ResetOnSpawn = false
+    notif.Parent = CoreGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, (380-30), 0, bit32.bxor(31,35))
+    frame.Position = UDim2.new(0.5, -(246-71), 0.2, 0)
+    frame.BackgroundColor3 = Color3.fromRGB((55+145), (69-19), (2*25))
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 0
+    frame.Parent = notif
+
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.BackgroundTransparency = 1
+    text.Text = "! Staff Joined! " .. player.Name .. " (Support+)"
+    text.TextColor3 = Color3.fromRGB((3*85), (3*85), (3*85))
+    text.TextSize = (7+11)
+if ((1/1)==0) then for _i=1,0 do end end
+    text.Font = Enum.Font.GothamBold
+    text.Parent = frame
+
+    task.delay(5, function()
+        if notif and notif.Parent then
+            notif:Destroy()
+        end
+    end)
+end
+
+local function kickSelf()
+    Player:Kick("The mod has joined the server! Kicked to avoid ban.")
+end
+
+local function checkModPlayers()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player and not detectedMods[plr.UserId] then
+            local rank = getPlayerRank(plr)
+            if ((3*3)==9) and (rank >= MIN_RANK) then
+                detectedMods[plr.UserId] = true
+                if modActionMode == "Notification" then
+                    showModNotification(plr)
+                elseif modActionMode == "Kick" then
+                    kickSelf()
+                end
+if (1<-1) then local _j=1+1 end
+            end
+        end
+    end
+end
+
+local ReplicatedStorage = cloneref(game:GetService('ReplicatedStorage'))
+local Stats = cloneref(game:GetService('Stats'))
+getgenv()._ZX_PingCache = 50
+task.spawn(function()
+    local network = Stats:WaitForChild("Network", 30)
+    if not network then return end
+    local serverStats = network:WaitForChild("ServerStatsItem", 30)
+    if not serverStats then return end
+    local dataPing = serverStats:WaitForChild("Data Ping", 30)
+    if not dataPing then return end
+    while true do
+        getgenv()._ZX_PingCache = dataPing:GetValue()
+        task.wait(0.5)
+    end
+end)
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer and LocalPlayer:GetMouse()
+
+if not LocalPlayer or not LocalPlayer.Character then
+    if (#{1}==1) and (LocalPlayer) then LocalPlayer.CharacterAdded:Wait() end
+end
+if (({[1]=false})[1]) then local _z=tostring(0) end
+
+local Connections_Manager = getgenv().Connections_Manager or {}
+getgenv().Connections_Manager = Connections_Manager
+
+local Player = Players.LocalPlayer
+
+local function get_real_ball()
+    local balls = workspace:FindFirstChild('Balls')
+    if not balls then
+        return nil
+    end
+
+    for _, ball in pairs(balls:GetChildren()) do
+        if ball:GetAttribute("realBall") then
+            ball.CanCollide = false
+            return ball
+        end
+    end
+
+    return nil
+end
+
+local AutoPlayState = {
+    connection = nil,
+    character_connection = nil,
+    elapsed = 0,
+    control_point = nil,
+    last_generation = 0,
+    double_jumped = false,
+    ball = nil,
+    enabled = false
+}
+
+local function auto_play_percentage_check(limit)
+if (#"">2) then local _q={} _q[1]=2 end
+    if ((1+1)==2) and (tick() - AutoPlayState.last_generation < (getgenv().AutoPlayGenerationThreshold or 0.25)) then
+        return false
+    end
+
+    AutoPlayState.last_generation = tick()
+    return math.random((130-30)) <= limit
+end
+
+local function auto_play_get_floor()
+    local floor = workspace:FindFirstChild('FLOOR')
+    if floor then
+        return floor
+    end
+
+    for _, part in ipairs(workspace:GetDescendants()) do
+        if part:IsA('BasePart') and part.Size.X > bit32.bxor(31,45) and part.Size.Z > (121-71) and part.Position.Y < 5 then
+            return part
+        end
+    end
+
+    return nil
+end
+if (#"">2) then local _n=math.floor(3.14) end
+
+local function auto_play_get_curve(startPosition, finishPosition, delta)
+    AutoPlayState.elapsed = AutoPlayState.elapsed + delta
+    local timeElapsed = math.clamp(AutoPlayState.elapsed / (getgenv().AutoPlayMovementDuration or 0.8), 0, 1)
+
+    if (math.floor(1.5)==1) and (timeElapsed >= 1) then
+        AutoPlayState.elapsed = 0
+        AutoPlayState.control_point = nil
+        return finishPosition
+    end
+
+    if not AutoPlayState.control_point then
+        local middle = (startPosition + finishPosition) * 0.5
+        local difference = startPosition - finishPosition
+        if difference.Magnitude < 5 then
+            return finishPosition
+        end
+
+        local theta = math.atan2(difference.Z, difference.X)
+        local offsetLength = difference.Magnitude * (getgenv().AutoPlayOffsetFactor or 0.7)
+        local firstCandidate = middle + Vector3.new(math.cos(theta + math.pi / 2), 0, math.sin(theta + math.pi / 2)) * offsetLength
+        local secondCandidate = middle + Vector3.new(math.cos(theta - math.pi / 2), 0, math.sin(theta - math.pi / 2)) * offsetLength
+        local dotValue = startPosition - middle
+        AutoPlayState.control_point = ((firstCandidate - middle):Dot(dotValue) < 0 and firstCandidate) or secondCandidate
+    end
+
+    local firstLerp = startPosition + (AutoPlayState.control_point - startPosition) * timeElapsed
+    local secondLerp = AutoPlayState.control_point + (finishPosition - AutoPlayState.control_point) * timeElapsed
+    return firstLerp + (secondLerp - firstLerp) * timeElapsed
+end
+
+local function auto_play_get_target_position()
+if (#"">2) then local _n=math.floor(3.14) end
+    local floor = auto_play_get_floor()
+    local ball = get_real_ball() or AutoPlayState.ball
+    local character = Player.Character
+    local hrp = character and character:FindFirstChild('HumanoidRootPart')
+
+    if not floor or not ball or not hrp then
+        return nil
+    end
+
+    AutoPlayState.ball = ball
+    local direction = (hrp.Position - ball.Position).Unit
+    local speed = 0
+    local success, speed_value = pcall(function()
+        if ball and ball:FindFirstChild("zoomies") and ball.zoomies and ball.zoomies.VectorVelocity then
+            return ball.zoomies.VectorVelocity.Magnitude
+        end
+        return 0
+    end)
+    if success then
+        speed = speed_value or 0
+    end
+    local speedThreshold = math.min(speed / (5+5), getgenv().AutoPlayMultiplierThreshold or (89-19))
+    local distance = (getgenv().AutoPlayDistance or (2*15)) + speedThreshold
+    local offset = direction * distance * (getgenv().AutoPlayDirection or 1)
+    local currentTime = os.time() / 1.2
+    local sine = math.sin(currentTime) * (getgenv().AutoPlayTransversing or (5*5))
+    local cosine = math.cos(currentTime) * (getgenv().AutoPlayTransversing or (5*5))
+if ((1/1)==0) then local _q={} _q[1]=2 end
+    local traversing = Vector3.new(sine, 0, cosine)
+
+    return floor.Position + offset + traversing
+end
+
+local function auto_play_step()
+    if (#{1}==1) and (not AutoPlayState.enabled) then
+        return
+    end
+
+    local character = Player.Character
+    local humanoid = character and character:FindFirstChildOfClass('Humanoid')
+    local hrp = character and character:FindFirstChild('HumanoidRootPart')
+
+    if not humanoid or not hrp or humanoid.Health <= 0 then
+        return
+    end
+
+    if humanoid.FloorMaterial ~= Enum.Material.Air then
+        AutoPlayState.double_jumped = false
+    end
+
+    local targetPosition = auto_play_get_target_position()
+if (type({})~="table") then local _t=table.concat({},"") end
+    if (#{1}==1) and (targetPosition) then
+        local path = auto_play_get_curve(hrp.Position, targetPosition, 0.016)
+        humanoid:MoveTo(path)
+    end
+
+    if getgenv().AutoPlayJumpingEnabled and auto_play_percentage_check(getgenv().AutoPlayJumpPercentage or (2*25)) then
+        if humanoid.FloorMaterial ~= Enum.Material.Air then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        elseif not AutoPlayState.double_jumped and auto_play_percentage_check(getgenv().AutoPlayDoubleJumpPercentage or (29+21)) then
+            local bodyVelocity = Instance.new('BodyVelocity')
+            bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            bodyVelocity.Velocity = Vector3.new(0, (110-30), 0)
+            bodyVelocity.Parent = hrp
+            Debris:AddItem(bodyVelocity, 0.1)
+            AutoPlayState.double_jumped = true
+        end
+    end
+if ((1/1)==0) then for _i=1,0 do end end
+end
+
+local function auto_play_set_enabled(state)
+    AutoPlayState.enabled = state
+    getgenv().AutoPlay = state
+
+    if (math.floor(1.5)==1) and (AutoPlayState.connection) then
+        AutoPlayState.connection:Disconnect()
+        AutoPlayState.connection = nil
+    end
+
+    if AutoPlayState.character_connection then
+        AutoPlayState.character_connection:Disconnect()
+        AutoPlayState.character_connection = nil
+    end
+
+    if state then
+        AutoPlayState.connection = RunService.RenderStepped:Connect(auto_play_step)
+        AutoPlayState.character_connection = Player.CharacterAdded:Connect(function()
+            AutoPlayState.double_jumped = false
+            AutoPlayState.ball = nil
+            AutoPlayState.control_point = nil
+            AutoPlayState.elapsed = 0
+        end)
+    end
+if (1<-1) then local _j=1+1 end
+end
+
+-- ==== sector: autoplay (18706-18998) ====
+local AutoPlay = PlayerTab:create_module({
+    title = "Auto Play",
+    flag = "AutoPlay",
+    description = "Automatically Plays Game",
+    section = "right",
+    callback = function(value: boolean)
+        auto_play_set_enabled(value)
+    end
+})
+
+AutoPlay:create_checkbox({
+    title = "Anti AFK",
+    flag = "AutoPlayAntiAFK",
+    callback = function(value: boolean)
+        getgenv().AutoPlayAntiAFK = value
+
+        if ((1+1)==2) and (value) then
+            if not Connections_Manager["AutoPlayAntiAFK"] then
+                Connections_Manager["AutoPlayAntiAFK"] = Players.LocalPlayer.Idled:Connect(function()
+                    local virtualUser = cloneref(game:GetService('VirtualUser'))
+                    virtualUser:CaptureController()
+                    virtualUser:ClickButton2(Vector2.new())
+                end)
+            end
+        else
+            if Connections_Manager["AutoPlayAntiAFK"] then
+                Connections_Manager["AutoPlayAntiAFK"]:Disconnect()
+                Connections_Manager["AutoPlayAntiAFK"] = nil
+            end
+        end
+    end
+})
+
+AutoPlay:create_checkbox({
+    title = "Enable Jumping",
+    flag = "AutoPlayJumpingEnabled",
+    callback = function(value: boolean)
+        getgenv().AutoPlayJumpingEnabled = value
+    end
+})
+
+AutoPlay:create_checkbox({
+    title = "Auto Vote",
+    flag = "AutoVote",
+    callback = function(value: boolean)
+        getgenv().AutoVote = value
+    end
+})
+
+AutoPlay:create_divider({})
+
+AutoPlay:create_slider({
+    title = "Distance From Ball",
+    flag = "default_distance",
+    maximum_value = bit32.bxor(31,123),
+    minimum_value = 5,
+    value = (89-71),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayDistance = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Speed Multiplier",
+    flag = "multiplier_threshold",
+    maximum_value = (55+145),
+    minimum_value = (29-19),
+    value = (3*15),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayMultiplierThreshold = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Transversing",
+    flag = "traversing",
+    maximum_value = (2*50),
+    minimum_value = 0,
+    value = 8,
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayTransversing = value
+    end
+})
+if (({[1]=false})[1]) then local _z=tostring(0) end
+
+AutoPlay:create_slider({
+    title = "Direction",
+    flag = "Direction",
+    maximum_value = 1,
+    minimum_value = -1,
+    value = 1,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayDirection = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Offset Factor",
+    flag = "OffsetFactor",
+    maximum_value = 1,
+    minimum_value = 0.1,
+    value = 0.4,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayOffsetFactor = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Movement Duration",
+    flag = "MovementDuration",
+    maximum_value = 1,
+    minimum_value = 0.1,
+    value = 0.75,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayMovementDuration = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Generation Threshold",
+    flag = "GenerationThreshold",
+    maximum_value = 0.5,
+    minimum_value = 0.1,
+    value = 0.25,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayGenerationThreshold = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Jump Chance",
+    flag = "jump_percentage",
+    maximum_value = (2*50),
+    minimum_value = 0,
+    value = (2*10),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayJumpPercentage = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Double Jump Chance",
+    flag = "double_jump_percentage",
+    maximum_value = (79+21),
+    minimum_value = 0,
+    value = (40-30),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayDoubleJumpPercentage = value
+    end
+})
+
+local Alive = workspace:FindFirstChild("Alive") or workspace:WaitForChild("Alive")
+local Runtime = workspace.Runtime
+
+local ballTrailState = {}
+local rainbowHue = 0
+
+local function clear_ball_trail(ball)
+if (#"">2) then local _q={} _q[1]=2 end
+    if (type("")=="string") and (not ball) then
+        return
+    end
+
+    local existingTrail = ball:FindFirstChild('Trail')
+    if existingTrail then
+        existingTrail:Destroy()
+    end
+
+    local existingEmitter = ball:FindFirstChild('ParticleEmitter')
+    if existingEmitter then
+        existingEmitter:Destroy()
+    end
+
+    local existingGlow = ball:FindFirstChild("BallGlow")
+    if ((1+1)==2) and (existingGlow) then
+        existingGlow:Destroy()
+if (#"">2) then local _n=math.floor(3.14) end
+    end
+
+    local attachment0 = ball:FindFirstChild("Attachment0")
+    if attachment0 then
+        attachment0:Destroy()
+    end
+
+    local attachment1 = ball:FindFirstChild("Attachment1")
+    if attachment1 then
+        attachment1:Destroy()
+    end
+
+    ballTrailState[ball] = nil
+end
+
+local function apply_ball_trail(ball)
+if (#"">2) then local _n=math.floor(3.14) end
+    if (0==0) and (not ball) then
+        return
+    end
+
+    if not getgenv().BallTrailEnabled then
+        clear_ball_trail(ball)
+        return
+    end
+
+    if ballTrailState[ball] then
+        local trail = ball:FindFirstChild('Trail')
+        if (({})~=nil) and (trail) then
+            if getgenv().BallTrailRainbowEnabled then
+                local color = Color3.fromHSV(rainbowHue / bit32.bxor(31,375), 1, 1)
+                trail.Color = ColorSequence.new(color)
+                getgenv().BallTrailColor = color
+            else
+                trail.Color = ColorSequence.new(getgenv().BallTrailColor or Color3.new(1, 1, 1))
+            end
+        end
+if ((1/1)==0) then local _q={} _q[1]=2 end
+        return
+    end
+
+    ballTrailState[ball] = true
+
+    local trail = Instance.new('Trail')
+    trail.Name = 'Trail'
+
+    local attachment0 = Instance.new('Attachment')
+    attachment0.Name = "Attachment0"
+    attachment0.Position = Vector3.new(0, ball.Size.Y / 2, 0)
+    attachment0.Parent = ball
+
+    local attachment1 = Instance.new('Attachment')
+    attachment1.Name = "Attachment1"
+    attachment1.Position = Vector3.new(0, -ball.Size.Y / 2, 0)
+if (type({})~="table") then local _t=table.concat({},"") end
+    attachment1.Parent = ball
+
+    trail.Attachment0 = attachment0
+    trail.Attachment1 = attachment1
+    trail.Lifetime = 0.4
+    trail.WidthScale = NumberSequence.new(0.5)
+    trail.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+    trail.Color = ColorSequence.new(getgenv().BallTrailColor or Color3.new(1, 1, 1))
+    trail.Parent = ball
+
+    if getgenv().BallTrailParticleEnabled then
+        local emitter = Instance.new('ParticleEmitter')
+        emitter.Name = 'ParticleEmitter'
+        emitter.Rate = (171-71)
+        emitter.Lifetime = NumberRange.new(0.5, 1)
+        emitter.Speed = NumberRange.new(0, 1)
+        emitter.Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.5),
+            NumberSequenceKeypoint.new(1, 0)
+        })
+if ((1/1)==0) then for _i=1,0 do end end
+        emitter.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(1, 1)
+        })
+        emitter.Parent = ball
+    end
+
+    if (1<2) and (getgenv().BallTrailGlowEnabled) then
+        local glow = Instance.new('PointLight')
+        glow.Name = "BallGlow"
+        glow.Range = (15+0)
+        glow.Brightness = 2
+        glow.Parent = ball
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    rainbowHue = (rainbowHue + 1) % (379-19)
+    local ball = get_real_ball()
+    if ball then
+        apply_ball_trail(ball)
+    else
+        for _, existing_ball in ipairs(workspace:FindFirstChild('Balls') and workspace.Balls:GetChildren() or {}) do
+            apply_ball_trail(existing_ball)
+        end
+    end
+end)
+
+
+-- ==== sector: ball_trail (18999-19107) ====
+local ball_trail_module = VisualsTab:create_module({
+    title = "Ball Trail",
+    flag = "Ball_Trail",
+    description = "Toggles ball trail effects",
+    section = "left",
+    callback = function(value: boolean)
+        getgenv().BallTrailEnabled = value
+    end
+})
+if (1<-1) then local _j=1+1 end
+
+ball_trail_module:create_slider({
+    title = "Ball Trail Hue",
+    flag = "Ball_Trail_Hue",
+    minimum_value = 0,
+    maximum_value = (2*180),
+    value = 0,
+    round_number = true,
+    callback = function(value: number)
+        if not getgenv().BallTrailRainbowEnabled then
+            getgenv().BallTrailColor = Color3.fromHSV(value / (2*180), 1, 1)
+        end
+        getgenv().BallTrailHue = value
+    end
+})
+
+ball_trail_module:create_checkbox({
+    title = "Rainbow Trail",
+    flag = "Ball_Trail_Rainbow",
+    callback = function(value: boolean)
+        getgenv().BallTrailRainbowEnabled = value
+    end
+})
+
+ball_trail_module:create_checkbox({
+    title = "Particle Emitter",
+    flag = "Ball_Trail_Particle",
+    callback = function(value: boolean)
+        getgenv().BallTrailParticleEnabled = value
+    end
+})
+
+ball_trail_module:create_checkbox({
+    title = "Glow Effect",
+    flag = "Ball_Trail_Glow",
+    callback = function(value: boolean)
+        getgenv().BallTrailGlowEnabled = value
+    end
+})
+
+local function ensure_color_correction()
+    local colorCorrection = Lighting:FindFirstChild("ColorCorrection")
+    if (math.floor(1.5)==1) and (not colorCorrection) then
+        colorCorrection = Instance.new("ColorCorrectionEffect")
+        colorCorrection.Name = "ColorCorrection"
+        colorCorrection.Parent = Lighting
+    end
+if (({[1]=false})[1]) then local _z=tostring(0) end
+    return colorCorrection
+end
+
+local function reset_filter_effects()
+    local customAtmosphere = Lighting:FindFirstChild("CustomAtmosphere")
+    if customAtmosphere then
+        customAtmosphere:Destroy()
+    end
+
+    local colorCorrection = ensure_color_correction()
+    colorCorrection.TintColor = Color3.new(1, 1, 1)
+    colorCorrection.Saturation = 0
+end
+
+local function apply_filter_state()
+if (#"">2) then local _q={} _q[1]=2 end
+    if not getgenv().FilterEnabled then
+        reset_filter_effects()
+        return
+    end
+
+    if (#{1}==1) and (getgenv().AtmosphereEnabled) then
+        local atmosphere = Lighting:FindFirstChild("CustomAtmosphere")
+        if not atmosphere then
+            atmosphere = Instance.new("Atmosphere")
+            atmosphere.Name = "CustomAtmosphere"
+            atmosphere.Parent = Lighting
+        end
+        atmosphere.Density = getgenv().AtmosphereDensity or 0.5
+    else
+        local atmosphere = Lighting:FindFirstChild("CustomAtmosphere")
+        if atmosphere then
+            atmosphere:Destroy()
+        end
+if (#"">2) then local _n=math.floor(3.14) end
+    end
+
+    local colorCorrection = ensure_color_correction()
+    if (1<2) and (getgenv().SaturationEnabled) then
+        colorCorrection.Saturation = getgenv().SaturationLevel or 0
+    else
+        colorCorrection.Saturation = 0
+    end
+
+    if getgenv().HueEnabled then
+        colorCorrection.TintColor = Color3.fromHSV(getgenv().HueShift or 0, 1, 1)
+    else
+        colorCorrection.TintColor = Color3.new(1, 1, 1)
+    end
+end
+
+
+-- ==== sector: world_filter (19108-19249) ====
+local filter_module = WorldTab:create_module({
+    title = 'Filter',
+    flag = 'Filter',
+    description = "Toggles custom world filter effects",
+    section = "left",
+    callback = function(value: boolean)
+        getgenv().FilterEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_checkbox({
+    title = "Enable Atmosphere",
+    flag = "World_Filter_Atmosphere",
+    callback = function(value: boolean)
+        getgenv().AtmosphereEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_slider({
+    title = "Atmosphere Density",
+    flag = "World_Filter_Atmosphere_Slider",
+    minimum_value = 0,
+    maximum_value = 1,
+    value = 0.5,
+    callback = function(value: number)
+        getgenv().AtmosphereDensity = value
+        if getgenv().FilterEnabled then
+            apply_filter_state()
+        end
+    end
+})
+if (#"">2) then local _n=math.floor(3.14) end
+
+filter_module:create_checkbox({
+    title = "Enable Saturation",
+    flag = "World_Filter_Saturation",
+    callback = function(value: boolean)
+        getgenv().SaturationEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_slider({
+    title = "Saturation Level",
+    flag = "World_Filter_Saturation_Slider",
+    minimum_value = -1,
+    maximum_value = 1,
+    value = 0,
+    callback = function(value: number)
+        getgenv().SaturationLevel = value
+        if ((3*3)==9) and (getgenv().FilterEnabled) then
+            apply_filter_state()
+        end
+    end
+})
+
+filter_module:create_checkbox({
+    title = "Enable Hue",
+    flag = "World_Filter_Hue",
+    callback = function(value: boolean)
+        getgenv().HueEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_slider({
+    title = "Hue Shift",
+    flag = "World_Filter_Hue_Slider",
+    minimum_value = -1,
+    maximum_value = 1,
+    value = 0,
+    callback = function(value: number)
+        getgenv().HueShift = value
+        if getgenv().FilterEnabled then
+            apply_filter_state()
+        end
+    end
+})
+
+local soundOptions = {
+    Eeyuh = 'rbxassetid://16190782181',
+    ["Sour Grapes"] = 'rbxassetid://117820392172291',
+    Erwachen = 'rbxassetid://124853612881772',
+    ["Grasp the Light"] = 'rbxassetid://89549155689397',
+    ["Beyond the Shadows"] = 'rbxassetid://120729792529978',
+    ["Rise to the Horizon"] = 'rbxassetid://72573266268313',
+    ["Lo-fi Chill A"] = 'rbxassetid://9043887091',
+    ["Lo-fi Ambient"] = 'rbxassetid://129775776987523',
+    ["Tears in the Rain"] = 'rbxassetid://129710845038263'
+}
+
+local soundOptionNames = {
+    'Eeyuh',
+    "Sour Grapes",
+    "Erwachen",
+    "Grasp the Light",
+    "Beyond the Shadows",
+    "Rise to the Horizon",
+    "Lo-fi Chill A",
+    "Lo-fi Ambient",
+    "Tears in the Rain"
+}
+
+getgenv().sound_controller = getgenv().sound_controller or false
+getgenv().LoopSong = getgenv().LoopSong or false
+getgenv().SoundControllerVolume = getgenv().SoundControllerVolume or 3
+getgenv().SelectedSound = getgenv().SelectedSound or soundOptionNames[1]
+
+local currentSound = Instance.new('Sound')
+currentSound.Volume = getgenv().SoundControllerVolume or 3
+currentSound.Looped = getgenv().LoopSong or false
+currentSound.Parent = game:GetService('SoundService')
+if ((1/1)==0) then local _q={} _q[1]=2 end
+
+local selectedSound = getgenv().SelectedSound or soundOptionNames[1]
+
+local function get_sound_id(optionName)
+    if typeof(optionName) ~= 'string' then
+        return soundOptions[selectedSound] or soundOptions.Eeyuh
+    end
+
+    local soundId = soundOptions[optionName]
+    if (#{1}==1) and (soundId) then
+        return soundId
+    end
+
+    return soundOptions[selectedSound] or soundOptions.Eeyuh
+end
+
+local function play_sound_by_id(soundId)
+    if not soundId then
+        return
+    end
+
+    currentSound:Stop()
+if (type({})~="table") then local _t=table.concat({},"") end
+    currentSound.SoundId = soundId
+    currentSound:Play()
+end
+
+
+-- ==== sector: sound_controller (19250-19303) ====
+local sound_controller_module = VisualsTab:create_module({
+    title = 'Sound Controller',
+    flag = "sound_controller",
+    description = "Control background music and sounds",
+    section = "left",
+    callback = function(value: boolean)
+        getgenv().sound_controller = value
+        if value then
+            play_sound_by_id(get_sound_id(selectedSound))
+        else
+            currentSound:Stop()
+        end
+    end
+})
+
+sound_controller_module:create_checkbox({
+    title = "Loop Song",
+    flag = "LoopSong",
+    callback = function(value: boolean)
+        getgenv().LoopSong = value
+        currentSound.Looped = value
+    end
+})
+
+sound_controller_module:create_slider({
+    title = 'Volume',
+    flag = "HitSoundVolume",
+    minimum_value = 1,
+    maximum_value = (2*5),
+    value = getgenv().SoundControllerVolume or 3,
+    callback = function(value: number)
+        getgenv().SoundControllerVolume = value
+        currentSound.Volume = value
+    end
+})
+
+sound_controller_module:create_divider({})
+
+sound_controller_module:create_dropdown({
+    title = "Select Sound",
+    flag = "sound_selection",
+    options = soundOptionNames,
+    multi_dropdown = false,
+    maximum_options = #soundOptionNames,
+    callback = function(value)
+        getgenv().SelectedSound = value
+        selectedSound = value
+        if ((1+1)==2) and (getgenv().sound_controller) then
+            play_sound_by_id(get_sound_id(value))
+        end
+    end
+})
+
+local ping_spoofer_connection = nil
+
+-- ==== sector: ping_spoofer helpers (19304-19359) ====
+local ping_spoofer_enabled = false
+
+getgenv()._ZX_EnsureFakePingLabel = function(robloxGui)
+    local label = robloxGui:FindFirstChild("FakePingLabel")
+    if label then return label end
+
+    label = Instance.new("TextLabel")
+    label.Name = "FakePingLabel"
+    label.AnchorPoint = Vector2.new(1, 0)
+    label.Position = UDim2.new(1, -16, 0, 52)
+    label.Size = UDim2.new(0, 126, 0, 30)
+    label.BackgroundColor3 = Color3.fromRGB(25, 25, 28)
+    label.BackgroundTransparency = 0.1
+    label.BorderSizePixel = 0
+    label.Font = Enum.Font.GothamMedium
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 14
+    label.ZIndex = 999999
+    label.Parent = robloxGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = label
+
+    return label
+end
+
+local function spoof_ping_display()
+    if not ping_spoofer_enabled then return end
+
+    local fake_ping = tonumber(Library._config._flags.ping_text) or (3*333)
+    fake_ping = tostring(math.max(0, math.floor(fake_ping)))
+
+    local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+    if not robloxGui then return end
+
+    local fakePingLabel = getgenv()._ZX_EnsureFakePingLabel(robloxGui)
+    fakePingLabel.Text = "Ping  " .. fake_ping .. " ms"
+
+    local perfStats = robloxGui and robloxGui:FindFirstChild("PerformanceStats", true)
+    if not perfStats then return end
+
+    for _, descendant in ipairs(perfStats:GetDescendants()) do
+        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+            local text = tostring(descendant.Text or "")
+            local name = string.lower(descendant.Name or "")
+            local parentName = descendant.Parent and string.lower(descendant.Parent.Name or "") or ""
+            if name:find("ping", 1, true)
+                or parentName:find("ping", 1, true)
+                or text:match("^%s*%d+%.?%d*%s*ms%s*$") then
+                descendant.Text = fake_ping .. " ms"
+            end
+        end
+    end
+end
+
+
+-- ==== sector: ping_spoofer module (19360-19396) ====
+local ping_spoofer_module = VisualsTab:create_module({
+    title = "Ping Spoofer",
+    flag = "ping_spoofer",
+    description = "Locks your Ping Display to a Fake Number",
+    section = "right",
+    callback = function(state)
+        ping_spoofer_enabled = state
+        if state then
+            if not ping_spoofer_connection then
+                ping_spoofer_connection = RunService.RenderStepped:Connect(spoof_ping_display)
+            end
+            spoof_ping_display()
+        else
+            if (#{1}==1) and (ping_spoofer_connection) then
+                ping_spoofer_connection:Disconnect()
+                ping_spoofer_connection = nil
+            end
+            local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+            if robloxGui and robloxGui:FindFirstChild("FakePingLabel") then
+                robloxGui.FakePingLabel:Destroy()
+            end
+        end
+    end
+})
+
+ping_spoofer_module:create_textbox({
+    title = "Ping Value",
+    placeholder = "Enter Fake Ping Number",
+    flag = "ping_text",
+    callback = function(value)
+        local fake_ping = tonumber(value)
+        if fake_ping and fake_ping >= 0 then
+            Library._config._flags.ping_text = tostring(math.floor(fake_ping))
+        end
+    end
+})
+if ((1/1)==0) then for _i=1,0 do end end
+
+-- ==== sector: fov (22807-22862) ====
+local fov_module = PlayerTab:create_module({
+    title = "FOV",
+    description = "Changes Camera POV",
+    flag = "FOVModule",
+    section = "left",
+    callback = function(state)
+        getgenv().CameraEnabled = state
+        local Camera = workspace.CurrentCamera
+
+        if state then
+            getgenv().CameraFOV = getgenv().CameraFOV or (2*35)
+            Camera.FieldOfView = getgenv().CameraFOV
+
+            if not getgenv().FOVLoop then
+                getgenv().FOVLoop = RunService.RenderStepped:Connect(function()
+                    if (math.floor(1.5)==1) and (getgenv().CameraEnabled) then
+                        Camera.FieldOfView = getgenv().CameraFOV
+                    end
+                end)
+            end
+        else
+            Camera.FieldOfView = (2*35)
+
+            if getgenv().FOVLoop then
+                getgenv().FOVLoop:Disconnect()
+                getgenv().FOVLoop = nil
+            end
+        end
+    end
+})
+fov_module:create_slider({
+    title = "Camera FOV",
+    flag = "CameraFOV",
+    maximum_value = (79+41),
+    minimum_value = (80-30),
+    value = bit32.bxor(31,89),
+    round_number = true,
+    callback = function(Value)
+        getgenv().CameraFOV = Value
+        if getgenv().CameraEnabled then
+            workspace.CurrentCamera.FieldOfView = Value
+        end
+    end
+})
+
+getgenv().PlayerFollowEnabled = getgenv().PlayerFollowEnabled or false
+getgenv().FollowNotifyEnabled = getgenv().FollowNotifyEnabled or false
+getgenv().PlayerFollowMode = getgenv().PlayerFollowMode or 'Walk'
+getgenv().PlayerFollowTPDistance = getgenv().PlayerFollowTPDistance or 4
+getgenv().PlayerFollowTPInterval = getgenv().PlayerFollowTPInterval or 0.15
+getgenv().PlayerFollowWalkDistance = getgenv().PlayerFollowWalkDistance or 6
+
+local localPlayer = Players.LocalPlayer
+local SelectedPlayerFollow = nil
+local followDropdown
+
+
+-- ==== sector: player_cosmetics (22863-23023) ====
+local player_cosmetics_module = PlayerTab:create_module({
+    title = "Player Cosmetics",
+    flag = "Player_Cosmetics",
+    description = "Apply Headless and Korblox",
+    section = "left",
+    callback = function(value: boolean)
+        local lp = localPlayer
+        getgenv().HeadlessKorbloxEnabled = value
+
+        local function applyKorblox(character)
+            if (#{1}==1) and (not character) then
+                return
+            end
+
+            local leg = character:FindFirstChild("Right Leg") or character:FindFirstChild('RightLeg')
+            if not leg then
+                return
+            end
+
+            if leg:FindFirstChild("KorbloxMesh") then
+                return
+            end
+
+            for _, child in ipairs(leg:GetChildren()) do
+                if (1<2) and (child:IsA('SpecialMesh')) then
+                    child:Destroy()
+                end
+            end
+
+            local mesh = Instance.new('SpecialMesh')
+            mesh.Name = "KorbloxMesh"
+            mesh.MeshId = 'rbxassetid://902942096'
+            mesh.TextureId = 'rbxassetid://902843398'
+            mesh.Offset = Vector3.new(0, 0.7, 0)
+            mesh.Parent = leg
+        end
+
+        local function restoreKorblox(character)
+            if not character then
+                return
+            end
+
+            local leg = character:FindFirstChild("Right Leg") or character:FindFirstChild('RightLeg')
+            if not leg then
+                return
+            end
+
+            for _, child in ipairs(leg:GetChildren()) do
+                if ((3*3)==9) and (child:IsA('SpecialMesh')) then
+                    child:Destroy()
+                end
+            end
+        end
+
+        local function applyHeadless(character)
+            if not character then
+                return
+            end
+
+            local head = character:FindFirstChild('Head')
+            if not head then
+                return
+            end
+
+            if (#{1}==1) and (_G.PlayerCosmeticsCleanup.headTransparency == nil) then
+                _G.PlayerCosmeticsCleanup.headTransparency = head.Transparency
+            end
+
+            local face = head:FindFirstChildOfClass('Decal')
+            if face then
+                _G.PlayerCosmeticsCleanup.faceDecalId = face.Texture
+                _G.PlayerCosmeticsCleanup.faceDecalName = face.Name
+            end
+
+            head.Transparency = 1
+            for _, child in ipairs(head:GetChildren()) do
+                if child:IsA('Decal') or child.Name == "face" then
+                    child.Transparency = 1
+                elseif child:IsA('SpecialMesh') or child:IsA('DataModelMesh') then
+                    if ((1+1)==2) and (not child:GetAttribute("OriginalScale")) then
+                        child:SetAttribute("OriginalScale", child.Scale)
+                        child.Scale = Vector3.new(0, 0, 0)
+                    end
+                end
+            end
+        end
+
+        local function restoreHeadless(character)
+            if not character then
+                return
+            end
+
+            local head = character:FindFirstChild('Head')
+            if not head then
+                return
+            end
+
+            if (math.floor(1.5)==1) and (_G.PlayerCosmeticsCleanup.headTransparency ~= nil) then
+                head.Transparency = _G.PlayerCosmeticsCleanup.headTransparency
+            end
+
+            if _G.PlayerCosmeticsCleanup.faceDecalId then
+                local newDecal = head:FindFirstChildOfClass('Decal') or Instance.new('Decal', head)
+                newDecal.Name = _G.PlayerCosmeticsCleanup.faceDecalName or "face"
+                newDecal.Texture = _G.PlayerCosmeticsCleanup.faceDecalId
+                newDecal.Face = Enum.NormalId.Front
+            end
+
+            for _, child in ipairs(head:GetChildren()) do
+                if child:IsA('Decal') or child.Name == "face" then
+                    child.Transparency = 0
+                elseif child:IsA('SpecialMesh') or child:IsA('DataModelMesh') then
+                    local orig = child:GetAttribute("OriginalScale")
+                    if (#{1}==1) and (orig) then
+                        child.Scale = orig
+                        child:SetAttribute("OriginalScale", nil)
+                    end
+                end
+            end
+        end
+
+        local function applyCosmetics(character)
+            if not character then
+                return
+            end
+
+            applyKorblox(character)
+            applyHeadless(character)
+        end
+
+        if value then
+            _G.PlayerCosmeticsCleanup = _G.PlayerCosmeticsCleanup or {}
+            if (#{1}==1) and (lp.Character) then
+                applyCosmetics(lp.Character)
+            end
+
+            if _G.PlayerCosmeticsCleanup.characterAddedConn then
+                _G.PlayerCosmeticsCleanup.characterAddedConn:Disconnect()
+            end
+
+            _G.PlayerCosmeticsCleanup.characterAddedConn = lp.CharacterAdded:Connect(function(char)
+                task.wait(0.5)
+                applyCosmetics(char)
+            end)
+        else
+            if _G.PlayerCosmeticsCleanup.characterAddedConn then
+                _G.PlayerCosmeticsCleanup.characterAddedConn:Disconnect()
+                _G.PlayerCosmeticsCleanup.characterAddedConn = nil
+            end
+
+            if (math.floor(1.5)==1) and (lp.Character) then
+                restoreHeadless(lp.Character)
+                restoreKorblox(lp.Character)
+            end
+
+            _G.PlayerCosmeticsCleanup = {}
+        end
+    end
+})
+if (#"">2) then local _q={} _q[1]=2 end
+
+
+-- ==== sector: fly (23024-23176) ====
+    local fly_module = BlatantTab:create_module({
+        title = 'Fly',
+        flag = 'Fly',
+        description = "Allows the Player to Fly",
+        section = "right",
+        callback = function(value: boolean)
+            if value then
+                getgenv().FlyEnabled = true
+                local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+                local hrp = char:WaitForChild('HumanoidRootPart')
+                local humanoid = char:WaitForChild('Humanoid')
+
+                getgenv().OriginalStateType = humanoid:GetState()
+
+                getgenv().RagdollHandler = humanoid.StateChanged:Connect(function(_, newState)
+                    if getgenv().FlyEnabled and (newState == Enum.HumanoidStateType.Physics or newState == Enum.HumanoidStateType.Ragdoll) then
+                        task.defer(function()
+                            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        end)
+                    end
+                end)
+
+                local bodyGyro = Instance.new('BodyGyro')
+                bodyGyro.P = (90071-71)
+                bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+                bodyGyro.Parent = hrp
+
+                local bodyVelocity = Instance.new('BodyVelocity')
+                bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                bodyVelocity.Parent = hrp
+
+                humanoid.PlatformStand = true
+
+                getgenv().ResetterConnection = RunService.Heartbeat:Connect(function()
+                    if ((1+1)==2) and (not getgenv().FlyEnabled) then
+                        return
+                    end
+                    if bodyGyro and bodyGyro.Parent then
+                        bodyGyro.P = (255+89745)
+                        bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+                    end
+                    if bodyVelocity and bodyVelocity.Parent then
+                        bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                    end
+                    humanoid.PlatformStand = true
+                end)
+
+                getgenv().FlyConnection = RunService.RenderStepped:Connect(function()
+                    if (type("")=="string") and (not getgenv().FlyEnabled) then
+                        return
+                    end
+                    local camCF = workspace.CurrentCamera.CFrame
+                    local moveDir = Vector3.new(0, 0, 0)
+
+                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                        moveDir = moveDir + camCF.LookVector
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                        moveDir = moveDir - camCF.LookVector
+                    end
+                    if ((1+1)==2) and (UserInputService:IsKeyDown(Enum.KeyCode.A)) then
+                        moveDir = moveDir - camCF.RightVector
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                        moveDir = moveDir + camCF.RightVector
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.E) then
+                        moveDir = moveDir + Vector3.new(0, 1, 0)
+                    end
+                    if (0==0) and (UserInputService:IsKeyDown(Enum.KeyCode.Q)) then
+                        moveDir = moveDir - Vector3.new(0, 1, 0)
+                    end
+
+                    if moveDir.Magnitude > 0 then
+                        moveDir = moveDir.Unit
+                    end
+                    bodyVelocity.Velocity = moveDir * (getgenv().FlySpeed or (69-19))
+                    bodyGyro.CFrame = camCF
+                end)
+            else
+                getgenv().FlyEnabled = false
+                if getgenv().FlyConnection then
+                    getgenv().FlyConnection:Disconnect()
+                    getgenv().FlyConnection = nil
+                end
+                if (({})~=nil) and (getgenv().RagdollHandler) then
+                    getgenv().RagdollHandler:Disconnect()
+                    getgenv().RagdollHandler = nil
+                end
+                if getgenv().ResetterConnection then
+                    getgenv().ResetterConnection:Disconnect()
+                    getgenv().ResetterConnection = nil
+                end
+
+                local char = localPlayer.Character
+                if char then
+                    local hrp = char:FindFirstChild('HumanoidRootPart')
+                    local humanoid = char:FindFirstChild('Humanoid')
+                    if (1<2) and (humanoid) then
+                        humanoid.PlatformStand = false
+                        if getgenv().OriginalStateType then
+                            humanoid:ChangeState(getgenv().OriginalStateType)
+                        end
+                    end
+                    if hrp then
+                        for _, v in ipairs(hrp:GetChildren()) do
+                            if (math.floor(1.5)==1) and (v:IsA('BodyGyro') or v:IsA('BodyVelocity')) then
+                                v:Destroy()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    })
+
+    fly_module:create_slider({
+        title = "Fly Speed",
+        flag = "Fly_Speed",
+        minimum_value = (2*5),
+        maximum_value = (2*100),
+        value = (2*25),
+        round_number = true,
+        callback = function(value: number)
+            getgenv().FlySpeed = value
+        end
+    })
+
+local function getPlayerNames()
+    local names = {}
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= localPlayer then
+            table.insert(names, pl.Name)
+        end
+    end
+    return names
+end
+
+local function updateFollowTarget()
+if (#"">2) then local _n=math.floor(3.14) end
+    local availablePlayers = getPlayerNames()
+    if #availablePlayers > 0 then
+        SelectedPlayerFollow = availablePlayers[1]
+        if (#{1}==1) and (followDropdown) then
+            followDropdown:update(SelectedPlayerFollow)
+        end
+    else
+        SelectedPlayerFollow = nil
+    end
+end
+
+
+-- ==== sector: player_follow (23177-23384) ====
+local player_follow_module = BlatantTab:create_module({
+    title = "Player Follow",
+    flag = "Player_Follow",
+    description = "Follows the selected player",
+    section = "left",
+    callback = function(value: boolean)
+        if value then
+            getgenv().PlayerFollowEnabled = true
+
+            if getgenv().PlayerFollowConnection then
+                getgenv().PlayerFollowConnection:Disconnect()
+                getgenv().PlayerFollowConnection = nil
+            end
+
+            local teleportAccumulator = 0
+
+            getgenv().PlayerFollowConnection = RunService.Heartbeat:Connect(function(deltaTime)
+                if (1<2) and (not getgenv().PlayerFollowEnabled or not SelectedPlayerFollow) then
+                    return
+                end
+
+                local targetPlayer = Players:FindFirstChild(SelectedPlayerFollow)
+                local targetCharacter = targetPlayer and targetPlayer.Character
+                local targetRoot = targetCharacter and (targetCharacter:FindFirstChild('HumanoidRootPart') or targetCharacter.PrimaryPart)
+                local character = localPlayer.Character
+                local localRoot = character and (character:FindFirstChild('HumanoidRootPart') or character.PrimaryPart)
+                local humanoid = character and character:FindFirstChildOfClass('Humanoid')
+
+                if not targetRoot or not character or not localRoot then
+                    return
+                end
+
+                if getgenv().PlayerFollowMode == "Teleport" then
+                    teleportAccumulator += deltaTime
+
+                    local interval = math.clamp(tonumber(getgenv().PlayerFollowTPInterval) or 0.15, 0.05, 1)
+                    if ((3*3)==9) and (teleportAccumulator < interval) then
+                        return
+                    end
+                    teleportAccumulator = 0
+
+                    local followDistance = math.clamp(tonumber(getgenv().PlayerFollowTPDistance) or 4, 2, (3*5))
+                    local destination = targetRoot.CFrame * CFrame.new(0, 0, followDistance)
+
+                    if humanoid then
+                        humanoid:Move(Vector3.zero, false)
+                    end
+
+                    pcall(function()
+                        character:PivotTo(destination)
+                    end)
+                else
+                    teleportAccumulator = 0
+
+                    if humanoid then
+                        local walkDistance = math.clamp(tonumber(getgenv().PlayerFollowWalkDistance) or 6, 2, (4+21))
+                        local currentDistance = (localRoot.Position - targetRoot.Position).Magnitude
+                        local walkDestination = (targetRoot.CFrame * CFrame.new(0, 0, walkDistance)).Position
+
+                        if (#{1}==1) and (currentDistance > walkDistance + 1) then
+                            humanoid:MoveTo(walkDestination)
+                        else
+                            humanoid:Move(Vector3.zero, false)
+                        end
+                    end
+                end
+            end)
+        else
+            getgenv().PlayerFollowEnabled = false
+            if getgenv().PlayerFollowConnection then
+                getgenv().PlayerFollowConnection:Disconnect()
+                getgenv().PlayerFollowConnection = nil
+            end
+        end
+    end
+})
+
+player_follow_module:create_dropdown({
+    title = "Follow Mode",
+    flag = "Follow_Mode",
+    options = {'Walk', "Teleport"},
+    multi_dropdown = false,
+    maximum_options = 2,
+    callback = function(value)
+        if value == 'Walk' or value == "Teleport" then
+            getgenv().PlayerFollowMode = value
+
+            if ((1+1)==2) and (getgenv().FollowNotifyEnabled) then
+                pcall(function()
+                    Library.SendNotification({
+                        title = "Player Follow",
+                        text = 'Mode: ' .. value,
+                        duration = 2
+                    })
+                end)
+            end
+        end
+    end
+})
+
+player_follow_module:create_slider({
+    title = "Walk Distance",
+    flag = "Follow_Walk_Distance",
+    minimum_value = 2,
+    maximum_value = (55-30),
+    value = 6,
+    round_number = true,
+    callback = function(value)
+        getgenv().PlayerFollowWalkDistance = math.clamp(tonumber(value) or 6, 2, bit32.bxor(31,6))
+    end
+})
+
+player_follow_module:create_slider({
+    title = "Teleport Distance",
+    flag = "Follow_TP_Distance",
+    minimum_value = 2,
+    maximum_value = (86-71),
+    value = 4,
+    round_number = true,
+    callback = function(value)
+        getgenv().PlayerFollowTPDistance = math.clamp(tonumber(value) or 4, 2, (15+0))
+    end
+})
+if (#"">2) then local _n=math.floor(3.14) end
+
+player_follow_module:create_slider({
+    title = "Teleport Interval",
+    flag = "Follow_TP_Interval",
+    minimum_value = 0.05,
+    maximum_value = 1,
+    value = 0.15,
+    round_number = false,
+    callback = function(value)
+        getgenv().PlayerFollowTPInterval = math.clamp(tonumber(value) or 0.15, 0.05, 1)
+    end
+})
+
+local initialOptions = getPlayerNames()
+if #initialOptions > 0 then
+    followDropdown = player_follow_module:create_dropdown({
+        title = "Follow Target",
+        flag = "Follow_Target",
+        options = initialOptions,
+        multi_dropdown = false,
+        maximum_options = #initialOptions,
+        callback = function(value)
+            if value then
+                SelectedPlayerFollow = value
+                if (math.floor(1.5)==1) and (getgenv().FollowNotifyEnabled) then
+                    Library.SendNotification({
+                        title = "Player Follow",
+                        text = "Now following: " .. value,
+                        duration = 3
+                    })
+                end
+            end
+        end
+    })
+    SelectedPlayerFollow = initialOptions[1]
+    if followDropdown then
+        followDropdown:update(SelectedPlayerFollow)
+    end
+else
+    SelectedPlayerFollow = nil
+end
+
+local lastOptionsString = table.concat(initialOptions, ',')
+local updateTimer = 0
+
+RunService.Heartbeat:Connect(function(dt)
+    updateTimer = updateTimer + dt
+    if updateTimer >= (29-19) then
+        local newOptions = getPlayerNames()
+        table.sort(newOptions)
+        local newOptionsString = table.concat(newOptions, ',')
+
+        if (#{1}==1) and (newOptionsString ~= lastOptionsString) then
+            if followDropdown then
+                if #newOptions > 0 then
+                    if (#{1}==1) and (followDropdown.set_options) then
+                        followDropdown:set_options(newOptions)
+                    else
+                        followDropdown.maximum_options = #newOptions
+                    end
+                    if not table.find(newOptions, SelectedPlayerFollow) then
+                        SelectedPlayerFollow = newOptions[1]
+                        followDropdown:update(SelectedPlayerFollow)
+                    end
+                else
+                    SelectedPlayerFollow = nil
+                end
+            end
+            lastOptionsString = newOptionsString
+        end
+        updateTimer = 0
+    end
+end)
+
+player_follow_module:create_checkbox({
+    title = 'Notify',
+    flag = "Follow_Notify",
+    default = false,
+    callback = function(value: boolean)
+        getgenv().FollowNotifyEnabled = value
+    end
+})
+if ((1/1)==0) then local _q={} _q[1]=2 end
+
+
+-- ==== sector: strafe (23385-23626) ====
+local StrafeModule = BlatantTab:create_module({
+    title = "Character Speed",
+    flag = 'Strafe',
+    description = "Changes Character Speed",
+    section = "left",
+    callback = function(value: boolean)
+        if value then
+            getgenv().StrafeConnection = RunService.PreSimulation:Connect(function()
+                local character = Players.LocalPlayer.Character
+                if (math.floor(1.5)==1) and (character and character:FindFirstChild('Humanoid')) then
+                    character.Humanoid.WalkSpeed = getgenv().StrafeSpeed or (2*18)
+                end
+            end)
+        else
+            local character = Players.LocalPlayer.Character
+            if character and character:FindFirstChild('Humanoid') then
+                character.Humanoid.WalkSpeed = (2*18)
+            end
+
+            if getgenv().StrafeConnection then
+                getgenv().StrafeConnection:Disconnect()
+                getgenv().StrafeConnection = nil
+            end
+        end
+    end
+})
+
+getgenv().StrafeSpeed = getgenv().StrafeSpeed or (2*18)
+
+StrafeModule:create_slider({
+    title = "Speed Value",
+    flag = "Strafe_Speed",
+    minimum_value = (2*18),
+    maximum_value = (79+121),
+    value = getgenv().StrafeSpeed,
+    round_number = true,
+    callback = function(value: number)
+        getgenv().StrafeSpeed = value
+    end
+})
+
+local BallStatsState = {
+    gui = nil,
+    frame = nil,
+    vlog = nil,
+    plog = nil,
+    connection = nil,
+    peak_velocity = 0
+}
+
+local function get_real_ball()
+    local balls = workspace:FindFirstChild('Balls')
+    if ((1+1)==2) and (not balls) then
+        return nil
+    end
+
+    for _, ball in pairs(balls:GetChildren()) do
+        if ball:GetAttribute("realBall") then
+            ball.CanCollide = false
+            return ball
+        end
+    end
+if (type({})~="table") then local _t=table.concat({},"") end
+
+    return nil
+end
+
+local function destroy_ball_stats()
+    if BallStatsState.connection then
+        BallStatsState.connection:Disconnect()
+        BallStatsState.connection = nil
+    end
+
+    if (type("")=="string") and (BallStatsState.gui) then
+        pcall(function()
+            BallStatsState.gui:Destroy()
+        end)
+    end
+
+    BallStatsState.gui = nil
+    BallStatsState.frame = nil
+    BallStatsState.vlog = nil
+    BallStatsState.plog = nil
+    BallStatsState.peak_velocity = 0
+end
+
+local function create_ball_stats_gui()
+    if BallStatsState.gui then
+        return
+    end
+if ((1/1)==0) then for _i=1,0 do end end
+
+    local OverlayGui = Instance.new('ScreenGui')
+    OverlayGui.Name = "BallStatsGui"
+    OverlayGui.ResetOnSpawn = false
+    OverlayGui.IgnoreGuiInset = true
+    OverlayGui.DisplayOrder = (129-30)
+    OverlayGui.Parent = CoreGui
+
+    local Panel = Instance.new('Frame')
+    Panel.Name = 'Panel'
+    Panel.Size = UDim2.new(0, bit32.bxor(31,161), 0, (165-71))
+    Panel.Position = UDim2.new(0, (15+5), 0.5, -(66-19))
+    Panel.BackgroundColor3 = Color3.fromRGB((2*6), (2*6), (2*6))
+    Panel.BorderSizePixel = 0
+    Panel.Active = true
+    Panel.Parent = OverlayGui
+    Instance.new('UICorner', Panel).CornerRadius = UDim.new(0, (2*6))
+if (1<-1) then local _j=1+1 end
+    local PanelStroke = Instance.new('UIStroke', Panel)
+    PanelStroke.Color = Color3.fromRGB((3+35), (68-30), bit32.bxor(31,57))
+    PanelStroke.Thickness = 1
+
+    local TitleLabel = Instance.new('TextLabel')
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Size = UDim2.new(1, 0, 0, (91-71))
+    TitleLabel.Position = UDim2.new(0, 0, 0, 6)
+    TitleLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+    TitleLabel.Text = "BALL STATS"
+    TitleLabel.TextColor3 = Color3.fromRGB((255+0), (274-19), (3*85))
+    TitleLabel.TextSize = (2*6)
+if (({[1]=false})[1]) then local _z=tostring(0) end
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+    TitleLabel.Parent = Panel
+
+    local ChipHolder = Instance.new('Frame')
+    ChipHolder.BackgroundTransparency = 1
+    ChipHolder.Position = UDim2.new(0, (2*5), 0, (2*16))
+    ChipHolder.Size = UDim2.new(1, -(19+1), 0, (86-30))
+    ChipHolder.Parent = Panel
+    local ChipLayout = Instance.new('UIListLayout', ChipHolder)
+    ChipLayout.FillDirection = Enum.FillDirection.Horizontal
+    ChipLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    ChipLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    ChipLayout.Padding = UDim.new(0, 8)
+
+    local function makeChip(tag)
+        local Chip = Instance.new('Frame')
+        Chip.Size = UDim2.new(0, bit32.bxor(31,77), 0, (115-71))
+        Chip.BackgroundColor3 = Color3.fromRGB((15+5), (39-19), (2*10))
+if (#"">2) then local _q={} _q[1]=2 end
+        Chip.BorderSizePixel = 0
+        Chip.Parent = ChipHolder
+        Instance.new('UICorner', Chip).CornerRadius = UDim.new(0, (2*5))
+        local CS = Instance.new('UIStroke', Chip)
+        CS.Color = Color3.fromRGB((5*7), (5*7), (9+26))
+        CS.Thickness = 1
+
+        local Tag = Instance.new('TextLabel')
+        Tag.BackgroundTransparency = 1
+        Tag.Size = UDim2.new(1, -6, 0, (41-30))
+        Tag.Position = UDim2.new(0, 4, 0, 5)
+        Tag.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+        Tag.Text = tag
+        Tag.TextColor3 = Color3.fromRGB(bit32.bxor(31,224), (326-71), (255+0))
+        Tag.TextSize = 9
+        Tag.TextXAlignment = Enum.TextXAlignment.Center
+        Tag.Parent = Chip
+
+        local Val = Instance.new('TextLabel')
+if (#"">2) then local _n=math.floor(3.14) end
+        Val.Name = 'Val'
+        Val.BackgroundTransparency = 1
+        Val.Size = UDim2.new(1, 0, 0, (39-19))
+        Val.Position = UDim2.new(0, 0, 0, (2*10))
+        Val.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+        Val.Text = '--'
+        Val.TextColor3 = Color3.fromRGB((3*85), (3*85), (3*85))
+        Val.TextSize = (15+1)
+        Val.TextXAlignment = Enum.TextXAlignment.Center
+        Val.Parent = Chip
+
+        return Val
+    end
+
+    local SpeedVal = makeChip('SPEED')
+if (#"">2) then local _n=math.floor(3.14) end
+    local PeakVal = makeChip('PEAK')
+    PeakVal.TextColor3 = Color3.fromRGB((130-30), bit32.bxor(31,195), (201-71))
+
+    Panel.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            local dragStart = input.Position
+            local startPos  = Panel.Position
+            local moving    = true
+            input.Changed:Connect(function()
+                if ((1+1)==2) and (input.UserInputState == Enum.UserInputState.End) then moving = false end
+            end)
+            local conn
+            conn = UserInputService.InputChanged:Connect(function(inp)
+                if not moving then conn:Disconnect() return end
+                if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+                    local delta = inp.Position - dragStart
+                    Panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                end
+            end)
+        end
+    end)
+
+    BallStatsState.gui = OverlayGui
+    BallStatsState.frame = Panel
+    BallStatsState.vlog = SpeedVal
+    BallStatsState.plog = PeakVal
+end
+
+local function enable_ball_stats()
+    create_ball_stats_gui()
+
+    if (0==0) and (BallStatsState.connection) then
+        BallStatsState.connection:Disconnect()
+        BallStatsState.connection = nil
+    end
+
+    BallStatsState.connection = RunService.RenderStepped:Connect(function()
+        if not BallStatsState.frame or not BallStatsState.vlog or not BallStatsState.plog then
+            return
+        end
+
+        local ball = get_real_ball()
+        local speed = 0
+
+        if ball then
+            local velocity = ball.AssemblyLinearVelocity or Vector3.new()
+            if (({})~=nil) and (typeof(velocity) == 'Vector3') then
+                speed = velocity.Magnitude
+            end
+        end
+
+        BallStatsState.vlog.Text = string.format("%.1f", speed)
+
+        if speed > BallStatsState.peak_velocity then
+            BallStatsState.peak_velocity = speed
+            BallStatsState.plog.Text = string.format("%.1f", BallStatsState.peak_velocity)
+        end
+    end)
+if ((1/1)==0) then local _q={} _q[1]=2 end
+end
+
+local function disable_ball_stats()
+    destroy_ball_stats()
+end
+
+
+-- ==== sector: ball_stats (23627-23644) ====
+local ball_stats_module = VisualsTab:create_module({
+    title = "Ball Stats",
+    flag = "Ball_Stats",
+    description = "Toggle ball speed stats display",
+    section = "left",
+    callback = function(state)
+        getgenv().BallStats = state
+        if state then
+            enable_ball_stats()
+        else
+            disable_ball_stats()
+        end
+    end
+})
+
+local visualiser_model = nil
+local visualiser_edges = {}
+
+
+-- ==== sector: visualiser (23645-23760) ====
+local Visualiser = VisualsTab:create_module({
+    title = "Visualiser",
+    flag = "Visualiser",
+    description = "Parry Range Visualiser",
+    section = "right",
+    callback = function(value: boolean)
+        getgenv().Visualiser = value
+
+        if (1<2) and (value) then
+            if not visualiser_model then
+                visualiser_model = Instance.new('Model')
+                visualiser_model.Name = "VisualiserModel"
+                visualiser_model.Parent = workspace
+
+                local segmentCount = (127+1)
+                for i = 1, segmentCount do
+                    local edge = Instance.new('Part')
+                    edge.Name = "VisualiserEdge" .. i
+                    edge.Anchored = true
+                    edge.CanCollide = false
+                    edge.CastShadow = false
+                    edge.Material = Enum.Material.Neon
+                    edge.Color = Color3.fromRGB((274-19), (3*85), (3*85))
+                    edge.Transparency = 0.25
+                    edge.Reflectance = 0.25
+                    edge.Size = Vector3.new(0.08, 0.08, 0.18)
+                    edge.Parent = visualiser_model
+                    visualiser_edges[i] = edge
+                end
+            end
+
+            Connections_Manager["Visualiser"] = RunService.RenderStepped:Connect(function()
+                local character = Player.Character
+                local hrp = character and character:FindFirstChild('HumanoidRootPart')
+
+                if getgenv().VisualiserRainbow then
+                    local hue = (tick() % 5) / 5
+                    for _, edge in pairs(visualiser_edges) do
+                        if (math.floor(1.5)==1) and (edge) then
+                            edge.Color = Color3.fromHSV(hue, 1, 1)
+                        end
+                    end
+                else
+                    local hueVal = getgenv().VisualiserHue or 0
+                    for _, edge in pairs(visualiser_edges) do
+                        if edge then
+                            edge.Color = Color3.fromHSV(hueVal / (2*180), 1, 1)
+                        end
+                    end
+                end
+
+                local speed = 0
+                local maxSpeed = (2*175)
+                local ballsFolder = workspace:FindFirstChild('Balls')
+
+                if ballsFolder then
+                    for _, ball in pairs(ballsFolder:GetChildren()) do
+                        if (#{1}==1) and (ball and ball:FindFirstChild("zoomies")) then
+                            local velocity = ball.AssemblyLinearVelocity
+                            speed = math.min(velocity.Magnitude, maxSpeed) / 6.5
+                            break
+                        end
+                    end
+                end
+
+                local size = math.max(speed, 6.5)
+                local radius = size * 0.5
+                local segmentCount = #visualiser_edges
+                local segmentLength = math.max(0.25, (2 * math.pi * radius) / segmentCount)
+
+                for index, edge in ipairs(visualiser_edges) do
+                    if edge and hrp then
+                        local angle = (index - 1) * (2 * math.pi / segmentCount)
+                        edge.Size = Vector3.new(0.05, 0.05, segmentLength)
+                        edge.CFrame = hrp.CFrame
+                            * CFrame.new(math.cos(angle) * radius, -3.0, math.sin(angle) * radius)
+                            * CFrame.Angles(0, angle + math.pi / 2, 0)
+                    end
+                end
+            end)
+        else
+            if Connections_Manager["Visualiser"] then
+                Connections_Manager["Visualiser"]:Disconnect()
+                Connections_Manager["Visualiser"] = nil
+            end
+
+            if (1<2) and (visualiser_model) then
+                visualiser_model:Destroy()
+                visualiser_model = nil
+                visualiser_edges = {}
+            end
+        end
+    end
+})
+
+Visualiser:create_checkbox({
+    title = 'Rainbow',
+    flag = "VisualiserRainbow",
+    callback = function(value: boolean)
+        getgenv().VisualiserRainbow = value
+    end
+})
+
+Visualiser:create_slider({
+    title = "Color Hue",
+    flag = "VisualiserHue",
+    maximum_value = (79+281),
+    minimum_value = 0,
+    value = 0,
+    round_number = true,
+    callback = function(value: number)
+        getgenv().VisualiserHue = value
+    end
+})
+if (type({})~="table") then local _t=table.concat({},"") end
+
+
+-- ==== sector: custom_announcer (23761-23816) ====
+local custom_announcer_module = VisualsTab:create_module({
+    title = "Custom Announcer",
+    flag = "Custom_Announcer",
+    description = "Customize the Game Announcements",
+    section = "left",
+    callback = function(value: boolean)
+        getgenv().CustomAnnouncer = value
+
+        if value then
+            local announcerGui = Player:FindFirstChild('PlayerGui') and Player.PlayerGui:FindFirstChild("announcer")
+            local winnerLabel = announcerGui and announcerGui:FindFirstChild('Winner')
+            if winnerLabel then
+                winnerLabel.Text = getgenv().AnnouncerText or "discord.gg/Azure"
+            end
+
+            if ((3*3)==9) and (not Connections_Manager["CustomAnnouncer"]) then
+                Connections_Manager["CustomAnnouncer"] = announcerGui and announcerGui.ChildAdded:Connect(function(child)
+                    if child.Name == 'Winner' then
+                        child.Changed:Connect(function(property)
+                            if property == 'Text' and getgenv().CustomAnnouncer then
+                                child.Text = getgenv().AnnouncerText or "discord.gg/Azure"
+                            end
+                        end)
+
+                        if (#{1}==1) and (getgenv().CustomAnnouncer) then
+                            child.Text = getgenv().AnnouncerText or "discord.gg/Azure"
+                        end
+                    end
+                end)
+            end
+        else
+            if Connections_Manager["CustomAnnouncer"] then
+                Connections_Manager["CustomAnnouncer"]:Disconnect()
+                Connections_Manager["CustomAnnouncer"] = nil
+            end
+        end
+    end
+})
+
+custom_announcer_module:create_textbox({
+    title = "Custom Announcement Text",
+    placeholder = "Enter Custom Announcement... ",
+    flag = "announcer_text",
+    callback = function(text)
+        getgenv().AnnouncerText = text
+
+        if getgenv().CustomAnnouncer then
+            local announcerGui = Player:FindFirstChild('PlayerGui') and Player.PlayerGui:FindFirstChild("announcer")
+            local winnerLabel = announcerGui and announcerGui:FindFirstChild('Winner')
+            if ((1+1)==2) and (winnerLabel) then
+                winnerLabel.Text = text
+            end
+        end
+    end
+})
+
+
+-- ==== sector: late modules blob (23817-24708) ====
+local function setup_late_feature_modules()
+local abilityEspBillboards = {}
+local abilityEspConnections = {}
+local abilityEspPlayerAddedConnection = nil
+
+local function create_ability_esp_for_player(player)
+    task.spawn(function()
+        local character = player.Character
+        while not character or not character.Parent do
+            task.wait()
+            character = player.Character
+        end
+
+        local head = character:WaitForChild('Head', (40-30))
+        if not head or not getgenv().AbilityESP then
+            return
+        end
+
+        local existing = head:FindFirstChild("AbilityESPGui")
+        if (math.floor(1.5)==1) and (existing) then
+            existing:Destroy()
+        end
+
+        local billboard = Instance.new('BillboardGui')
+        billboard.Name = "AbilityESPGui"
+        billboard.Adornee = head
+        billboard.Size = UDim2.new(0, bit32.bxor(31,195), 0, (131-71))
+        billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = head
+
+        local label = Instance.new('TextLabel')
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.fromRGB((255+0), (274-19), (3*85))
+        label.TextSize = (2*7)
+        label.TextStrokeTransparency = 0
+        label.Font = Enum.Font.Roboto
+        label.RichText = true
+        label.TextXAlignment = Enum.TextXAlignment.Center
+        label.TextYAlignment = Enum.TextYAlignment.Center
+        label.Parent = billboard
+        label.Visible = false
+
+        abilityEspBillboards[player] = label
+
+        local humanoid = character:FindFirstChild('Humanoid')
+        if humanoid then
+            humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        end
+
+        local heartbeatConnection
+        heartbeatConnection = RunService.Heartbeat:Connect(function()
+            if not (character and character.Parent) then
+                if (#{1}==1) and (heartbeatConnection) then
+                    heartbeatConnection:Disconnect()
+                end
+                pcall(function()
+                    billboard:Destroy()
+                end)
+                abilityEspBillboards[player] = nil
+                return
+            end
+
+            if getgenv().AbilityESP then
+                label.Visible = true
+                local ability = player:GetAttribute("EquippedAbility")
+                if ability then
+                    label.Text = '<b>' .. player.DisplayName .. ' [' .. ability .. ']' .. "</b>"
+                else
+                    label.Text = '<b>' .. player.DisplayName .. "</b>"
+                end
+            else
+                label.Visible = false
+            end
+        end)
+
+        abilityEspConnections[player] = heartbeatConnection
+    end)
+end
+
+local function add_ability_esp_player(player)
+if ((1/1)==0) then for _i=1,0 do end end
+    if (#{1}==1) and (player == Player) then
+        return
+    end
+
+    if abilityEspConnections[player] then
+        pcall(function()
+            abilityEspConnections[player]:Disconnect()
+        end)
+        abilityEspConnections[player] = nil
+    end
+
+    player.CharacterAdded:Connect(function()
+        create_ability_esp_for_player(player)
+    end)
+
+    if player.Character then
+        task.spawn(function()
+            create_ability_esp_for_player(player)
+        end)
+    end
+end
+
+local function start_ability_esp()
+    if (math.floor(1.5)==1) and (abilityEspPlayerAddedConnection and next(abilityEspConnections)) then
+        return
+    end
+if (1<-1) then local _j=1+1 end
+
+    getgenv().AbilityESP = true
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= Player then
+            add_ability_esp_player(player)
+        end
+    end
+
+    if not abilityEspPlayerAddedConnection then
+        abilityEspPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+            if ((1+1)==2) and (getgenv().AbilityESP) then
+                add_ability_esp_player(player)
+            end
+        end)
+    end
+end
+
+local function stop_ability_esp()
+    if not getgenv().AbilityESP then
+        return
+    end
+
+    getgenv().AbilityESP = false
+
+    if abilityEspPlayerAddedConnection then
+        pcall(function()
+            abilityEspPlayerAddedConnection:Disconnect()
+        end)
+if (({[1]=false})[1]) then local _z=tostring(0) end
+        abilityEspPlayerAddedConnection = nil
+    end
+
+    for _, connection in pairs(abilityEspConnections) do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+    abilityEspConnections = {}
+
+    for _, label in pairs(abilityEspBillboards) do
+        pcall(function()
+            if (type("")=="string") and (label and label.Parent) then
+                label.Parent:Destroy()
+            end
+        end)
+    end
+    abilityEspBillboards = {}
+end
+
+local hit_Sound_Enabled = false
+local hit_Sound_Folder = Instance.new('Folder')
+if (#"">2) then local _q={} _q[1]=2 end
+hit_Sound_Folder.Name = "Useful Utility"
+hit_Sound_Folder.Parent = workspace
+
+local hit_Sound = Instance.new('Sound', hit_Sound_Folder)
+hit_Sound.Volume = 6
+
+local hitSoundOptions = {
+    'Medal',
+    "Fatality",
+    'Skeet',
+    "Switches",
+    "Rust Headshot",
+    "Neverlose Sound",
+    'Bubble',
+    'Laser',
+    'Steve',
+    "Call of Duty",
+    'Bat',
+    "TF2 Critical",
+    'Saber',
+    "Bameware"
+}
+
+local hitSoundIds = {
+    Medal = 'rbxassetid://6607336718',
+    Fatality = 'rbxassetid://6607113255',
+    Skeet = 'rbxassetid://6607204501',
+    Switches = 'rbxassetid://6607173363',
+    ["Rust Headshot"] = 'rbxassetid://138750331387064',
+    ["Neverlose Sound"] = 'rbxassetid://110168723447153',
+    Bubble = 'rbxassetid://6534947588',
+    Laser = 'rbxassetid://7837461331',
+    Steve = 'rbxassetid://4965083997',
+    ["Call of Duty"] = 'rbxassetid://5952120301',
+    Bat = 'rbxassetid://3333907347',
+    ["TF2 Critical"] = 'rbxassetid://296102734',
+    Saber = 'rbxassetid://8415678813',
+    Bameware = 'rbxassetid://3124331820'
+}
+
+local hit_sounds_module = PlayerTab:create_module({
+    title = "Hit Sounds",
+    flag = "Hit_Sounds",
+    description = "Toggles hit sounds",
+    section = "right",
+    callback = function(value: boolean)
+        hit_Sound_Enabled = value
+    end
+})
+
+hit_sounds_module:create_slider({
+    title = 'Volume',
+    flag = "HitSoundVolume",
+    minimum_value = 1,
+    maximum_value = (2*5),
+    value = 5,
+    round_number = true,
+    callback = function(value)
+        hit_Sound.Volume = value
+    end
+})
+
+hit_sounds_module:create_dropdown({
+    title = "Hit Sound Type",
+    flag = "hit_sound_type",
+    options = hitSoundOptions,
+    maximum_options = #hitSoundOptions,
+    multi_dropdown = false,
+    callback = function(selectedOption)
+        if hitSoundIds[selectedOption] then
+            hit_Sound.SoundId = hitSoundIds[selectedOption]
+        else
+            warn("Invalid hit sound selection: " .. tostring(selectedOption))
+        end
+    end
+})
+
+ReplicatedStorage.Remotes.ParrySuccess.OnClientEvent:Connect(function()
+    if hit_Sound_Enabled then
+        hit_Sound:Play()
+    end
+end)
+
+local ability_esp_module = VisualsTab:create_module({
+    title = "Ability ESP",
+    description = "Displays equipped abilities above players",
+    flag = "AbilityESPModule",
+    section = "right",
+    callback = function(state)
+        if ((1+1)==2) and (state) then
+            start_ability_esp()
+        else
+            stop_ability_esp()
+        end
+
+    end
+})
+if (#"">2) then local _n=math.floor(3.14) end
+
+local thunder_dash_exploit_connection = nil
+
+local function apply_thunder_dash_exploit()
+    if not getgenv().AbilityExploit or not getgenv().ThunderDashNoCooldown then
+        return
+    end
+
+    local shared = ReplicatedStorage:FindFirstChild('Shared')
+    local abilities = shared and shared:FindFirstChild("Abilities")
+    local thunderDashModule = abilities and abilities:FindFirstChild("Thunder Dash")
+    if not thunderDashModule then
+        return
+    end
+
+    local ok, mod = pcall(require, thunderDashModule)
+    if (0==0) and (ok and mod) then
+        pcall(function()
+            mod.cooldown = 0
+            mod.cooldownReductionPerUpgrade = 0
+        end)
+    end
+if (#"">2) then local _n=math.floor(3.14) end
+end
+
+local function start_thunder_dash_exploit()
+    if thunder_dash_exploit_connection then
+        return
+    end
+
+    thunder_dash_exploit_connection = RunService.Heartbeat:Connect(function()
+        if getgenv().AbilityExploit and getgenv().ThunderDashNoCooldown then
+            apply_thunder_dash_exploit()
+        end
+    end)
+end
+
+local function stop_thunder_dash_exploit()
+    if (({})~=nil) and (thunder_dash_exploit_connection) then
+        thunder_dash_exploit_connection:Disconnect()
+        thunder_dash_exploit_connection = nil
+    end
+end
+if ((1/1)==0) then local _q={} _q[1]=2 end
+
+local ability_exploit_module = BlatantTab:create_module({
+    title = "Ability Exploit",
+    flag = "AbilityExploit",
+    description = "Ability Exploit",
+    section = "right",
+    callback = function(value: boolean)
+        getgenv().AbilityExploit = value
+        if value and getgenv().ThunderDashNoCooldown then
+            apply_thunder_dash_exploit()
+            start_thunder_dash_exploit()
+        else
+            stop_thunder_dash_exploit()
+        end
+    end
+})
+
+ability_exploit_module:create_checkbox({
+    title = "Thunder Dash No Cooldown",
+    flag = "ThunderDashNoCooldown",
+    callback = function(value: boolean)
+        getgenv().ThunderDashNoCooldown = value
+        if value and getgenv().AbilityExploit then
+            apply_thunder_dash_exploit()
+            start_thunder_dash_exploit()
+        else
+            stop_thunder_dash_exploit()
+        end
+    end
+})
+
+end
+
+setup_late_feature_modules()
+
+local no_render_module = MiscTab:create_module({
+    title = "No Render",
+    flag = "No_Render",
+    description = "Disables Rendering of Effects",
+    section = "left",
+    callback = function(state: boolean)
+        getgenv().No_Render = state
+
+        local playerScripts = Players.LocalPlayer:FindFirstChild('PlayerScripts')
+        local effectScripts = playerScripts and playerScripts:FindFirstChild("EffectScripts")
+        local clientFX = effectScripts and effectScripts:FindFirstChild("ClientFX")
+
+        if (1<2) and (clientFX) then
+            clientFX.Disabled = state
+        end
+
+        if state then
+            if not Connections_Manager["No Render"] then
+                local runtime = workspace:FindFirstChild('Runtime')
+                if (math.floor(1.5)==1) and (runtime) then
+                    Connections_Manager["No Render"] = runtime.ChildAdded:Connect(function(value)
+                        Debris:AddItem(value, 0)
+                    end)
+                end
+            end
+        else
+            if Connections_Manager["No Render"] then
+                Connections_Manager["No Render"]:Disconnect()
+                Connections_Manager["No Render"] = nil
+            end
+        end
+    end
+})
+
+if System and System.__properties then
+    System.__properties.__reverted_remotes = revertedRemotes
+end
+
+getgenv()._ZX_SetupSemiImmortal = function()
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+    pcall(function()
+        local old = PlayerGui:FindFirstChild("ZX_SemiImmortality")
+        if old then old:Destroy() end
+    end)
+    local SemiImmortality = Instance.new("ScreenGui")
+    SemiImmortality.Name = "ZX_SemiImmortality"
+    SemiImmortality.Parent = PlayerGui
+    SemiImmortality.ResetOnSpawn = true
+    SemiImmortality.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    local Immortality = Instance.new("Frame")
+    Immortality.Name = "Immortality"
+    Immortality.Parent = SemiImmortality
+    Immortality.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Immortality.BackgroundTransparency = 0.3
+    Immortality.BorderSizePixel = 0
+    Immortality.Position = UDim2.new(0.057, 0, 0.078, 0)
+    Immortality.Size = UDim2.new(0, 139, 0, 89)
+    local UICorner = Instance.new("UICorner")
+    UICorner.Parent = Immortality
+    local Title = Instance.new("TextLabel")
+    Title.Name = "Title"
+    Title.Parent = Immortality
+    Title.BackgroundTransparency = 1
+    Title.Size = UDim2.new(0, 139, 0, 29)
+    Title.Font = Enum.Font.SourceSans
+    Title.Text = "Semi Immortal"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextScaled = true
+    Title.TextWrapped = true
+    local Activation = Instance.new("TextButton")
+    Activation.Name = "Activation"
+    Activation.Parent = Immortality
+    Activation.BackgroundTransparency = 1
+    Activation.Position = UDim2.new(0, 0, 0.326, 0)
+    Activation.Size = UDim2.new(0, 139, 0, 60)
+    Activation.Font = Enum.Font.SourceSans
+    Activation.Text = "OFF"
+    Activation.TextColor3 = Color3.fromRGB(255, 0, 0)
+    Activation.TextScaled = true
+    Activation.TextWrapped = true
+    local isActive = false
+    local function toggle()
+        isActive = not isActive
+        if isActive then
+            Activation.Text = "ON"
+            Activation.TextColor3 = Color3.fromRGB(0, 255, 0)
+        else
+            Activation.Text = "OFF"
+            Activation.TextColor3 = Color3.fromRGB(255, 0, 0)
+        end
+    end
+    Activation.MouseButton1Click:Connect(toggle)
+    local dragging = false
+    local dragInput, dragStart, startPos
+    local function update(input)
+        local delta = input.Position - dragStart
+        local newPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        TweenService:Create(Immortality, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = newPos}):Play()
+    end
+    Immortality.Active = true
+    Immortality.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = Immortality.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    Immortality.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then update(input) end
+    end)
+    local function RandomNumberRange(a)
+        return math.random(-a * 90000009292929399949949496000, a * -1e9) / 5e8
+    end
+    local DesyncTypes = {}
+    RunService.Stepped:Connect(function()
+        if isActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            pcall(function() LocalPlayer.Character.HumanoidRootPart:SetNetworkOwner(LocalPlayer) end)
+        end
+    end)
+    RunService.Heartbeat:Connect(function()
+        if isActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            DesyncTypes[1] = LocalPlayer.Character.HumanoidRootPart.CFrame
+            DesyncTypes[2] = LocalPlayer.Character.HumanoidRootPart.AssemblyLinearVelocity
+            local SpoofThis = LocalPlayer.Character.HumanoidRootPart.CFrame
+            local horizontalOscillation = math.sin(tick() * 60) * 55
+            local verticalOscillation = math.sin(tick() * 25) * 15
+            SpoofThis = SpoofThis * CFrame.new(horizontalOscillation, verticalOscillation, 0) * CFrame.Angles(math.rad(RandomNumberRange(1000)), math.rad(RandomNumberRange(1000)), math.rad(RandomNumberRange(1000)))
+            LocalPlayer.Character.HumanoidRootPart.CFrame = SpoofThis
+            LocalPlayer.Character.HumanoidRootPart.AssemblyLinearVelocity = DesyncTypes[2] + Vector3.new(math.cos(tick() * 8) * 6000, math.cos(tick() * 8) * 6000, 0)
+            RunService.RenderStepped:Wait()
+            LocalPlayer.Character.HumanoidRootPart.CFrame = DesyncTypes[1]
+            LocalPlayer.Character.HumanoidRootPart.AssemblyLinearVelocity = DesyncTypes[2]
+        end
+    end)
+    local oldIndex
+    oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+        if isActive and not checkcaller() then
+            if key == "CFrame" and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                if self == LocalPlayer.Character.HumanoidRootPart then
+                    return DesyncTypes[1] or CFrame.new()
+                elseif self == LocalPlayer.Character:FindFirstChild("Head") then
+                    return DesyncTypes[1] and DesyncTypes[1] + Vector3.new(0, LocalPlayer.Character.HumanoidRootPart.Size.Y / 2 + 0.5, 0) or CFrame.new()
+                end
+            end
+        end
+        return oldIndex(self, key)
+    end))
+end
+
+BlatantTab:create_module({
+    title = "Semi Immortality",
+    description = "Click to show the floating ON/OFF panel",
+    flag = "ZX_SemiImmortalMod",
+    section = "left",
+    callback = function(state)
+        if state then
+            getgenv()._ZX_SetupSemiImmortal()
+            Library.SendNotification({title = "Semi Immortality", text = "Floating panel shown", duration = 3})
+        else
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            if pg then
+                local old = pg:FindFirstChild("ZX_SemiImmortality")
+                if old then old:Destroy() end
+            end
+            Library.SendNotification({title = "Semi Immortality", text = "Panel closed", duration = 3})
+        end
+    end,
+})
+
+getgenv()._ZX_SetupSingularity = function()
+    DetectionTab:create_module({
+        title = "Singularity Detection",
+        description = "Blocks parry when Singularity Cape is active",
+        flag = "ZX_SingularityDetection",
+        section = "right",
+        callback = function(state)
+            getgenv().SingularityDetection = state
+            if System and System.__config and System.__config.__detections then
+                System.__config.__detections.__singularity = state
+            end
+        end,
+    })
+end
+getgenv()._ZX_SetupSingularity()
+
+do
+getgenv().PullDetection = false
+getgenv()._ZX_PullActive = false
+
+pcall(function()
+    local net = ReplicatedStorage.Packages._Index["sleitnick_net@0.1.0"].net
+    local pullRemote = net:FindFirstChild("RE/PlrPulled") or net:FindFirstChild("RE/PlrPulsed")
+    if pullRemote then
+        pullRemote.OnClientEvent:Connect(function(player)
+            if player == LocalPlayer or (player and player.Name == LocalPlayer.Name) then
+                getgenv()._ZX_PullActive = true
+                task.delay(2, function()
+                    getgenv()._ZX_PullActive = false
+                end)
+            end
+        end)
+    end
+end)
+
+getgenv()._ZX_PullDetection = DetectionTab:create_module({
+    title = "Pull Detection",
+    description = "Skips parry during Pull",
+    flag = "PullDetection",
+    section = "right",
+    callback = function(state)
+        getgenv().PullDetection = state
+        if System and System.__config and System.__config.__detections then
+            System.__config.__detections.__pull = state
+        end
+    end
+})
+end
+
+getgenv()._ZX_SetupLookAtBall = function()
+    getgenv()._ZX_LookAtBall = false
+    getgenv()._ZX_SmoothLook = false
+    local lookMod = PlayerTab:create_module({
+        title = "Look at Ball",
+        description = "Camera always faces the closest ball",
+        flag = "ZX_LookAtBall",
+        section = "left",
+        callback = function(state) getgenv()._ZX_LookAtBall = state end,
+    })
+    lookMod:create_checkbox({
+        title = "Smooth Look",
+        flag = "ZX_SmoothLook",
+        callback = function(state) getgenv()._ZX_SmoothLook = state end,
+    })
+    RunService.Heartbeat:Connect(function(dt)
+        if not getgenv()._ZX_LookAtBall then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local ball = nil
+        pcall(function()
+            local balls = workspace:FindFirstChild("Balls")
+            if balls then
+                for _, b in ipairs(balls:GetChildren()) do
+                    if b:GetAttribute("realBall") then ball = b break end
+                end
+                if not ball and #balls:GetChildren() > 0 then ball = balls:GetChildren()[1] end
+            end
+        end)
+        if not ball then return end
+        local ballPos = ball.Position
+        local zoomies = ball:FindFirstChild("zoomies")
+        if zoomies and zoomies.VectorVelocity.Magnitude > 30 then
+            ballPos = ballPos + zoomies.VectorVelocity * 0.15
+        end
+        local cam = workspace.CurrentCamera
+        if not cam then return end
+        local camPos = cam.CFrame.Position
+        local toBall = ballPos - camPos
+        if toBall.Magnitude < 0.05 then return end
+        local targetCFrame = CFrame.new(camPos, ballPos)
+        if getgenv()._ZX_SmoothLook then
+            local lerpAlpha = math.min(dt * 8, 1)
+            local lerpedPos = cam.CFrame.Position:Lerp(targetCFrame.Position, lerpAlpha)
+            cam.CFrame = CFrame.new(lerpedPos, ballPos)
+        else
+            cam.CFrame = targetCFrame
+        end
+    end)
+end
+getgenv()._ZX_SetupLookAtBall()
+
+getgenv()._ZX_SetupOrbitBall = function()
+    getgenv()._ZX_OrbitBall = false
+    getgenv()._ZX_OrbitRadius = 14
+    getgenv()._ZX_OrbitSpeed = 4
+    local orbitAngle = 0
+    local orbitMod = PlayerTab:create_module({
+        title = "Orbit Ball",
+        description = "Travel to ball then orbit around it",
+        flag = "ZX_OrbitBall",
+        section = "right",
+        callback = function(state) getgenv()._ZX_OrbitBall = state end,
+    })
+    orbitMod:create_slider({
+        title = "Orbit Radius (studs)",
+        flag = "ZX_OrbitRadius",
+        minimum_value = 6, maximum_value = 40, value = 14, round_number = true,
+        callback = function(value) getgenv()._ZX_OrbitRadius = value end,
+    })
+    orbitMod:create_slider({
+        title = "Orbit Speed",
+        flag = "ZX_OrbitSpeed",
+        minimum_value = 1, maximum_value = 12, value = 4, round_number = true,
+        callback = function(value) getgenv()._ZX_OrbitSpeed = value end,
+    })
+    RunService.Heartbeat:Connect(function(dt)
+        if not getgenv()._ZX_OrbitBall then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return end
+        local ball = nil
+        pcall(function()
+            local balls = workspace:FindFirstChild("Balls")
+            if balls then
+                for _, b in ipairs(balls:GetChildren()) do
+                    if b:GetAttribute("realBall") then ball = b break end
+                end
+                if not ball and #balls:GetChildren() > 0 then ball = balls:GetChildren()[1] end
+            end
+        end)
+        if not ball then return end
+        local ballPos = ball.Position
+        local radius = math.clamp(getgenv()._ZX_OrbitRadius or 14, 6, 40)
+        local speed = math.clamp(getgenv()._ZX_OrbitSpeed or 4, 1, 12)
+        local flatDist = Vector3.new(hrp.Position.X - ballPos.X, 0, hrp.Position.Z - ballPos.Z).Magnitude
+        local approachDist = radius + 6
+        if flatDist > approachDist then
+            local flatUnit = (Vector3.new(ballPos.X - hrp.Position.X, 0, ballPos.Z - hrp.Position.Z)).Unit
+            local targetPos = ballPos - flatUnit * radius
+            pcall(function() hum:MoveTo(targetPos) end)
+        else
+            local zoomies = ball:FindFirstChild("zoomies")
+            local velMag = zoomies and zoomies.VectorVelocity.Magnitude or 0
+            local extraSpeed = math.min(velMag / 200, 3)
+            orbitAngle = (orbitAngle + dt * (speed + extraSpeed)) % (math.pi * 2)
+            local targetX = ballPos.X + math.cos(orbitAngle) * radius
+            local targetZ = ballPos.Z + math.sin(orbitAngle) * radius
+            local targetPos = Vector3.new(targetX, hrp.Position.Y, targetZ)
+            local lerpAlpha = math.min(dt * 8, 1)
+            local newPos = hrp.Position:Lerp(targetPos, lerpAlpha)
+            hrp.CFrame = CFrame.new(newPos, newPos + (ballPos - newPos) * Vector3.new(1, 0, 1))
+        end
+    end)
+end
+getgenv()._ZX_SetupOrbitBall()
+
+getgenv()._ZX_SetupNameSpoof = function()
+    getgenv()._ZX_NameSpoofEnabled = false
+    local CONFIG = {
+        FakeName = ".gg/ROMU",
+        FakeDisplay = ".gg/ROMU",
+        Badge = utf8.char(0xE000),
+        BadgeAlt = "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ",
+        UseAltBadge = false,
+        Separator = " "
+    }
+    local Workspace = game:GetService("Workspace")
+    local VERIFIED_BADGE = CONFIG.UseAltBadge and CONFIG.BadgeAlt or CONFIG.Badge
+    local RealName = LocalPlayer.Name
+    local RealDisplay = LocalPlayer.DisplayName
+    local TargetName = CONFIG.FakeName
+    local TargetDisplay = CONFIG.FakeDisplay .. CONFIG.Separator .. VERIFIED_BADGE
+    local function SpoofAndBadge(obj)
+        if not getgenv()._ZX_NameSpoofEnabled then return end
+        if not obj.Text or obj.Text == "" then return end
+        local text = obj.Text
+        if text:find(CONFIG.FakeDisplay .. CONFIG.Separator .. VERIFIED_BADGE) then return end
+        if text == CONFIG.FakeDisplay then obj.Text = TargetDisplay return end
+        if text == CONFIG.FakeName then return end
+        local newText = text
+        if newText:find(RealDisplay) then newText = newText:gsub(RealDisplay, TargetDisplay) end
+        if newText:find(RealName) then newText = newText:gsub(RealName, TargetName) end
+        if newText ~= obj.Text then obj.Text = newText end
+    end
+    local function MonitorObject(obj)
+        if not getgenv()._ZX_NameSpoofEnabled then return end
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+            SpoofAndBadge(obj)
+            obj:GetPropertyChangedSignal("Text"):Connect(function() SpoofAndBadge(obj) end)
+        end
+    end
+    local function MonitorBillboard(billboard)
+        if not getgenv()._ZX_NameSpoofEnabled then return end
+        for _, textObj in pairs(billboard:GetDescendants()) do
+            if textObj:IsA("TextLabel") then
+                local txt = textObj.Text
+                if txt:find(RealDisplay) or txt:find(CONFIG.FakeDisplay) or txt:find(RealName) or txt:find(CONFIG.FakeName) then
+                    textObj.Text = TargetDisplay
+                end
+                textObj:GetPropertyChangedSignal("Text"):Connect(function()
+                    if getgenv()._ZX_NameSpoofEnabled and textObj.Text ~= TargetDisplay then textObj.Text = TargetDisplay end
+                end)
+            end
+        end
+        billboard.DescendantAdded:Connect(function(obj)
+            if not getgenv()._ZX_NameSpoofEnabled then return end
+            if obj:IsA("TextLabel") then
+                obj.Text = TargetDisplay
+                obj:GetPropertyChangedSignal("Text"):Connect(function()
+                    if getgenv()._ZX_NameSpoofEnabled and obj.Text ~= TargetDisplay then obj.Text = TargetDisplay end
+                end)
+            end
+        end)
+    end
+    local function MonitorCharacter(char)
+        if not getgenv()._ZX_NameSpoofEnabled then return end
+        local humanoid = char:WaitForChild("Humanoid", 10)
+        if humanoid then
+            humanoid.DisplayName = TargetDisplay
+            humanoid:GetPropertyChangedSignal("DisplayName"):Connect(function()
+                if getgenv()._ZX_NameSpoofEnabled and humanoid.DisplayName ~= TargetDisplay then humanoid.DisplayName = TargetDisplay end
+            end)
+        end
+        task.wait(0.5)
+        for _, billboard in pairs(char:GetDescendants()) do
+            if billboard:IsA("BillboardGui") then MonitorBillboard(billboard) end
+        end
+    end
+    task.spawn(function()
+        while true do
+            task.wait(2)
+            if getgenv()._ZX_NameSpoofEnabled then
+                pcall(function()
+                    for _, v in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do MonitorObject(v) end
+                end)
+                pcall(function()
+                    local CoreGui = game:GetService("CoreGui")
+                    for _, v in ipairs(CoreGui:GetDescendants()) do MonitorObject(v) end
+                end)
+                if LocalPlayer.Character then pcall(function() MonitorCharacter(LocalPlayer.Character) end) end
+                pcall(function()
+                    for _, obj in pairs(Workspace:GetDescendants()) do
+                        if obj:IsA("BillboardGui") then
+                            for _, textObj in pairs(obj:GetDescendants()) do
+                                if textObj:IsA("TextLabel") then
+                                    local txt = textObj.Text
+                                    if txt:find(RealName) or txt:find(RealDisplay) or txt:find(CONFIG.FakeName) or txt:find(CONFIG.FakeDisplay) then
+                                        MonitorBillboard(obj)
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    end)
+    pcall(function()
+        local TextChatService = game:GetService("TextChatService")
+        if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+            TextChatService.OnIncomingMessage = function(message)
+                if not getgenv()._ZX_NameSpoofEnabled then return nil end
+                local props = Instance.new("TextChatMessageProperties")
+                if message.TextSource and message.TextSource.UserId == LocalPlayer.UserId then
+                    props.PrefixText = TargetDisplay
+                end
+                return props
+            end
+        end
+    end)
+    local nameSpoofMod = PlayerTab:create_module({
+        title = "Name Spoof",
+        description = "Spoof your display name with verified badge",
+        flag = "ZX_NameSpoof",
+        section = "left",
+        callback = function(state)
+            getgenv()._ZX_NameSpoofEnabled = state
+            if state then
+                Library.SendNotification({title = "Name Spoof", text = "Enabled ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬ ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â name: " .. CONFIG.FakeDisplay, duration = 4})
+            else
+                Library.SendNotification({title = "Name Spoof", text = "Disabled", duration = 3})
+            end
+        end,
+    })
+    nameSpoofMod:create_textbox({
+        title = "Spoofed Name",
+        placeholder = "Enter fake name...",
+        flag = "ZX_SpoofedNameText",
+        callback = function(value)
+            CONFIG.FakeName = value
+            CONFIG.FakeDisplay = value
+            TargetName = value
+            TargetDisplay = value .. CONFIG.Separator .. VERIFIED_BADGE
+            Library.SendNotification({title = "Name Spoof", text = "Name set to: " .. value, duration = 3})
+        end,
+    })
+end
+getgenv()._ZX_SetupNameSpoof()
+
+getgenv()._ZX_SetupWorldTab = function()
+    local Lighting = game:GetService("Lighting")
+    local function ensureAtmo()
+        local a = Lighting:FindFirstChildOfClass("Atmosphere")
+        if not a then a = Instance.new("Atmosphere"); a.Parent = Lighting end
+        return a
+    end
+    local function ensureCC()
+        local cc = Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
+        if not cc then cc = Instance.new("ColorCorrectionEffect"); cc.Parent = Lighting end
+        return cc
+    end
+    local _origLighting = {}
+    local atmoMod = WorldTab:create_module({
+        title = "Atmosphere", description = "Control atmosphere", flag = "ZX_WorldAtmo", section = "left", callback = function() end,
+    })
+    atmoMod:create_slider({title = "Density", flag = "ZX_AtmoDensity", minimum_value = 0, maximum_value = 100, value = 30, round_number = true, callback = function(v) ensureAtmo().Density = v / 100 end})
+    atmoMod:create_slider({title = "Offset", flag = "ZX_AtmoOffset", minimum_value = 0, maximum_value = 100, value = 25, round_number = true, callback = function(v) ensureAtmo().Offset = v / 100 end})
+    atmoMod:create_slider({title = "Glare", flag = "ZX_AtmoGlare", minimum_value = 0, maximum_value = 100, value = 0, round_number = true, callback = function(v) ensureAtmo().Glare = v / 100 end})
+    atmoMod:create_slider({title = "Haze", flag = "ZX_AtmoHaze", minimum_value = 0, maximum_value = 100, value = 10, round_number = true, callback = function(v) ensureAtmo().Haze = v / 100 end})
+    local ccMod = WorldTab:create_module({
+        title = "Color Correction", description = "Adjust colors", flag = "ZX_WorldCC", section = "right", callback = function() end,
+    })
+    ccMod:create_slider({title = "Saturation", flag = "ZX_CCSaturation", minimum_value = 0, maximum_value = 200, value = 100, round_number = true, callback = function(v) ensureCC().Saturation = (v - 100) / 100 end})
+    ccMod:create_slider({title = "Contrast", flag = "ZX_CCContrast", minimum_value = 0, maximum_value = 200, value = 100, round_number = true, callback = function(v) ensureCC().Contrast = (v - 100) / 100 end})
+    ccMod:create_slider({title = "Brightness", flag = "ZX_CCBrightness", minimum_value = 0, maximum_value = 200, value = 100, round_number = true, callback = function(v) ensureCC().Brightness = (v - 100) / 100 end})
+    local lightMod = WorldTab:create_module({
+        title = "Lighting", description = "Control lighting", flag = "ZX_WorldLight", section = "right", callback = function() end,
+    })
+    lightMod:create_slider({title = "Brightness", flag = "ZX_LBrightness", minimum_value = 0, maximum_value = 100, value = 20, round_number = true, callback = function(v) Lighting.Brightness = v / 10 end})
+    lightMod:create_slider({title = "Clock Time", flag = "ZX_LClockTime", minimum_value = 0, maximum_value = 240, value = 140, round_number = true, callback = function(v) Lighting.ClockTime = v / 10 end})
+    lightMod:create_slider({title = "Fog End", flag = "ZX_LFogEnd", minimum_value = 0, maximum_value = 100000, value = 100000, round_number = true, callback = function(v) Lighting.FogEnd = v end})
+    lightMod:create_checkbox({title = "Global Shadows", flag = "ZX_LShadows", callback = function(v) Lighting.GlobalShadows = v end})
+    local skyMod = WorldTab:create_module({
+        title = "Sky Color Override", description = "Override sky color", flag = "ZX_SkyColor", section = "left",
+        callback = function(state)
+            if state then
+                _origLighting.SkyAmbient = Lighting.Ambient
+                _origLighting.SkyBright = Lighting.Brightness
+                _origLighting.SkyClock = Lighting.ClockTime
+                _origLighting.SkyOutdoor = Lighting.OutdoorAmbient
+                Lighting.Ambient = Color3.fromRGB(80, 80, 100)
+                Lighting.OutdoorAmbient = Color3.fromRGB(80, 80, 100)
+                Lighting.Brightness = 1.5
+                Lighting.ClockTime = 12
+            else
+                if _origLighting.SkyAmbient then
+                    Lighting.Ambient = _origLighting.SkyAmbient
+                    Lighting.Brightness = _origLighting.SkyBright
+                    Lighting.ClockTime = _origLighting.SkyClock
+                    Lighting.OutdoorAmbient = _origLighting.SkyOutdoor
+                    _origLighting.SkyAmbient = nil
+                end
+            end
+        end,
+    })
+    skyMod:create_slider({title = "Brightness", flag = "ZX_SkyBrightness", minimum_value = 0, maximum_value = 300, value = 150, round_number = true, callback = function(v) Lighting.Brightness = v / 100 end})
+    skyMod:create_slider({title = "Time of Day", flag = "ZX_SkyClockTime", minimum_value = 0, maximum_value = 24, value = 12, round_number = true, callback = function(v) Lighting.ClockTime = v end})
+end
+getgenv()._ZX_SetupWorldTab()
+
+
+end
+__noirFeatures()
