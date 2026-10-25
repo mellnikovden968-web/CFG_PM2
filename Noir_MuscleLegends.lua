@@ -13,7 +13,7 @@ local C = {
     btn = Color3.fromRGB(20, 17, 14), off = Color3.fromRGB(30, 26, 22),
     border = Color3.fromRGB(50, 34, 23), accent = Color3.fromRGB(224, 116, 24),
     accent2 = Color3.fromRGB(255, 170, 54), text = Color3.fromRGB(245, 242, 238),
-    dim = Color3.fromRGB(130, 124, 118), ok = Color3.fromRGB(139, 224, 104),
+    dim = Color3.fromRGB(172, 164, 156), ok = Color3.fromRGB(139, 224, 104),
     err = Color3.fromRGB(240, 110, 110),
 }
 
@@ -156,10 +156,13 @@ miniBtn.InputBegan:Connect(function(i)
     end
 end)
 
-local TabBar = New("Frame", {
+local TabBar = New("ScrollingFrame", {
     Position = UDim2.fromOffset(0, 34), Size = UDim2.new(0, 104, 1, -34), BackgroundTransparency = 1,
+    ScrollBarThickness = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y, BorderSizePixel = 0,
 }, Win)
 New("UIListLayout", { Padding = UDim.new(0, 4), HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, TabBar)
+New("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2) }, TabBar)
 local PageHost = New("Frame", {
     Position = UDim2.fromOffset(110, 36), Size = UDim2.new(1, -120, 1, -48), BackgroundTransparency = 1,
 }, Win)
@@ -187,7 +190,7 @@ local function AddTab(name)
     New("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, page)
     New("UIPadding", { PaddingRight = UDim.new(0, 4) }, page)
     pages[name] = { btn = b, frame = page, stroke = bst }
-    b.MouseButton1Click:Connect(function()
+    local function selectTab()
         for n, p in pairs(pages) do
             local on = (n == name)
             p.frame.Visible = on
@@ -196,8 +199,9 @@ local function AddTab(name)
             p.stroke.Color = on and C.accent or C.border
         end
         currentPage = name
-    end)
-    if tabCount == 1 then b.MouseButton1Click:Wait() end
+    end
+    b.MouseButton1Click:Connect(selectTab)
+    if tabCount == 1 then selectTab() end
     return page
 end
 
@@ -553,7 +557,7 @@ end
 local pumpGens = { n = 0 }
 function getgenvCheck(g) return pumpGens.n == g end
 
-local function startTrainLoop()
+function startTrainLoop()
     S.trainGen += 1
     pumpGens.n += 1
     local gen = S.trainGen
@@ -584,7 +588,7 @@ local function startTrainLoop()
     end)
 end
 
-local function startPunchLoop()
+function startPunchLoop()
     S.punchGen += 1
     local gen = S.punchGen
     task.spawn(function()
@@ -600,7 +604,7 @@ local function startPunchLoop()
     end)
 end
 
-local function startRebirthLoop()
+function startRebirthLoop()
     S.rebirthGen += 1
     local gen = S.rebirthGen
     task.spawn(function()
@@ -629,7 +633,7 @@ local function startRebirthLoop()
 end
 
 local GIFT_COUNT = 12
-local function startRewardsLoop()
+function startRewardsLoop()
     S.rewardsGen += 1
     local gen = S.rewardsGen
     task.spawn(function()
@@ -702,8 +706,12 @@ LP.CharacterAdded:Connect(function()
 end)
 
 local HomePage = AddTab("Home")
-AddLabel(HomePage, "NOIR · Muscle Legends · v1")
+AddLabel(HomePage, "NOIR · Muscle Legends")
 local statsLbl = AddLabel(HomePage, "Loading stats...")
+AddToggle(HomePage, "Auto eat Protein Egg (30m buff)", false, function(v)
+    S.autoEgg = v
+    if v then startEggLoop() end
+end)
 AddButton(HomePage, "Hide UI  (tap the N bubble to reopen)", function() openMini(true) end)
 AddButton(HomePage, "Unload Noir", function()
     pcall(function() penv.__NoirMLLoaded = false end)
@@ -725,7 +733,7 @@ task.spawn(function()
     end
 end)
 
-local FarmPage = AddTab("Farm")
+local FarmPage = AddTab("Train")
 AddLabel(FarmPage, "TRAINING")
 local trainToggle
 AddDropdown(FarmPage, "Machine", (function()
@@ -743,17 +751,6 @@ AddToggle(FarmPage, "Auto Punch", false, function(v)
     S.autoPunch = v
     if v then startPunchLoop() end
 end)
-AddLabel(FarmPage, "REBIRTH")
-AddToggle(FarmPage, "Auto Rebirth (at requirement)", false, function(v)
-    S.autoRebirth = v
-    if v then startRebirthLoop() end
-end)
-AddLabel(FarmPage, "REWARDS")
-AddToggle(FarmPage, "Auto claim gifts & quests", false, function(v)
-    S.autoRewards = v
-    if v then startRewardsLoop() end
-end)
-AddButton(FarmPage, "Redeem all codes (eggs)", redeemCodes)
 
 local ROCKS = {
     { label = "Hallowed Rock", req = 0, minDur = 0, objectName = "Hallowed Rock", eventObject = "HalloweenMap" },
@@ -816,7 +813,7 @@ local touchInterest = type(firetouchinterest) == "function" and firetouchinteres
     or (type(penv.firetouchinterest) == "function" and penv.firetouchinterest) or nil
 local touchWarned = false
 
-local function startRockLoop()
+function startRockLoop()
     S.rockGen += 1
     local gen = S.rockGen
     task.spawn(function()
@@ -880,7 +877,7 @@ local function hasShield(ch)
     return ch and (ch:FindFirstChildWhichIsA("ForceField") ~= nil or ch:GetAttribute("InTinyIsland") == true)
 end
 
-local function startBrawlLoop()
+function startBrawlLoop()
     S.brawlGen += 1
     local gen = S.brawlGen
     task.spawn(function()
@@ -972,7 +969,7 @@ local function findBoss()
     return nil, nil
 end
 
-local function startBossLoop()
+function startBossLoop()
     S.bossGen += 1
     local gen = S.bossGen
     task.spawn(function()
@@ -1007,28 +1004,7 @@ local function startBossLoop()
     end)
 end
 
-local CombatPage = AddTab("Combat")
-AddLabel(CombatPage, "ROCKS (needs durability)")
-AddDropdown(CombatPage, "Rock", (function()
-    local t = {}
-    for i = #ROCKS, 1, -1 do t[#t + 1] = ROCKS[i].label end
-    return t
-end)(), function(v) S.selectedRock = v end)
-S.selectedRock = ROCKS[#ROCKS].label
-AddToggle(CombatPage, "Auto smash rock", false, function(v)
-    S.autoRock = v
-    if v then startRockLoop() end
-end)
-AddLabel(CombatPage, "BRAWL (Kills)")
-AddToggle(CombatPage, "Auto Brawl (join + fight)", false, function(v)
-    S.autoBrawl = v
-    if v then startBrawlLoop() end
-end)
-AddLabel(CombatPage, "BOSS")
-AddToggle(CombatPage, "Auto Boss (event arena)", false, function(v)
-    S.autoBoss = v
-    if v then startBossLoop() end
-end)
+
 
 local MAP_CHEST_RESOLVERS = {
     ["Golden Chest"] = function() return workspace:FindFirstChild("goldenChest") end,
@@ -1098,7 +1074,7 @@ end
 S.autoChests = false
 S.chestGen = 0
 
-local function startChestLoop()
+function startChestLoop()
     S.chestGen += 1
     local gen = S.chestGen
     task.spawn(function()
@@ -1150,10 +1126,7 @@ local function startChestLoop()
     end)
 end
 
-AddToggle(FarmPage, "Auto map chests (teleport claimed)", false, function(v)
-    S.autoChests = v
-    if v then startChestLoop() end
-end)
+
 
 local machineInteract = remote("machineInteractRemote")
 local function repInterval() return 1 / math.max(2, S.repRate or 10) end
@@ -1221,7 +1194,7 @@ local function verifySit(hum, seat)
     return false
 end
 
-local function startFullTrain()
+function startFullTrain()
     S.ftGen += 1
     local gen = S.ftGen
     task.spawn(function()
@@ -1288,6 +1261,154 @@ AddToggle(FullTrainPage, "Full Train (rotate machines)", false, function(v)
     if v then startFullTrain() end
 end)
 
+local RebirthsPage = AddTab("Rebirths")
+AddLabel(RebirthsPage, "REBIRTH")
+AddToggle(RebirthsPage, "Auto Rebirth (at requirement)", false, function(v)
+    S.autoRebirth = v
+    if v then startRebirthLoop() end
+end)
+AddButton(RebirthsPage, "Rebirth now", function()
+    local rem = remote("rebirthRemote")
+    if rem and rem:IsA("RemoteFunction") then
+        local ok = pcall(rem.InvokeServer, rem, "rebirthRequest")
+        Notify(ok and "Rebirth request sent" or "Rebirth failed", 2)
+    else
+        Notify("Rebirth unavailable", 2)
+    end
+end)
+
+local RocksPage = AddTab("Rocks")
+AddLabel(RocksPage, "ROCKS (needs durability)")
+AddDropdown(RocksPage, "Rock", (function()
+    local t = {}
+    for i = #ROCKS, 1, -1 do t[#t + 1] = ROCKS[i].label end
+    return t
+end)(), function(v) S.selectedRock = v end)
+S.selectedRock = ROCKS[#ROCKS].label
+AddToggle(RocksPage, "Auto smash rock", false, function(v)
+    S.autoRock = v
+    if v then startRockLoop() end
+end)
+
+local KillsPage = AddTab("Kills")
+AddLabel(KillsPage, "BRAWL")
+AddToggle(KillsPage, "Auto Brawl (join + fight)", false, function(v)
+    S.autoBrawl = v
+    if v then startBrawlLoop() end
+end)
+
+local BossPage = AddTab("Boss")
+AddLabel(BossPage, "BOSS (event arena)")
+AddToggle(BossPage, "Auto Boss (event arena)", false, function(v)
+    S.autoBoss = v
+    if v then startBossLoop() end
+end)
+
+local PetsPage = AddTab("Pets")
+AddLabel(PetsPage, "PET SHOP (via author module)")
+AddDropdown(PetsPage, "Pet", PET_NAMES, function(v) S.petChoice = v end)
+AddButton(PetsPage, "Buy selected pet", function()
+    task.spawn(function()
+        local mod, err = ensurePetShop()
+        if not mod then
+            Notify("Pet module failed: " .. tostring(err), 3)
+            return
+        end
+        if mod.SelectPet then pcall(mod.SelectPet, S.petChoice) end
+        local ok = pcall(mod.BuyPet)
+        Notify(ok and "Pet purchase sent" or "Pet purchase failed", 2.5)
+    end)
+end)
+AddToggle(PetsPage, "Auto buy pets", false, function(v)
+    task.spawn(function()
+        local mod, err = ensurePetShop()
+        if mod and type(mod.SetAutoPet) == "function" then
+            pcall(mod.SetAutoPet, v)
+            Notify("Auto pets " .. (v and "ON" or "OFF"), 2)
+        else
+            Notify("Pet module failed: " .. tostring(err), 3)
+        end
+    end)
+end)
+AddDropdown(PetsPage, "Aura", AURA_NAMES, function(v) S.auraChoice = v end)
+AddButton(PetsPage, "Buy selected aura", function()
+    task.spawn(function()
+        local mod, err = ensurePetShop()
+        if not mod then
+            Notify("Pet module failed: " .. tostring(err), 3)
+            return
+        end
+        if mod.SelectAura then pcall(mod.SelectAura, S.auraChoice) end
+        local ok = pcall(mod.BuyAura)
+        Notify(ok and "Aura purchase sent" or "Aura purchase failed", 2.5)
+    end)
+end)
+AddToggle(PetsPage, "Auto buy auras", false, function(v)
+    task.spawn(function()
+        local mod, err = ensurePetShop()
+        if mod and type(mod.SetAutoAura) == "function" then
+            pcall(mod.SetAutoAura, v)
+            Notify("Auto auras " .. (v and "ON" or "OFF"), 2)
+        else
+            Notify("Pet module failed: " .. tostring(err), 3)
+        end
+    end)
+end)
+AddLabel(PetsPage, "INVENTORY")
+AddButton(PetsPage, "Equip all owned pets", function()
+    if not (equipPetEvent and equipPetEvent:IsA("RemoteEvent")) then
+        Notify("Pet system unavailable", 2)
+        return
+    end
+    task.spawn(function()
+        local equipped = LP:FindFirstChild("equippedPets")
+        if equipped then
+            for _, slot in ipairs(equipped:GetChildren()) do
+                local ref = slot:FindFirstChild("petReference")
+                local pet = ref and ref:IsA("ObjectValue") and ref.Value
+                if pet and pet:IsA("StringValue") then
+                    pcall(equipPetEvent.FireServer, equipPetEvent, "unequipPet", pet)
+                    task.wait(0.08)
+                end
+            end
+        end
+        task.wait(0.25)
+        local inventory = LP:FindFirstChild("petsFolder")
+        local count = 0
+        if inventory then
+            for _, folder in ipairs(inventory:GetChildren()) do
+                for _, pet in ipairs(folder:GetChildren()) do
+                    if pet:IsA("StringValue") then
+                        pcall(equipPetEvent.FireServer, equipPetEvent, "equipPet", pet)
+                        count += 1
+                        task.wait(0.08)
+                    end
+                end
+            end
+        end
+        Notify("Equip request sent for " .. count .. " pets", 2.5)
+    end)
+end)
+
+local RewardsPage = AddTab("Rewards")
+AddLabel(RewardsPage, "AUTO REWARDS")
+AddToggle(RewardsPage, "Auto claim gifts & quests", false, function(v)
+    S.autoRewards = v
+    if v then startRewardsLoop() end
+end)
+AddButton(RewardsPage, "Redeem all codes (eggs)", redeemCodes)
+AddToggle(RewardsPage, "Auto map chests (teleport claim)", false, function(v)
+    S.autoChests = v
+    if v then startChestLoop() end
+end)
+
+local FortunePage = AddTab("Fortune")
+AddLabel(FortunePage, "FORTUNE WHEEL")
+AddToggle(FortunePage, "Auto spin wheel", false, function(v)
+    S.autoFortune = v
+    if v then startFortuneLoop() end
+end)
+
 local consumeBoostEvent = remote("consumeBoostEvent")
 local openFortuneWheelRemote = remote("openFortuneWheelRemote")
 local fortuneCatalog = (function()
@@ -1330,7 +1451,7 @@ local function eggTimeRemaining()
     return nil
 end
 
-local function startEggLoop()
+function startEggLoop()
     S.eggGen += 1
     local gen = S.eggGen
     task.spawn(function()
@@ -1388,7 +1509,7 @@ local function fortuneSpinCount()
     return nil
 end
 
-local function startFortuneLoop()
+function startFortuneLoop()
     S.fortuneGen += 1
     local gen = S.fortuneGen
     task.spawn(function()
@@ -1409,18 +1530,6 @@ local function startFortuneLoop()
         end
     end)
 end
-
-local BoostsPage = AddTab("Boosts")
-AddLabel(BoostsPage, "PROTEIN EGG (30 min buff)")
-AddToggle(BoostsPage, "Auto eat Protein Egg", false, function(v)
-    S.autoEgg = v
-    if v then startEggLoop() end
-end)
-AddLabel(BoostsPage, "FORTUNE WHEEL")
-AddToggle(BoostsPage, "Auto spin wheel", false, function(v)
-    S.autoFortune = v
-    if v then startFortuneLoop() end
-end)
 
 local giftRemote = remote("giftRemote")
 S.giftItem = "Protein Egg"
@@ -1571,7 +1680,7 @@ local function openCrystalNow(amount)
     return false, tostring(reason)
 end
 
-local function startCrystalLoop()
+function startCrystalLoop()
     S.crystalGen += 1
     local gen = S.crystalGen
     task.spawn(function()
@@ -1664,92 +1773,6 @@ end
 
 local equipPetEvent = remote("equipPetEvent")
 
-local PetsPage = AddTab("Pets")
-AddLabel(PetsPage, "PET SHOP (via author module)")
-AddDropdown(PetsPage, "Pet", PET_NAMES, function(v) S.petChoice = v end)
-AddButton(PetsPage, "Buy selected pet", function()
-    task.spawn(function()
-        local mod, err = ensurePetShop()
-        if not mod then
-            Notify("Pet module failed: " .. tostring(err), 3)
-            return
-        end
-        if mod.SelectPet then pcall(mod.SelectPet, S.petChoice) end
-        local ok = pcall(mod.BuyPet)
-        Notify(ok and "Pet purchase sent" or "Pet purchase failed", 2.5)
-    end)
-end)
-AddToggle(PetsPage, "Auto buy pets", false, function(v)
-    task.spawn(function()
-        local mod, err = ensurePetShop()
-        if mod and type(mod.SetAutoPet) == "function" then
-            pcall(mod.SetAutoPet, v)
-            Notify("Auto pets " .. (v and "ON" or "OFF"), 2)
-        else
-            Notify("Pet module failed: " .. tostring(err), 3)
-        end
-    end)
-end)
-AddDropdown(PetsPage, "Aura", AURA_NAMES, function(v) S.auraChoice = v end)
-AddButton(PetsPage, "Buy selected aura", function()
-    task.spawn(function()
-        local mod, err = ensurePetShop()
-        if not mod then
-            Notify("Pet module failed: " .. tostring(err), 3)
-            return
-        end
-        if mod.SelectAura then pcall(mod.SelectAura, S.auraChoice) end
-        local ok = pcall(mod.BuyAura)
-        Notify(ok and "Aura purchase sent" or "Aura purchase failed", 2.5)
-    end)
-end)
-AddToggle(PetsPage, "Auto buy auras", false, function(v)
-    task.spawn(function()
-        local mod, err = ensurePetShop()
-        if mod and type(mod.SetAutoAura) == "function" then
-            pcall(mod.SetAutoAura, v)
-            Notify("Auto auras " .. (v and "ON" or "OFF"), 2)
-        else
-            Notify("Pet module failed: " .. tostring(err), 3)
-        end
-    end)
-end)
-AddLabel(PetsPage, "INVENTORY")
-AddButton(PetsPage, "Equip all owned pets", function()
-    if not (equipPetEvent and equipPetEvent:IsA("RemoteEvent")) then
-        Notify("Pet system unavailable", 2)
-        return
-    end
-    task.spawn(function()
-        local equipped = LP:FindFirstChild("equippedPets")
-        if equipped then
-            for _, slot in ipairs(equipped:GetChildren()) do
-                local ref = slot:FindFirstChild("petReference")
-                local pet = ref and ref:IsA("ObjectValue") and ref.Value
-                if pet and pet:IsA("StringValue") then
-                    pcall(equipPetEvent.FireServer, equipPetEvent, "unequipPet", pet)
-                    task.wait(0.08)
-                end
-            end
-        end
-        task.wait(0.25)
-        local inventory = LP:FindFirstChild("petsFolder")
-        local count = 0
-        if inventory then
-            for _, folder in ipairs(inventory:GetChildren()) do
-                for _, pet in ipairs(folder:GetChildren()) do
-                    if pet:IsA("StringValue") then
-                        pcall(equipPetEvent.FireServer, equipPetEvent, "equipPet", pet)
-                        count += 1
-                        task.wait(0.08)
-                    end
-                end
-            end
-        end
-        Notify("Equip request sent for " .. count .. " pets", 2.5)
-    end)
-end)
-
 local TeleportPage = AddTab("Teleport")
 AddLabel(TeleportPage, "GYMS & AREAS")
 local tpArea = FULLTRAIN_AREAS[4].section
@@ -1789,10 +1812,9 @@ AddSlider(PlayerPage, "Character size", 1, 100, 1, function(v)
     end
 end)
 
-local MiscPage = AddTab("Misc")
-AddLabel(MiscPage, "UTILITY")
-AddToggle(MiscPage, "Anti-AFK", false, function(v) setAntiAfk(v) end)
-AddToggle(MiscPage, "Hide my pets", false, function(v)
+local PerfPage = AddTab("Performance")
+AddLabel(PerfPage, "VISUAL LOAD")
+AddToggle(PerfPage, "Hide my pets", false, function(v)
     local rem = remote("showPetsEvent")
     local currentlyVisible = LP:GetAttribute("PetsVisible") == true
     if currentlyVisible == v and rem and rem:IsA("RemoteEvent") then
@@ -1800,7 +1822,7 @@ AddToggle(MiscPage, "Hide my pets", false, function(v)
     end
     Notify(v and "Pets hidden" or "Pets visible", 1.5)
 end)
-AddToggle(MiscPage, "Hide damage popups", false, function(v)
+AddToggle(PerfPage, "Hide damage popups", false, function(v)
     local desiredShown = not v
     local currentlyShown = LP:GetAttribute("ShowPopups") ~= false
     if currentlyShown ~= desiredShown then
@@ -1812,12 +1834,16 @@ AddToggle(MiscPage, "Hide damage popups", false, function(v)
     end
     Notify(v and "Popups hidden" or "Popups shown", 1.5)
 end)
-AddToggle(MiscPage, "FPS Boost (no 3D render)", false, function(v)
+AddToggle(PerfPage, "FPS Boost (no 3D render)", false, function(v)
     pcall(function()
         RunService:Set3dRenderingEnabled(not v)
     end)
     Notify(v and "3D rendering disabled" or "3D rendering enabled", 2)
 end)
+
+local MiscPage = AddTab("Misc")
+AddLabel(MiscPage, "UTILITY")
+AddToggle(MiscPage, "Anti-AFK", false, function(v) setAntiAfk(v) end)
 local overlayOn = false
 local overlayToggle = AddToggle(MiscPage, "FPS & Ping overlay", false, function(v) overlayOn = v overlayGuiSet(v) end)
 
