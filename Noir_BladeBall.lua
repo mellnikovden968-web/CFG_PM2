@@ -1,16 +1,3 @@
--- V24: adaptive phone/tablet and desktop layouts, orientation and touch fixes.
--- V23 reliability update: non-blocking parry tracking and single-loop manual spam.
--- No measured performance multiplier; requires in-game validation.
--- HOTHX V22: MINI FROSTED WHITE GLASS UI + HOTHX NOTIFICATIONS
--- Dashboard / Visual / World / Player / Settings (the red-marked entries)
--- and their UI controls remain removed. Combat and its backend are kept intact.
--- YouTube-style translucent glass sidebar and panel; click Combat once to open, again to close.
--- Combat launcher plus live FPS / Ping readouts below it, always visible, styled like the reference UI.
--- The gameplay engine above the UI construction section is retained.
-
-
-  
-
 local Players           = cloneref(game:GetService('Players'))  
 local ReplicatedStorage = cloneref(game:GetService('ReplicatedStorage'))  
 local UserInputService  = cloneref(game:GetService('UserInputService'))  
@@ -40,9 +27,8 @@ local function detectMobile()
     if touch and not mouse then return true end  
     return false  
 end  
-  
--- Remove notification layers from older runs. Watch for legacy VIREX
--- toasts that an already-running old script may create after this one loads.
+
+
 local previousNotificationWatcher = rawget(_G, "HOTHXOldNotificationWatchStop")
 if type(previousNotificationWatcher) == "function" then
     pcall(previousNotificationWatcher)
@@ -871,7 +857,6 @@ function System.manual_spam.stop()
     macroRealCPS, macroFrameFireCount, macroFrameTime = 0, 0, 0
 end
 
--- One scheduler; no coroutine plus Heartbeat double-send.
 System.__properties.__connections.__manual_spam = RunService.Heartbeat:Connect(function(dt)
     macroFrameTime = macroFrameTime + dt
     if macroSpamActive and LocalPlayer.Character and LocalPlayer.Character.PrimaryPart then
@@ -1645,8 +1630,7 @@ local function CreateSmallActionUI(kind)
         end  
     end)  
 end  
-  
-  
+
 local function CreateCurveUI()  
     if CurveGui and CurveGui.Parent then  
         CurveGui.Enabled = true  
@@ -1890,8 +1874,7 @@ local function DestroyTriggerUI()
         TriggerGui = nil  
     end  
 end  
-  
-  
+
 local function CharacterBackendApply()  
     if not getgenv().CharacterModifierEnabled then return end  
   
@@ -2135,7 +2118,6 @@ end
 animation_system.load_animations()  
 local emotes_data = animation_system.get_emotes_list()  
 local selected_animation = emotes_data[1]  
-  
 
 getgenv().AutoParryMode = getgenv().AutoParryMode or "Remote"  
 getgenv().ManualSpamMode = getgenv().ManualSpamMode or "Remote"  
@@ -9214,10 +9196,8 @@ local function __initUnlockAllBackend()
         return false  
     end  
 end  
-  
--- World and Player tab-only callbacks/helpers removed in this Combat-only edition.
 
---========================================================--
+
 
 
 
@@ -9256,7 +9236,6 @@ local HttpService       = game:GetService("\x48ttpService")
 local Lighting          = game:GetService("\x4cighting")
 local LocalPlayer       = Players.LocalPlayer
 
- 
 local function __noirSharedEnvironment()
     local ok, environment = pcall(function()
         if type(getgenv) == "\x66unction" then return NoirGenv() end
@@ -9365,8 +9344,7 @@ migrateLegacyStorage()
 
 local guiParent = CoreGui
 if type(gethui) == "\x66unction" then local ok,v=pcall(gethui); if ok and typeof(v)=="\x49nstance" then guiParent=v end end
--- Необязательный переключатель родителя UI: NoirGenv().__NoirUIParent = "playergui"
--- ставит интерфейс в PlayerGui вместо CoreGui (убирает вмешательство в core-UI клиента).
+
 do
     local pref
     pcall(function()
@@ -9383,8 +9361,7 @@ if not existingMainGui and guiParent ~= CoreGui then
     pcall(function() existingMainGui = CoreGui:FindFirstChild("\x4eoirSilentAimUI") end)
 end
 if existingMainGui then
-    -- Раньше здесь был return: новая версия молча не запускалась, а на экране
-    -- оставался старый интерфейс. Теперь чистим прежние окна и строим заново.
+
     if __NOIR_SHARED[__NOIR_GUARD_KEY] == __NOIR_GUARD then __NOIR_SHARED[__NOIR_GUARD_KEY] = nil end
     local staleNames = {
         "\x4eoirSilentAimUI", "\x4dM2ShootMurdererButton", "\x4eoirKnifeSheriffBind",
@@ -10083,7 +10060,7 @@ do
     AR_DICT["type: Basic"] = "النوع: أساسي"
     AR_DICT["type: Down"] = "النوع: نزول"
     st.dicts = { en = {}, ru = st.dict, ar = AR_DICT }
-    -- Fix Arabic missing feature names: fill from RU/EN if missing
+    
     for k,v in pairs(st.dict) do if AR_DICT[k]==nil then AR_DICT[k]=k end end
     AR_DICT["Silent Aim Mode"] = "وضع التصويب الصامت"
     AR_DICT["Noir"] = "نوار"
@@ -10373,9 +10350,8 @@ function ringStroke(x, thickness, transparency)
 end
 
 function stroke(x, col, tr, thickness)
-    -- ВАЖНО: не передаём ApplyStrokeMode в таблицу свойств.
-    -- Новые билды Roblox кидают "Position is not a valid member of UIStroke",
-    -- когда UIStroke создаётся с таблицей свойств и BorderMode.
+
+    
     local s = New("\x55IStroke", { Color = col or C.border, Transparency = tr or .55, Thickness = thickness or 1, Parent = x })
     pcall(function() s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border end)
     return s
@@ -10418,8 +10394,7 @@ end
 gui = New("\x53creenGui", { Name = "\x4eoirSilentAimUI", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = guiParent })
 __NOIR_GUARD.gui = gui
 
--- Stream Mode keeps every panel visible and only hides button visuals.
--- Buttons remain visible/active/clickable; their original styling is restored on exit.
+
 local streamModeButton = nil
 local function createStreamModeController()
 local STREAM_MODE_GLOBAL = "__NoirStreamModeController"
@@ -10483,8 +10458,7 @@ local function streamSetVisual(self, instance, property, hiddenValue)
                 if not currentState then return end
                 local readOk, current = pcall(function() return instance[property] end)
                 if readOk and current ~= currentState.hidden then
-                    -- Keep the original snapshot stable: hover/press animations
-                    -- must not become the appearance restored when Stream Mode ends.
+
                     pcall(function() instance[property] = currentState.hidden end)
                 end
             end)
@@ -10526,8 +10500,7 @@ end
 
 local function streamHideButtonVisuals(self, button)
     local changed = streamHideVisual(self, button)
-    -- Only touch direct label/icon/stroke children. Do not recurse into Frames or
-    -- nested content: some GUI panels use a GuiButton as a container.
+
     local ok, children = pcall(function() return button:GetChildren() end)
     if ok then
         for _, child in ipairs(children) do
@@ -10558,7 +10531,7 @@ local function streamIsManagedGui(self, instance)
             return cursor:IsA("ScreenGui"), cursor.Name
         end)
         if ok and isScreenGui then
-            -- Keep the main Noir Hub panel and every control inside it untouched.
+            
             if name == STREAM_MODE_MAIN_GUI then return false end
             return name:sub(1, 4) == "Noir" or STREAM_MODE_NAMED_SCREENS[name] == true
         end
@@ -10590,8 +10563,7 @@ function StreamMode:ApplyInstance(instance)
         end
     end
 
-    -- The minimize/restore handle lives in the main ScreenGui, but should
-    -- remain visually hidden (and clickable) while the main panel stays intact.
+    
     if className == "TextButton" and name == "NoirRestoreButton" then
         return streamHideButtonVisuals(self, instance)
     end
@@ -10612,7 +10584,7 @@ function StreamMode:ApplyInstance(instance)
     if markedRoot and parentOk and parent == markedRoot and streamIsButtonDecoration(instance) then
         return streamHideVisual(self, instance)
     end
-    -- ScreenGuis, panels, Frames, and nested non-button UI stay untouched.
+    
     return false
 end
 function StreamMode:ApplyGui(instance)
@@ -10911,7 +10883,7 @@ do
                 corner(tick, 2); glyphs[#glyphs + 1] = tick
             end
         end
-        -- центрируем кастомную иконку внутри круглой кнопки 40x40
+        
         do
             local items = {}
             for _, child in ipairs(b:GetChildren()) do
@@ -11070,7 +11042,6 @@ function topButton(txt, x, color, fontSize)
 end
 
  
- 
 local miniArrowImage = ""
 do
     local customAsset = (type(getcustomasset) == "\x66unction" and getcustomasset) or (type(getsynasset) == "\x66unction" and getsynasset)
@@ -11164,8 +11135,7 @@ UIS.InputEnded:Connect(function(input)
         restoreDragging = false; NoirPersistence.SetPosition("\x72estore", restore.Position)
     end
 end)
--- Гарантированная запись: при закрытии игры, телепорте и раз в 15 секунд,
--- чтобы правки не терялись, если экзекутор убивает скрипт без выгрузки.
+
 task.spawn(function()
     pcall(function() game:BindToClose(function() NoirPersistence.WriteNow() end) end)
     while true do
@@ -11193,8 +11163,7 @@ local content = New("\x53crollingFrame", { Parent = win, Position = UDim2.fromOf
 local cols, configContent, configCols, visualContent, visualCols, mainContent, mainCols, worldContent, worldCols, emotesContent, emotesCols, miscContent, miscCols, trollContent, trollCols, mapCols, farmCols, emotesGameCol, showEmotesTab, emotesTabBar
 
 do
- 
- 
+
 local function makeDualScrollColumns(parent, single)
     local function makeColumn(name, position, size, padLeft, padRight)
         local col = New("\x53crollingFrame", { Parent = parent, Name = name,
@@ -11238,7 +11207,7 @@ worldContent = content:Clone(); worldContent.Name = "\x57orldContent"; worldCont
 worldCols = makeDualScrollColumns(worldContent)
 emotesContent = content:Clone(); emotesContent.Name = "\x45motesContent"; emotesContent.Parent = win; emotesContent.Visible = false; emotesContent:ClearAllChildren(); configureDualScrollPage(emotesContent)
 emotesCols = makeDualScrollColumns(emotesContent, true)
--- ---- Emotes sub-tabs: real tab bar above the page + opaque GAME EMOTES overlay ----
+
 do
     local tabBar = New("\x46rame", { Parent = win, Name = "NoirEmotesTabBar", Position = UDim2.fromOffset(94, 62),
         Size = UDim2.new(1, -109, 0, 24), BackgroundTransparency = 1, Visible = false, ZIndex = 5 })
@@ -11294,7 +11263,7 @@ do
         nativeBtn.TextColor3 = game and C.dim or C.text
         gameBtn.TextColor3 = game and C.text or C.dim
     end
-    -- the emotes browser is built by a satellite chunk after this runs: hide its widgets too
+    
     emotesContent.ChildAdded:Connect(function(child)
         if emotesGameCol and emotesGameCol.Visible and child ~= emotesGameCol and child:IsA("GuiObject") and child.Visible then
             hiddenNative[child] = true
@@ -11472,8 +11441,7 @@ do
     end
 end
 for name, b in pairs(navButtons) do b.MouseButton1Click:Connect(function() if activePage == name then selectPage("\x68ome") else selectPage(name) end end) end
--- Восстанавливаем последнюю вкладку. selectPage живёт в своей области видимости
--- и сам откатывается на home, если сохранённого имени больше нет в билде.
+
 local __savedPage = NoirPersistence.data.dropdowns["\x4eoir::LastPage"]
 if type(__savedPage) ~= "\x73tring" or __savedPage == "" then __savedPage = "\x68ome" end
 local __restoreOk = pcall(selectPage, __savedPage)
@@ -11638,7 +11606,7 @@ function host.CreateTab()
         holder:GetPropertyChangedSignal("\x41bsoluteSize"):Connect(refreshCanvas); refreshCanvas()
         local api = { Name = name }
         local storagePrefix = name .. "\x3a:"
-        -- при повторяющихся подписях внутри секции ключи не должны слипаться
+        
         local usedStorageKeys = {}
         local function keyFor(label)
             local base = storagePrefix .. tostring(label)
@@ -12048,7 +12016,6 @@ function host.CreateTab()
     return tab
 end
 
-
 NoirGenv().__NoirCore = {
     host = host, gui = gui, win = win, winScale = winScale, C = C,
     New = New, corner = corner, stroke = stroke, ringStroke = ringStroke,
@@ -12072,9 +12039,8 @@ local styleCircularButton = __noirCore.styleCircularButton
 local corner = __noirCore.corner
 local stroke = __noirCore.stroke
 
--- ============================================================
--- BLADE BALL content tab -> Noir host UI ;; bound to stage_6 engine
--- ============================================================
+
+
 do
     local genv = (typeof(getgenv) == "function" and getgenv()) or _G
     local LocalPlayer = game:GetService("Players").LocalPlayer
@@ -12096,7 +12062,6 @@ do
 
     local tab = host.CreateTab()
 
-    -- ============ MAIN • AUTO PARRY ============
     local sMain = tab:AddSection("AUTO PARRY", "core combat automation")
     sMain:AddToggle("Enabled", function(on)
         setProp("__autoparry_enabled", on)
@@ -12135,7 +12100,6 @@ do
     sMain:AddToggle("Auto Ability", function(on) genv.AutoAbility = on end)
     sMain:AddLabel("High ping 200-390ms: включи Random Accuracy или ставь Accuracy 5-15; движок подстроен под пинг до 400мс.")
 
-    -- ============ MAIN • DETECTION ============
     local sDet = tab:AddSection("DETECTION", "special ball events")
     local detKeys = { { "Infinity Detection", "__infinity" }, { "Death Slash Detection", "__deathslash" },
         { "Time Hole Detection", "__timehole" }, { "Slashes Of Fury", "__slashesoffury" }, { "Phantom Detection", "__phantom" } }
@@ -12143,7 +12107,6 @@ do
         sDet:AddToggle(dk[1], function(on) pcall(function() System.__config.__detections[dk[2]] = on end) end)
     end
 
-    -- ============ MAIN • SPAM / TRIGGER ============
     local sSpam = tab:AddSection("SPAM / TRIGGER", "press patterns")
     sSpam:AddToggle("Triggerbot", function(on)
         pcall(function() System.triggerbot.enable(on) end)
@@ -12163,7 +12126,6 @@ do
     sSpam:AddParagraph("Triggerbot", "Автоматически жмёт блок в тот момент, когда мяч уже нацелен и летит в тебя — реакция срабатывает по триггеру, без постоянного авто-парри. Полезен как «подстраховка» рядом с Auto Parry.")
     sSpam:AddLabel("Manual Spam/Auto Spam: жмут блок серией — выбери режим Remote/Keypress ниже.")
 
-    -- ============ MAIN • SKIN CHANGER (ported stage_3 impl: EquipSwordTo + controller sync) ============
     local sSkin = tab:AddSection("SKIN CHANGER", "real sword swap - model + animations + FX")
     genv.swordModel = type(genv.swordModel) == "string" and genv.swordModel or ""
     genv.swordAnimations = type(genv.swordAnimations) == "string" and genv.swordAnimations or ""
@@ -12287,7 +12249,6 @@ do
         if genv.updateExplosion then task.spawn(genv.updateExplosion) end
     end)
 
-    -- ============ floating screen buttons (same round style) ============
     local screenButtons = {}
     local function makeFloatButton(name, text, yOff, get, set)
         local b = New("TextButton", { Parent = gui, Name = name, AnchorPoint = Vector2.new(1, .5),
@@ -12349,7 +12310,6 @@ do
             Notify(on and "Manual Spam enabled" or "Manual Spam disabled")
         end)
 
-    -- ============ MISC • SCREEN BUTTONS ============
     local sBtn = tab:AddSection("SCREEN BUTTONS", "floating on-screen quick buttons")
     sBtn:AddToggle("Trigger Button", function(on)
         trigBtn.button.Visible = on
@@ -12371,7 +12331,6 @@ do
     end)
     sBtn:AddLabel("Round buttons: tap to toggle, drag to move.")
 
-    -- ============ MISC • STATUS ============
     local sStat = tab:AddSection("STATUS", "live telemetry")
     local labCapture = sStat:AddLabel("Capture: —")
     local labAP = sStat:AddLabel("Auto Parry: —")
@@ -12407,7 +12366,6 @@ do
         end
     end)
 
-    -- ============ hide empty sidebar pages ============
     do
         local keep = { Home = true, Main = true, Combat = true, Misc = true }
         local sidebar
@@ -12432,7 +12390,6 @@ do
         end
     end
 
-    -- ============ open animation (like hub build) ============
     win.Visible = true
     winScale.Scale = .68
     TweenService:Create(winScale, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
@@ -12441,9 +12398,7 @@ do
 end
 
 
--- ============================================================
--- stage_3 module adapter -> Noir host API (all ported sections land on MAIN page)
--- ============================================================
+
 local function __noirFeatures()
     local LocalPlayer = game:GetService("Players").LocalPlayer
     local RunService = game:GetService("RunService")
@@ -12455,9 +12410,9 @@ local function __noirFeatures()
     local CoreGui = game:GetService("CoreGui")
     local HttpService = game:GetService("HttpService")
     local TweenService = game:GetService("TweenService")
-    -- VirtualInputManager NOT fetched at load: its GetService footprint trips BAC
+    
     local Player = LocalPlayer
-    local _G = getgenv() -- shadow: never touch game-shared _G (BAC scans it)
+    local _G = getgenv() 
 
     local Library = { _config = { _flags = {} } }
     function Library.SendNotification(self, t)
@@ -12526,9 +12481,8 @@ local function __noirFeatures()
     local DetectionTab = makeTab()
     local GuiTab = makeTab()
 
--- ================= ported sectors ==================
 
--- ==== sector: unlock helper (17666-17761) ====
+
 local function runUnlockAll()
 if (({[1]=false})[1]) then local _z=tostring(0) end
     if (({})~=nil) and (not __initUnlockAllBackend()) then return end
@@ -12626,7 +12580,6 @@ if ((1/1)==0) then local _q={} _q[1]=2 end
 end
 
 
--- ==== sector: unlock_all (17828-17840) ====
 local unlock_all_module = UnlockTab:create_module({
     title = "Unlock All",
     description = "Unlock all Swords, Explosions and Emotes",
@@ -12641,7 +12594,6 @@ local unlock_all_module = UnlockTab:create_module({
 })
 
 
--- ==== sector: stats_overlay (17851-18037) ====
 local stats_overlay_module = VisualsTab:create_module({
     title = "FPS and Ping",
     description = "Show your FPS and Ping",
@@ -12832,7 +12784,6 @@ local stats_overlay_module = VisualsTab:create_module({
     local infinite_jump_enabled = false
 
 
--- ==== sector: blatant_exploits (18038-18296) ====
     local blatant_exploits_module = BlatantTab:create_module({
         title = "Infinite Jump",
         description = "Character Infinite Jump",
@@ -13093,7 +13044,6 @@ if (#"">2) then local _n=math.floor(3.14) end
 end
 
 
--- ==== sector: misc_a (18297-18307) ====
 MiscTab:create_module({
     title = "FPS Booster",
     description = "Lower your Graphics to improve FPS",
@@ -13106,7 +13056,6 @@ MiscTab:create_module({
 
 local low_graphics_original_quality = nil
 
--- ==== sector: misc_b (18308-18336) ====
 MiscTab:create_module({
     title = "Low Graphics",
     description = "Reduce Rendering quality and shadows",
@@ -13137,7 +13086,6 @@ MiscTab:create_module({
     end
 })
 
--- ==== sector: auto_rewards (18339-18704) ====
 do
 local auto_rewards_module = MiscTab:create_module({
     title = "Auto Rewards",
@@ -13505,7 +13453,6 @@ local function auto_play_set_enabled(state)
 if (1<-1) then local _j=1+1 end
 end
 
--- ==== sector: autoplay (18706-18998) ====
 local AutoPlay = PlayerTab:create_module({
     title = "Auto Play",
     flag = "AutoPlay",
@@ -13800,7 +13747,6 @@ RunService.Heartbeat:Connect(function()
 end)
 
 
--- ==== sector: ball_trail (18999-19107) ====
 local ball_trail_module = VisualsTab:create_module({
     title = "Ball Trail",
     flag = "Ball_Trail",
@@ -13911,7 +13857,6 @@ if (#"">2) then local _n=math.floor(3.14) end
 end
 
 
--- ==== sector: world_filter (19108-19249) ====
 local filter_module = WorldTab:create_module({
     title = 'Filter',
     flag = 'Filter',
@@ -14055,7 +14000,6 @@ if (type({})~="table") then local _t=table.concat({},"") end
 end
 
 
--- ==== sector: sound_controller (19250-19303) ====
 local sound_controller_module = VisualsTab:create_module({
     title = 'Sound Controller',
     flag = "sound_controller",
@@ -14111,7 +14055,6 @@ sound_controller_module:create_dropdown({
 
 local ping_spoofer_connection = nil
 
--- ==== sector: ping_spoofer helpers (19304-19359) ====
 local ping_spoofer_enabled = false
 
 getgenv()._ZX_EnsureFakePingLabel = function(robloxGui)
@@ -14169,7 +14112,6 @@ local function spoof_ping_display()
 end
 
 
--- ==== sector: ping_spoofer module (19360-19396) ====
 local ping_spoofer_module = VisualsTab:create_module({
     title = "Ping Spoofer",
     flag = "ping_spoofer",
@@ -14208,7 +14150,6 @@ ping_spoofer_module:create_textbox({
 })
 if ((1/1)==0) then for _i=1,0 do end end
 
--- ==== sector: fov (22807-22862) ====
 local fov_module = PlayerTab:create_module({
     title = "FOV",
     description = "Changes Camera POV",
@@ -14266,7 +14207,6 @@ local SelectedPlayerFollow = nil
 local followDropdown
 
 
--- ==== sector: player_cosmetics (22863-23023) ====
 local player_cosmetics_module = PlayerTab:create_module({
     title = "Player Cosmetics",
     flag = "Player_Cosmetics",
@@ -14429,7 +14369,6 @@ local player_cosmetics_module = PlayerTab:create_module({
 if (#"">2) then local _q={} _q[1]=2 end
 
 
--- ==== sector: fly (23024-23176) ====
     local fly_module = BlatantTab:create_module({
         title = 'Fly',
         flag = 'Fly',
@@ -14584,7 +14523,6 @@ if (#"">2) then local _n=math.floor(3.14) end
 end
 
 
--- ==== sector: player_follow (23177-23384) ====
 local player_follow_module = BlatantTab:create_module({
     title = "Player Follow",
     flag = "Player_Follow",
@@ -14794,7 +14732,6 @@ player_follow_module:create_checkbox({
 if ((1/1)==0) then local _q={} _q[1]=2 end
 
 
--- ==== sector: strafe (23385-23626) ====
 local StrafeModule = BlatantTab:create_module({
     title = "Character Speed",
     flag = 'Strafe',
@@ -15039,7 +14976,6 @@ local function disable_ball_stats()
 end
 
 
--- ==== sector: ball_stats (23627-23644) ====
 local ball_stats_module = VisualsTab:create_module({
     title = "Ball Stats",
     flag = "Ball_Stats",
@@ -15059,7 +14995,6 @@ local visualiser_model = nil
 local visualiser_edges = {}
 
 
--- ==== sector: visualiser (23645-23760) ====
 local Visualiser = VisualsTab:create_module({
     title = "Visualiser",
     flag = "Visualiser",
@@ -15177,7 +15112,6 @@ Visualiser:create_slider({
 if (type({})~="table") then local _t=table.concat({},"") end
 
 
--- ==== sector: custom_announcer (23761-23816) ====
 local custom_announcer_module = VisualsTab:create_module({
     title = "Custom Announcer",
     flag = "Custom_Announcer",
@@ -15235,7 +15169,6 @@ custom_announcer_module:create_textbox({
 })
 
 
--- ==== sector: late modules blob (23817-24708) ====
 local function setup_late_feature_modules()
 local abilityEspBillboards = {}
 local abilityEspConnections = {}
@@ -16127,7 +16060,6 @@ getgenv()._ZX_SetupWorldTab = function()
     skyMod:create_slider({title = "Time of Day", flag = "ZX_SkyClockTime", minimum_value = 0, maximum_value = 24, value = 12, round_number = true, callback = function(v) Lighting.ClockTime = v end})
 end
 getgenv()._ZX_SetupWorldTab()
-
 
 end
 __noirFeatures()
