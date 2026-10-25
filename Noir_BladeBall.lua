@@ -9230,7 +9230,15 @@ do
         text = Color3.fromRGB(235, 230, 224), dim = Color3.fromRGB(150, 143, 134),
         off = Color3.fromRGB(54, 50, 46),
     }
-    local function cn(a, b) return Instance.new(a, b or {}) end
+    local function cn(a, b)
+        local o = Instance.new(a)
+        if type(b) == "table" then
+            for k, v in pairs(b) do
+                pcall(function() o[k] = v end)
+            end
+        end
+        return o
+    end
     local function corner(o, r) local c = cn("UICorner"); c.CornerRadius = UDim.new(0, r or 7); c.Parent = o return c end
     local function stroke(o, col, tr) local s = cn("UIStroke"); s.Color = col or theme.accent2; s.Transparency = tr or .6; s.Thickness = 1; s.Parent = o return s end
 
