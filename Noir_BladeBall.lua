@@ -12445,12 +12445,12 @@ end
 -- stage_3 module adapter -> Noir host API (all ported sections land on MAIN page)
 -- ============================================================
 local function __noirFeatures()
-    local LocalPlayer = game:GetService("Players").LocalPlayer
-    local RunService = game:GetService("RunService")
-    local UIS = game:GetService("UserInputService")
-    local Lighting = game:GetService("Lighting")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local SoundService = game:GetService("SoundService")
+    local LocalPlayer = nil
+    local RunService = nil
+    local UIS = nil
+    local Lighting = nil
+    local ReplicatedStorage = nil
+    local SoundService = nil
     local Stats = game:GetService("Stats")
     local CoreGui = game:GetService("CoreGui")
     local HttpService = game:GetService("HttpService")
