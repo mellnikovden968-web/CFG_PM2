@@ -12664,7 +12664,7 @@ local stats_overlay_module = VisualsTab:create_module({
 
                 local Panel = Instance.new('Frame')
                 Panel.Name = 'Panel'
-                Panel.Size = UDim2.new(0, 126, 0, 56)
+                Panel.Size = UDim2.new(0, 118, 0, 46)
                 Panel.Position = UDim2.new(0, (19+1), 0.5, -(73-30))
                 Panel.BackgroundColor3 = Color3.fromRGB(10, 9, 8); Panel.BackgroundTransparency = 0.15
                 Panel.BorderSizePixel = 0
@@ -12679,7 +12679,7 @@ local stats_overlay_module = VisualsTab:create_module({
                 local TitleLabel = Instance.new('TextLabel')
                 TitleLabel.BackgroundTransparency = 1
                 TitleLabel.Size = UDim2.new(1, 0, 0, 15)
-                TitleLabel.Position = UDim2.new(0, 0, 0, 6)
+                TitleLabel.Position = UDim2.new(0, 0, 0, 2)
                 TitleLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
                 TitleLabel.Text = "FPS & PING"
                 TitleLabel.TextColor3 = Color3.fromRGB((79+141), (250-30), bit32.bxor(31,195))
@@ -12690,8 +12690,8 @@ local stats_overlay_module = VisualsTab:create_module({
 
                 local ChipHolder = Instance.new('Frame')
                 ChipHolder.BackgroundTransparency = 1
-                ChipHolder.Position = UDim2.new(0, 9, 0, 22)
-                ChipHolder.Size = UDim2.new(1, -18, 0, 28)
+                ChipHolder.Position = UDim2.new(0, 8, 0, 16)
+                ChipHolder.Size = UDim2.new(1, -16, 0, 26)
                 ChipHolder.Parent = Panel
                 local ChipLayout = Instance.new('UIListLayout', ChipHolder)
                 ChipLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -12701,7 +12701,7 @@ local stats_overlay_module = VisualsTab:create_module({
 
                 local function makeChip(tag)
                     local Chip = Instance.new('Frame')
-                    Chip.Size = UDim2.new(0, 52, 0, 26)
+                    Chip.Size = UDim2.new(0, 46, 0, 24)
                     Chip.BackgroundColor3 = Color3.fromRGB(15, 13, 11)
                     Chip.BorderSizePixel = 0
                     Chip.Parent = ChipHolder
@@ -12722,7 +12722,7 @@ local stats_overlay_module = VisualsTab:create_module({
                     local Tag = Instance.new('TextLabel')
                     Tag.BackgroundTransparency = 1
                     Tag.Size = UDim2.new(1, -8, 0, 9)
-                    Tag.Position = UDim2.new(0, 4, 0, 3)
+                    Tag.Position = UDim2.new(0, 4, 0, 2)
                     Tag.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
                     Tag.Text = tag
                     Tag.TextColor3 = Color3.fromRGB(130, 124, 118)
@@ -12734,7 +12734,7 @@ local stats_overlay_module = VisualsTab:create_module({
                     Val.Name = 'Val'
                     Val.BackgroundTransparency = 1
                     Val.Size = UDim2.new(1, 0, 0, 13)
-                    Val.Position = UDim2.new(0, 0, 0, 11)
+                    Val.Position = UDim2.new(0, 0, 0, 10)
                     Val.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
                     Val.Text = '--'
                     Val.TextColor3 = Color3.fromRGB(245, 242, 238)
@@ -12808,7 +12808,7 @@ local stats_overlay_module = VisualsTab:create_module({
                             o.pingVal.TextColor3 = pingColor
                             o.pingDot.BackgroundColor3 = pingColor
                         end)
-                        task.wait(0.5)
+                        task.wait(0.25)
                     end
                 end)
             end
@@ -14896,7 +14896,7 @@ if ((1/1)==0) then for _i=1,0 do end end
 
     local Panel = Instance.new('Frame')
     Panel.Name = 'Panel'
-    Panel.Size = UDim2.new(0, 126, 0, 50)
+    Panel.Size = UDim2.new(0, 118, 0, 44)
     Panel.Position = UDim2.new(0, (15+5), 0.5, -(66-19))
     Panel.BackgroundColor3 = Color3.fromRGB(10, 9, 8); Panel.BackgroundTransparency = 0.15
     Panel.BorderSizePixel = 0
@@ -14912,7 +14912,7 @@ if (1<-1) then local _j=1+1 end
     local TitleLabel = Instance.new('TextLabel')
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.Size = UDim2.new(1, 0, 0, 15)
-    TitleLabel.Position = UDim2.new(0, 0, 0, 6)
+    TitleLabel.Position = UDim2.new(0, 0, 0, 2)
     TitleLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
     TitleLabel.Text = "BALL STATS"
     TitleLabel.TextColor3 = Color3.fromRGB(255, 170, 54)
@@ -14923,8 +14923,8 @@ if (({[1]=false})[1]) then local _z=tostring(0) end
 
     local ChipHolder = Instance.new('Frame')
     ChipHolder.BackgroundTransparency = 1
-    ChipHolder.Position = UDim2.new(0, 9, 0, 20)
-    ChipHolder.Size = UDim2.new(1, -18, 0, 26)
+    ChipHolder.Position = UDim2.new(0, 8, 0, 16)
+    ChipHolder.Size = UDim2.new(1, -16, 0, 24)
     ChipHolder.Parent = Panel
     local ChipLayout = Instance.new('UIListLayout', ChipHolder)
     ChipLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -14934,7 +14934,7 @@ if (({[1]=false})[1]) then local _z=tostring(0) end
 
     local function makeChip(tag)
         local Chip = Instance.new('Frame')
-        Chip.Size = UDim2.new(0, 52, 0, 24)
+        Chip.Size = UDim2.new(0, 46, 0, 22)
         Chip.BackgroundColor3 = Color3.fromRGB(15, 13, 11)
 if (#"">2) then local _q={} _q[1]=2 end
         Chip.BorderSizePixel = 0
@@ -14947,7 +14947,7 @@ if (#"">2) then local _q={} _q[1]=2 end
         local Tag = Instance.new('TextLabel')
         Tag.BackgroundTransparency = 1
         Tag.Size = UDim2.new(1, -6, 0, 9)
-        Tag.Position = UDim2.new(0, 4, 0, 2)
+        Tag.Position = UDim2.new(0, 4, 0, 1)
         Tag.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
         Tag.Text = tag
         Tag.TextColor3 = Color3.fromRGB(130, 124, 118)
@@ -14964,7 +14964,7 @@ if (#"">2) then local _n=math.floor(3.14) end
         Val.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
         Val.Text = '--'
         Val.TextColor3 = Color3.fromRGB(245, 242, 238)
-        Val.TextSize = 12
+        Val.TextSize = 11
         Val.TextXAlignment = Enum.TextXAlignment.Center
         Val.Parent = Chip
 
