@@ -1,4 +1,3 @@
--- clear stale runtime lock from previous executions
 pcall(function()
     local g = (type(getgenv) == "function" and getgenv()) or _G
     g.__NoirHubRuntimeLock = nil
@@ -1601,7 +1600,6 @@ do
         { "\x61im",    16898613777, Vector2.new(967, 759), "\x54rain" },
         { "\x66arm",   16898613509, Vector2.new(771, 563), "\x46arm" },
         { "\x77orld",  16898613509, Vector2.new(771, 563), "\x43ombat" },
-        { "\x6dap",    16898613509, Vector2.new(771, 563), "\x53hop" },
         { "\x6disc",   16898613509, Vector2.new(820, 147), "\x4disc" },
     }    for i, d in ipairs(navDefs) do
         local b = New("\x54extButton", { Parent = sidebar, Position = UDim2.fromOffset(19, 104 + (i - 1) * 42), Size = UDim2.fromOffset(40, 40),
@@ -2974,7 +2972,7 @@ local library = (function()
         Farm = "TRAIN \xE2\x80\xA2 ", ["Fast Farming"] = "TRAIN \xE2\x80\xA2 ", Gym = "TRAIN \xE2\x80\xA2 ",
         Rebirths = "FARM \xE2\x80\xA2 ",
         Kill = "COMBAT \xE2\x80\xA2 ", Rock = "COMBAT \xE2\x80\xA2 ", Boss = "COMBAT \xE2\x80\xA2 ",
-        Stats = "SHOP \xE2\x80\xA2 ", Pets = "SHOP \xE2\x80\xA2 ",
+        Stats = "MISC \xE2\x80\xA2 ", Pets = "MISC \xE2\x80\xA2 ",
         Misc = "MISC \xE2\x80\xA2 ", Teleport = "MISC \xE2\x80\xA2 ", Credits = "MISC \xE2\x80\xA2 ",
     }
     local function labelProxy(kitLabel)
@@ -7139,12 +7137,13 @@ task.spawn(function()
 end)
 
 Tabs.Credits:AddLabel("==================================")
--- ===== Noir open animation + notify =====
+-- ===== Noir open animation + runtime lock =====
 task.defer(function()
     local core2 = NoirGenv().__NoirCore
-    local win2 = core2 and core2.win
-    if not win2 then return end
-    pcall(function() RunService.RenderStepped:Wait() end)
+    if not core2 then return end
+    local win2, TweenService2, RunService2 = core2.win, core2.TweenService, core2.RunService
+    if not (win2 and TweenService2) then return end
+    task.wait(0.35)
     if not win2.Parent then return end
     local targetPosition = win2.Position
     win2.Position = targetPosition + UDim2.fromOffset(0, 32)
@@ -7153,9 +7152,9 @@ task.defer(function()
     win2.Visible = true
     local scaleObj = win2:FindFirstChildWhichIsA("UIScale")
     if scaleObj then scaleObj.Scale = .68 end
-    TweenService:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .04, Rotation = 0 }):Play()
+    TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .04, Rotation = 0 }):Play()
     if scaleObj then
-        TweenService:Create(scaleObj, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+        TweenService2:Create(scaleObj, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
     end
 end)
 task.spawn(function()
@@ -7167,6 +7166,6 @@ task.spawn(function()
     end
 end)
 if library and NoirGenv().__NoirCore then
-    pcall(function() NoirGenv().__NoirCore.host.Notify("Noir ML (Syniox port) loaded", 3) end)
+    pcall(function() NoirGenv().__NoirCore.host.Notify("Noir ML loaded", 3) end)
 end
 print("[NoirML] build ok")
