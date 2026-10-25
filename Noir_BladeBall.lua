@@ -9220,27 +9220,31 @@ end
 
 
 
--- ============ NOIR MENU (replaces HOTHX/Virex UI; engine untouched) ============
+-- ============ NOIR MENU v2 (replaces HOTHX/Virex UI; stage_6 engine untouched) ============
 do
-    local NM = {}
-    local theme = {
-        bg = Color3.fromRGB(16, 15, 14), bar = Color3.fromRGB(24, 22, 20),
-        row = Color3.fromRGB(28, 26, 24), btn = Color3.fromRGB(38, 35, 32),
-        accent = Color3.fromRGB(255, 122, 26), accent2 = Color3.fromRGB(255, 176, 102),
-        text = Color3.fromRGB(235, 230, 224), dim = Color3.fromRGB(150, 143, 134),
-        off = Color3.fromRGB(54, 50, 46),
+    local T = {
+        bg      = Color3.fromRGB(14, 13, 12),
+        bar     = Color3.fromRGB(21, 19, 17),
+        row     = Color3.fromRGB(26, 24, 22),
+        rowHi   = Color3.fromRGB(32, 29, 26),
+        btn     = Color3.fromRGB(40, 36, 32),
+        accent  = Color3.fromRGB(255, 126, 26),
+        accent2 = Color3.fromRGB(255, 190, 120),
+        text    = Color3.fromRGB(238, 233, 226),
+        dim     = Color3.fromRGB(148, 140, 130),
+        off     = Color3.fromRGB(52, 48, 44),
+        good    = Color3.fromRGB(120, 220, 120),
     }
-    local function cn(a, b)
-        local o = Instance.new(a)
-        if type(b) == "table" then
-            for k, v in pairs(b) do
-                pcall(function() o[k] = v end)
-            end
+    local function cn(cls, props)
+        local o = Instance.new(cls)
+        if type(props) == "table" then
+            for k, v in pairs(props) do pcall(function() o[k] = v end) end
         end
         return o
     end
-    local function corner(o, r) local c = cn("UICorner"); c.CornerRadius = UDim.new(0, r or 7); c.Parent = o return c end
-    local function stroke(o, col, tr) local s = cn("UIStroke"); s.Color = col or theme.accent2; s.Transparency = tr or .6; s.Thickness = 1; s.Parent = o return s end
+    local function corner(o, r) return cn("UICorner", { Parent = o, CornerRadius = UDim.new(0, r or 7) }) end
+    local function stroke(o, c, tr) return cn("UIStroke", { Parent = o, Color = c or T.accent2, Transparency = tr or .62, Thickness = 1 }) end
+    local function pad(o, l, r, t, b) return cn("UIPadding", { Parent = o, PaddingLeft = UDim.new(0, l or 0), PaddingRight = UDim.new(0, r or l or 0), PaddingTop = UDim.new(0, t or 0), PaddingBottom = UDim.new(0, b or t or 0) }) end
 
     local guiParent2
     pcall(function() guiParent2 = gethui and gethui() end)
@@ -9251,64 +9255,76 @@ do
     pcall(function() gui.Parent = guiParent2 end)
 
     local win = cn("Frame", {
-        Parent = gui, Size = UDim2.new(0, 330, 0, 420), Position = UDim2.new(0.5, -165, 0.5, -210),
-        BackgroundColor3 = theme.bg, BackgroundTransparency = .06, BorderSizePixel = 0,
+        Parent = gui, Size = UDim2.new(0, 340, 0, 436), Position = UDim2.new(0.5, -170, 0.5, -218),
+        BackgroundColor3 = T.bg, BackgroundTransparency = .04, BorderSizePixel = 0, ClipsDescendants = true,
     })
-    corner(win, 12); stroke(win, theme.accent2, .5)
+    corner(win, 14)
+    stroke(win, T.accent, .45).Thickness = 1.2
 
-    local bar = cn("TextLabel", {
-        Parent = win, Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = theme.bar, BackgroundTransparency = .15,
-        Text = "  BLADE BALL · NOIR", TextColor3 = theme.accent2, TextSize = 14,
-        Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, BorderSizePixel = 0,
+    local bar = cn("Frame", { Parent = win, Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = T.bar, BackgroundTransparency = .08, BorderSizePixel = 0 })
+    corner(bar, 14)
+    cn("Frame", { Parent = bar, Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -14), BackgroundColor3 = T.bar, BackgroundTransparency = .08, BorderSizePixel = 0 })
+    local dot = cn("Frame", { Parent = bar, Size = UDim2.fromOffset(10, 10), Position = UDim2.fromOffset(14, 14), BackgroundColor3 = T.accent, BorderSizePixel = 0 })
+    corner(dot, 5)
+    cn("TextLabel", {
+        Parent = bar, Size = UDim2.new(1, -110, 0, 20), Position = UDim2.fromOffset(32, 6), BackgroundTransparency = 1,
+        Text = "BLADE BALL", TextColor3 = T.text, TextSize = 15, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
     })
-    corner(bar, 12)
+    cn("TextLabel", {
+        Parent = bar, Size = UDim2.new(1, -110, 0, 16), Position = UDim2.fromOffset(32, 26), BackgroundTransparency = 1,
+        Text = "noir build · stage6 engine", TextColor3 = T.dim, TextSize = 10, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+    })
+    local statPill = cn("TextLabel", {
+        Parent = bar, Size = UDim2.fromOffset(56, 20), Position = UDim2.new(1, -102, 0.5, -10), BackgroundColor3 = T.row,
+        BackgroundTransparency = .2, Text = "IDLE", TextColor3 = T.dim, TextSize = 10, Font = Enum.Font.GothamBold,
+    })
+    corner(statPill, 10)
     local closeX = cn("TextButton", {
-        Parent = bar, Size = UDim2.fromOffset(30, 22), Position = UDim2.new(1, -36, 0.5, -11), AnchorPoint = Vector2.new(0, .5),
-        BackgroundColor3 = theme.btn, Text = "X", TextColor3 = theme.text, TextSize = 13, Font = Enum.Font.GothamBold, AutoButtonColor = false,
+        Parent = bar, Size = UDim2.fromOffset(30, 24), Position = UDim2.new(1, -40, 0.5, -12),
+        BackgroundColor3 = T.btn, Text = "×", TextColor3 = T.text, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false,
     })
-    corner(closeX, 7)
+    corner(closeX, 8)
     closeX.MouseButton1Click:Connect(function() win.Visible = false end)
 
     local list = cn("ScrollingFrame", {
-        Parent = win, Size = UDim2.new(1, -16, 1, -44), Position = UDim2.fromOffset(8, 38),
-        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
+        Parent = win, Size = UDim2.new(1, -18, 1, -62), Position = UDim2.fromOffset(9, 56),
+        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2,
         CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollBarImageColor3 = theme.accent,
+        ScrollBarImageColor3 = T.accent, ScrollBarImageTransparency = .3,
     })
-    local lay = cn("UIListLayout", { Parent = list })
-    lay.Padding = UDim.new(0, 4)
+    local lay = cn("UIListLayout", { Parent = list, Padding = UDim.new(0, 5) })
 
     local liveRows = {}
     local function mkSection(text)
         cn("TextLabel", {
-            Parent = list, Size = UDim2.new(1, -4, 0, 20), BackgroundTransparency = 1,
-            Text = text, TextColor3 = theme.accent2, TextSize = 11, Font = Enum.Font.GothamBold,
+            Parent = list, Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1,
+            Text = "  " .. text, TextColor3 = T.accent2, TextSize = 11, Font = Enum.Font.GothamBold,
             TextXAlignment = Enum.TextXAlignment.Left,
         })
     end
-    local function mkRow(text)
-        local row = cn("Frame", { Parent = list, Size = UDim2.new(1, -4, 0, 28), BackgroundColor3 = theme.row, BackgroundTransparency = .25, BorderSizePixel = 0 })
-        corner(row, 7)
+    local function mkRow(text, h)
+        local row = cn("Frame", { Parent = list, Size = UDim2.new(1, 0, 0, h or 32), BackgroundColor3 = T.row, BackgroundTransparency = .18, BorderSizePixel = 0 })
+        corner(row, 8)
         cn("TextLabel", {
-            Parent = row, Size = UDim2.new(1, -100, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1,
-            Text = text, TextColor3 = theme.dim, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = row, Size = UDim2.new(1, -116, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1,
+            Text = text, TextColor3 = T.text, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
         })
         return row
     end
     local function mkToggle(text, get, set)
         local row = mkRow(text)
         local b = cn("TextButton", {
-            Parent = row, Size = UDim2.fromOffset(46, 20), Position = UDim2.new(1, -50, 0.5, -10), AnchorPoint = Vector2.new(0, .5),
-            BackgroundColor3 = theme.off, Text = "", AutoButtonColor = false,
+            Parent = row, Size = UDim2.fromOffset(48, 22), Position = UDim2.new(1, -58, 0.5, -11),
+            BackgroundColor3 = T.off, Text = "", AutoButtonColor = false,
         })
-        corner(b, 10)
-        local knob = cn("Frame", { Parent = b, Size = UDim2.fromOffset(14, 14), Position = UDim2.new(0, 3, 0.5, -7), AnchorPoint = Vector2.new(0, .5), BackgroundColor3 = theme.dim })
-        corner(knob, 7)
+        corner(b, 11)
+        local knob = cn("Frame", { Parent = b, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = T.dim, BorderSizePixel = 0 })
+        corner(knob, 8)
         local function paint()
             local on = get() == true
-            b.BackgroundColor3 = on and theme.accent or theme.off
-            knob.Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-            knob.BackgroundColor3 = on and Color3.fromRGB(12, 10, 8) or theme.dim
+            b.BackgroundColor3 = on and T.accent or T.off
+            knob.Position = on and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+            knob.BackgroundColor3 = on and Color3.fromRGB(16, 12, 8) or T.dim
         end
         b.MouseButton1Click:Connect(function() set(not get()) paint() end)
         paint()
@@ -9316,10 +9332,11 @@ do
     local function mkCycle(text, options, get, set)
         local row = mkRow(text)
         local b = cn("TextButton", {
-            Parent = row, Size = UDim2.fromOffset(92, 20), Position = UDim2.new(1, -96, 0.5, -10), AnchorPoint = Vector2.new(0, .5),
-            BackgroundColor3 = theme.btn, Text = tostring(get()), TextColor3 = theme.accent2, TextSize = 11, Font = Enum.Font.GothamBold, AutoButtonColor = false,
+            Parent = row, Size = UDim2.fromOffset(104, 22), Position = UDim2.new(1, -110, 0.5, -11),
+            BackgroundColor3 = T.btn, Text = tostring(get()), TextColor3 = T.accent2, TextSize = 11,
+            Font = Enum.Font.GothamBold, AutoButtonColor = false,
         })
-        corner(b, 7)
+        corner(b, 8)
         b.MouseButton1Click:Connect(function()
             local cur, idx = get(), 1
             for i, o in ipairs(options) do if o == cur then idx = i break end end
@@ -9329,20 +9346,24 @@ do
         end)
     end
     local function mkSlider(text, min, max, get, set)
-        local row = cn("Frame", { Parent = list, Size = UDim2.new(1, -4, 0, 40), BackgroundColor3 = theme.row, BackgroundTransparency = .25, BorderSizePixel = 0 })
-        corner(row, 7)
+        local row = cn("Frame", { Parent = list, Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = T.row, BackgroundTransparency = .18, BorderSizePixel = 0 })
+        corner(row, 8)
         local lbl = cn("TextLabel", {
-            Parent = row, Size = UDim2.new(1, -16, 0, 16), Position = UDim2.fromOffset(8, 2), BackgroundTransparency = 1,
-            Text = text, TextColor3 = theme.dim, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = row, Size = UDim2.new(1, -20, 0, 18), Position = UDim2.fromOffset(10, 4), BackgroundTransparency = 1,
+            Text = text, TextColor3 = T.text, TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
         })
-        local track = cn("Frame", { Parent = row, Size = UDim2.new(1, -16, 0, 6), Position = UDim2.fromOffset(8, 28), BackgroundColor3 = theme.off, BorderSizePixel = 0 })
+        local track = cn("Frame", { Parent = row, Size = UDim2.new(1, -20, 0, 5), Position = UDim2.fromOffset(10, 32), BackgroundColor3 = T.off, BorderSizePixel = 0 })
         corner(track, 3)
-        local fill = cn("Frame", { Parent = track, Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = theme.accent, BorderSizePixel = 0 })
+        local fill = cn("Frame", { Parent = track, Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = T.accent, BorderSizePixel = 0 })
         corner(fill, 3)
+        local knob = cn("Frame", { Parent = track, Size = UDim2.fromOffset(13, 13), Position = UDim2.new(0, -6, 0.5, 0), AnchorPoint = Vector2.new(0, .5), BackgroundColor3 = T.accent2, BorderSizePixel = 0 })
+        corner(knob, 7)
+        stroke(knob, T.accent, .3)
         local function upd(v)
-            local t = math.clamp((v - min) / (max - min), 0, 1)
-            fill.Size = UDim2.new(t, 0, 1, 0)
-            lbl.Text = text .. ": " .. tostring(math.floor(v + 0.5))
+            local tt = math.clamp((v - min) / (max - min), 0, 1)
+            fill.Size = UDim2.new(tt, 0, 1, 0)
+            knob.Position = UDim2.new(tt, 0, .5, 0)
+            lbl.Text = text .. "  ·  " .. tostring(math.floor(v + 0.5))
         end
         local dragging = false
         local function applyX(x)
@@ -9351,8 +9372,9 @@ do
             set(v)
             upd(v)
         end
-        track.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true applyX(i.Position.X) end end)
-        track.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+        local function isPress(i) return i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 end
+        row.InputBegan:Connect(function(i) if isPress(i) then dragging = true applyX(i.Position.X) end end)
+        row.InputEnded:Connect(function(i) if isPress(i) then dragging = false end end)
         UserInputService.InputChanged:Connect(function(i)
             if dragging and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then applyX(i.Position.X) end
         end)
@@ -9361,18 +9383,21 @@ do
     local function mkInfo(text, fn)
         local row = mkRow(text)
         local val = cn("TextLabel", {
-            Parent = row, Size = UDim2.new(0, 92, 1, 0), Position = UDim2.new(1, -96, 0, 0), BackgroundTransparency = 1,
-            Text = "-", TextColor3 = theme.text, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Right,
+            Parent = row, Size = UDim2.new(0, 104, 1, 0), Position = UDim2.new(1, -110, 0, 0), BackgroundTransparency = 1,
+            Text = "-", TextColor3 = T.accent2, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Right,
         })
         table.insert(liveRows, function() val.Text = tostring(fn()) end)
     end
 
-    -- ===== wiring to stage_6 engine knobs =====
+    -- ===== engine wiring (stage_6 knobs) =====
+    local function setStat(t, c) statPill.Text = t statPill.TextColor3 = c end
+
     mkSection("AUTO PARRY")
     mkToggle("Enabled", function() return System.__properties.__autoparry_enabled end, function(on)
         System.__properties.__autoparry_enabled = on
         System.__properties.__play_animation = on
         if on then System.autoparry.start() else System.autoparry.stop() end
+        setStat(on and "ARMED" or "IDLE", on and T.accent or T.dim)
         Notify("Auto Parry", on and "Enabled" or "Disabled", 2)
     end)
     mkCycle("Parry mode", { "Remote", "Keypress" }, function() return getgenv().AutoParryMode or "Remote" end, function(v) getgenv().AutoParryMode = v end)
@@ -9380,7 +9405,7 @@ do
         System.__properties.__accuracy = math.floor(v + 0.5)
         pcall(update_divisor)
     end)
-    mkCycle("Parry type", CURVE_NAMES, function() return Selected_Parry_Type end, function(v) Selected_Parry_Type = v; CurveType = v end)
+    mkCycle("Parry type", CURVE_NAMES, function() return Selected_Parry_Type end, function(v) Selected_Parry_Type = v CurveType = v end)
     mkToggle("Random accuracy", function() return System.__properties.__randomized_accuracy_enabled end, function(on)
         System.__properties.__randomized_accuracy_enabled = on
         if on then pcall(update_randomized_accuracy) end
@@ -9404,13 +9429,11 @@ do
     mkToggle("Infinity detection", function() return System.__config.__detections.__infinity == true end, function(on) System.__config.__detections.__infinity = on end)
     mkToggle("Death slash detection", function() return System.__config.__detections.__deathslash == true end, function(on) System.__config.__detections.__deathslash = on end)
     mkToggle("Time hole detection", function() return System.__config.__detections.__timehole == true end, function(on) System.__config.__detections.__timehole = on end)
-    mkToggle("Slashes of fury detection", function() return System.__config.__detections.__slashesoffury == true end, function(on) System.__config.__detections.__slashesoffury = on end)
+    mkToggle("Slashes of fury", function() return System.__config.__detections.__slashesoffury == true end, function(on) System.__config.__detections.__slashesoffury = on end)
     mkToggle("Phantom detection", function() return System.__config.__detections.__phantom == true end, function(on) System.__config.__detections.__phantom = on end)
 
     mkSection("SPAM / TRIGGER")
-    mkToggle("Triggerbot", function() return System.__triggerbot.__enabled == true end, function(on)
-        if on then System.triggerbot.enable(true) else System.triggerbot.enable(false) end
-    end)
+    mkToggle("Triggerbot", function() return System.__triggerbot.__enabled == true end, function(on) System.triggerbot.enable(on) end)
     mkCycle("Auto spam mode", { "Remote", "Keypress" }, function() return getgenv().AutoSpamMode or "Remote" end, function(v) getgenv().AutoSpamMode = v end)
     mkToggle("Auto spam", function() return System.__properties.__auto_spam_enabled end, function(on)
         if on then System.auto_spam.start() else System.auto_spam.stop() end
@@ -9421,6 +9444,9 @@ do
     end)
 
     mkSection("STATUS")
+    mkInfo("Capture", function()
+        return (_capturedRemote and _capturedRemote.Name) or "press block once"
+    end)
     mkInfo("Auto parry", function() return System.__properties.__autoparry_enabled and "on" or "off" end)
     mkInfo("Active parries", function() return System.__properties.__parries end)
     mkInfo("Ping", function()
@@ -9431,9 +9457,9 @@ do
         local b = System.ball.get()
         if not b then return "-" end
         local z = b:FindFirstChild("zoomies")
-        local ok, vv = pcall(function() return z.VectorVelocity.Magnitude end)
-        local alt = (ok and type(vv) == "number") and vv or b.AssemblyLinearVelocity.Magnitude
-        return tostring(math.floor(alt + 0.5))
+        local ok, vv = pcall(function() return z and z.VectorVelocity.Magnitude end)
+        local sp = (ok and type(vv) == "number") and vv or b.AssemblyLinearVelocity.Magnitude
+        return tostring(math.floor(sp + 0.5))
     end)
     mkInfo("Targeted at me", function()
         local b = System.ball.get()
@@ -9466,32 +9492,66 @@ do
     end
     dragify(bar, win)
 
-    local floatBtn = cn("TextButton", {
-        Parent = gui, Size = UDim2.fromOffset(54, 54), Position = UDim2.new(1, -70, 1, -140),
-        BackgroundColor3 = theme.accent, BackgroundTransparency = .12, Text = "N",
-        TextColor3 = Color3.fromRGB(12, 10, 8), TextSize = 22, Font = Enum.Font.GothamBold, AutoButtonColor = false,
+    -- ===== floating dock: menu + triggerbot + manual spam =====
+    local dockMoved = false
+    local dock = cn("Frame", {
+        Parent = gui, Size = UDim2.fromOffset(58, 178), Position = UDim2.new(1, -74, 0.5, -89),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
     })
-    corner(floatBtn, 27); stroke(floatBtn, theme.accent2, .4)
-    local fdrag, fmoved, fs, fps = false, false, nil, nil
-    floatBtn.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-            fdrag, fmoved = true, false
-            fs, fps = i.Position, floatBtn.Position
-            local c
-            c = i.Changed:Connect(function()
-                if i.UserInputState == Enum.UserInputState.End then fdrag = false if c then c:Disconnect() end end
-            end)
+    cn("UIListLayout", { Parent = dock, Padding = UDim.new(0, 8), HorizontalAlignment = Enum.HorizontalAlignment.Center })
+    local function dockBtn(letter, tip, get, set)
+        local b = cn("TextButton", {
+            Parent = dock, Size = UDim2.fromOffset(54, 54), BackgroundColor3 = T.off, BackgroundTransparency = .08,
+            Text = "", AutoButtonColor = false,
+        })
+        corner(b, 27)
+        stroke(b, T.accent2, .5)
+        cn("TextLabel", {
+            Parent = b, Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 6), BackgroundTransparency = 1,
+            Text = letter, TextColor3 = T.dim, TextSize = 20, Font = Enum.Font.GothamBlack,
+        })
+        cn("TextLabel", {
+            Parent = b, Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -18), BackgroundTransparency = 1,
+            Text = tip, TextColor3 = T.dim, TextSize = 8, Font = Enum.Font.GothamBold,
+        })
+        local lbl1 = b:FindFirstChildOfClass("TextLabel")
+        local lbl2
+        for _, c in ipairs(b:GetChildren()) do if c:IsA("TextLabel") and c ~= lbl1 then lbl2 = c end end
+        local function paint()
+            local on = get and get() == true
+            b.BackgroundColor3 = on and T.accent or T.off
+            lbl1.TextColor3 = on and Color3.fromRGB(14, 11, 8) or T.dim
+            if lbl2 then lbl2.TextColor3 = on and Color3.fromRGB(30, 20, 10) or T.dim end
         end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if fdrag and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
-            local d = i.Position - fs
-            if math.abs(d.X) > 8 or math.abs(d.Y) > 8 then fmoved = true end
-            floatBtn.Position = UDim2.new(fps.X.Scale, fps.X.Offset + d.X, fps.Y.Scale, fps.Y.Offset + d.Y)
-        end
-    end)
-    floatBtn.MouseButton1Click:Connect(function() if fmoved then return end win.Visible = not win.Visible end)
+        b.MouseButton1Click:Connect(function()
+            if dockMoved then return end
+            if set then set(not (get and get())) paint() else win.Visible = not win.Visible end
+        end)
+        if get then paint() end
+        return b
+    end
 
-    NM.toggle = function() win.Visible = not win.Visible end
-    getgenv().NoirS6 = NM
+    dockBtn("≡", "MENU", nil, nil)
+    dockBtn("T", "TRIG",
+        function() return System.__triggerbot.__enabled == true end,
+        function(on) System.triggerbot.enable(on) end)
+    dockBtn("S", "SPAM",
+        function() return System.__properties.__manual_spam_enabled end,
+        function(on) if on then System.manual_spam.start() else System.manual_spam.stop() end end)
+
+    -- drag the whole dock
+    local ddrag, ds, dps = false, nil, nil
+    dock.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.Touch then
+            ddrag = true dockMoved = false ds = i.Position dps = dock.Position
+        end
+    end)
+    dock.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch then ddrag = false end end)
+    UserInputService.InputChanged:Connect(function(i)
+        if ddrag and i.UserInputType == Enum.UserInputType.Touch then
+            local d = i.Position - ds
+            if math.abs(d.X) > 8 or math.abs(d.Y) > 8 then dockMoved = true end
+            dock.Position = UDim2.new(dps.X.Scale, dps.X.Offset + d.X, dps.Y.Scale, dps.Y.Offset + d.Y)
+        end
+    end)
 end
