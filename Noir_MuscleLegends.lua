@@ -1598,7 +1598,6 @@ do
     local navDefs = {
         { "\x68ome",   16898613509, Vector2.new(820, 147), "\x48ome" },
         { "\x61im",    16898613777, Vector2.new(967, 759), "\x54rain" },
-        { "\x66arm",   16898613509, Vector2.new(771, 563), "\x46arm" },
         { "\x77orld",  16898613509, Vector2.new(771, 563), "\x43ombat" },
         { "\x6disc",   16898613509, Vector2.new(820, 147), "\x4disc" },
     }    for i, d in ipairs(navDefs) do
@@ -2369,16 +2368,13 @@ function host.CreateTab()
     local tab = {}
     function tab:AddSection(name, description)
         yieldDuringBuild()
+        local __BULLET = string.char(226, 128, 162)
         local col, page = nil, "\x61im"
-        if string.sub(name, 1, 7) == "TRAIN \x2022 " then
+        if string.sub(name, 1, 7) == ("TRAIN " .. __BULLET .. " ") then
             sectionCount += 1; col = cols[(sectionCount - 1) % 2 + 1]; page = "\x61im"
-        elseif string.sub(name, 1, 6) == "FARM \x2022 " then
-            farmSectionCount += 1; col = farmCols[(farmSectionCount - 1) % 2 + 1]; page = "\x66arm"
-        elseif string.sub(name, 1, 8) == "COMBAT \x2022 " then
+        elseif string.sub(name, 1, 8) == ("COMBAT " .. __BULLET .. " ") then
             worldSectionCount += 1; col = worldCols[(worldSectionCount - 1) % 2 + 1]; page = "\x77orld"
-        elseif string.sub(name, 1, 6) == "SHOP \x2022 " then
-            mapSectionCount += 1; col = mapCols[(mapSectionCount - 1) % 2 + 1]; page = "\x6dap"
-        elseif string.sub(name, 1, 6) == "MISC \x2022 " then
+        elseif string.sub(name, 1, 6) == ("MISC " .. __BULLET .. " ") then
             miscSectionCount += 1; col = miscCols[(miscSectionCount - 1) % 2 + 1]; page = "\x6disc"
         end
         if not col then
@@ -2391,7 +2387,7 @@ function host.CreateTab()
         corner(panel, 10); stroke(panel, C.border, .15)
         local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(0, 27), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = C.border, BorderSizePixel = 0 })
         table.insert(sectionPanels, { panel = panel, page = page, name = string.lower(name .. "\x20" .. (description or "")) })
-        local shownName = name:gsub("^%u+ \x2022 ", "")
+        local shownName = name:gsub("^%u+ " .. string.char(226, 128, 162) .. " ", "")
         kitiTitle(panel, shownName)
         if description and description ~= "" then kitiDesc(panel, description) end
         local holder = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(10, description ~= "" and 48 or 38), Size = UDim2.new(1, -20, 0, 0),
@@ -2970,7 +2966,7 @@ local library = (function()
     local __tabHost = __NC.host.CreateTab()
     local PAGE_FOR = {
         Farm = "TRAIN \xE2\x80\xA2 ", ["Fast Farming"] = "TRAIN \xE2\x80\xA2 ", Gym = "TRAIN \xE2\x80\xA2 ",
-        Rebirths = "FARM \xE2\x80\xA2 ",
+        Rebirths = "MISC \xE2\x80\xA2 ",
         Kill = "COMBAT \xE2\x80\xA2 ", Rock = "COMBAT \xE2\x80\xA2 ", Boss = "COMBAT \xE2\x80\xA2 ",
         Stats = "MISC \xE2\x80\xA2 ", Pets = "MISC \xE2\x80\xA2 ",
         Misc = "MISC \xE2\x80\xA2 ", Teleport = "MISC \xE2\x80\xA2 ", Credits = "MISC \xE2\x80\xA2 ",
@@ -7141,7 +7137,7 @@ Tabs.Credits:AddLabel("==================================")
 task.defer(function()
     local core2 = NoirGenv().__NoirCore
     if not core2 then return end
-    local win2, TweenService2, RunService2 = core2.win, core2.TweenService, core2.RunService
+    local win2, TweenService2 = core2.win, core2.TweenService
     if not (win2 and TweenService2) then return end
     task.wait(0.35)
     if not win2.Parent then return end
@@ -7152,7 +7148,7 @@ task.defer(function()
     win2.Visible = true
     local scaleObj = win2:FindFirstChildWhichIsA("UIScale")
     if scaleObj then scaleObj.Scale = .68 end
-    TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .04, Rotation = 0 }):Play()
+    TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .22, Rotation = 0 }):Play()
     if scaleObj then
         TweenService2:Create(scaleObj, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
     end
