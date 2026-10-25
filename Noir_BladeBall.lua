@@ -12121,7 +12121,7 @@ do
         local c = prop("__connections")
         if on then
             if c.__random_curve then c.__random_curve:Disconnect() end
-            c.__random_curve = System.run_service.PreSimulation:Connect(function()
+            c.__random_curve = RunService.PreSimulation:Connect(function()
                 if c.__random_curve == nil then return end
                 if prop("__autoparry_enabled") and #prop("__parries") > 0 then
                     CurveType = CURVE_NAMES[math.random(1, #CURVE_NAMES)]
@@ -12159,6 +12159,54 @@ do
         startStop(System.manual_spam, on)
         Notify(on and "Manual Spam enabled" or "Manual Spam disabled")
     end)
+    sSpam:AddParagraph("Triggerbot", "Автоматически жмёт блок в тот момент, когда мяч уже нацелен и летит в тебя — реакция срабатывает по триггеру, без постоянного авто-парри. Полезен как «подстраховка» рядом с Auto Parry.")
+    sSpam:AddLabel("Manual Spam/Auto Spam: жмут блок серией — выбери режим Remote/Keypress ниже.")
+
+    -- ============ MAIN • SKIN CHANGER ============
+    local ASSETS = game:GetService("ReplicatedStorage")
+    local swordNames, explosionNames = {}, {}
+    pcall(function()
+        local m = require(ASSETS.Shared.ReplicatedInstances.Swords)
+        for k in pairs(m) do if type(k) == "string" then table.insert(swordNames, k) end end
+    end)
+    pcall(function()
+        local em = ASSETS.Shared.ReplicatedInstances:FindFirstChild("Explosions")
+        if em and em:IsA("ModuleScript") then
+            local m = require(em)
+            for k in pairs(m) do if type(k) == "string" then table.insert(explosionNames, k) end end
+        end
+    end)
+    table.sort(swordNames)
+    table.sort(explosionNames)
+    if #swordNames == 0 then swordNames = { "Default" } end
+    if #explosionNames == 0 then explosionNames = { "Default" } end
+    local sSkin = tab:AddSection("MAIN • SKIN CHANGER", "visual sword & explosion swap")
+    local function applySword(name)
+        genv.swordModel = name
+        genv.swordAnimations = name
+        genv.swordFX = name
+        genv.skinChanger = true
+        if genv.updateSword then task.spawn(genv.updateSword) end
+        if genv.saveLastEquippedSword then pcall(genv.saveLastEquippedSword, name) end
+    end
+    local function applyExplosion(name)
+        genv.explosionFX = name
+        genv.explosionChanger = true
+        if genv.updateExplosion then task.spawn(genv.updateExplosion) end
+        if genv.saveLastEquippedExplosion then pcall(genv.saveLastEquippedExplosion, name) end
+    end
+    sSkin:AddToggle("Skin Changer", function(on)
+        genv.skinChanger = on
+        if on and genv.swordModel and genv.swordModel ~= "" and genv.updateSword then task.spawn(genv.updateSword) end
+        Notify(on and "Skin Changer enabled" or "Skin Changer disabled")
+    end)
+    sSkin:AddDropdown("Sword Skin", swordNames, function(v) applySword(v) end)
+    sSkin:AddToggle("Explosion Changer", function(on)
+        genv.explosionChanger = on
+        if on and genv.explosionFX and genv.explosionFX ~= "" and genv.updateExplosion then task.spawn(genv.updateExplosion) end
+    end)
+    sSkin:AddDropdown("Explosion Skin", explosionNames, function(v) applyExplosion(v) end)
+    sSkin:AddLabel("Skins apply locally; re-equip sword if nothing changed.")
 
     -- ============ floating screen buttons (same round style) ============
     local screenButtons = {}
@@ -12251,7 +12299,7 @@ do
     local labTarget = sStat:AddLabel("Targeted At Me: —")
     task.spawn(function()
         while true do
-            task.wait(.5)
+            task.wait(1)
             pcall(function() labCapture:SetValue("Capture: " .. ((_capturedRemote and _capturedRemote.Name) or "press block once")) end)
             pcall(function() labAP:SetValue("Auto Parry: " .. (prop("__autoparry_enabled") and "ON" or "off")) end)
             pcall(function() labParries:SetValue("Active Parries: " .. tostring(#prop("__parries"))) end)
@@ -12276,6 +12324,31 @@ do
             end)
         end
     end)
+
+    -- ============ hide empty sidebar pages ============
+    do
+        local keep = { Home = true, Main = true, Combat = true, Misc = true }
+        local sidebar
+        for _, ch in ipairs(win:GetChildren()) do
+            if ch:IsA("Frame") and ch.Size == UDim2.new(0, 78, 1, 0) then sidebar = ch break end
+        end
+        if sidebar then
+            local visible = {}
+            for _, b in ipairs(sidebar:GetChildren()) do
+                if b:IsA("TextButton") and b.Name ~= "" then
+                    if keep[b.Name] then
+                        table.insert(visible, b)
+                    else
+                        b.Visible = false
+                    end
+                end
+            end
+            table.sort(visible, function(a, b) return a.Position.Y.Offset < b.Position.Y.Offset end)
+            for i, b in ipairs(visible) do
+                b.Position = UDim2.fromOffset(19, 104 + (i - 1) * 42)
+            end
+        end
+    end
 
     -- ============ open animation (like hub build) ============
     win.Visible = true
