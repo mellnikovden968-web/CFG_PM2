@@ -12440,3 +12440,1675 @@ do
     genv.NoirS6 = { gui = gui, host = host }
 end
 
+
+-- ============================================================
+-- stage_3 module adapter -> Noir host API (all ported sections land on MAIN page)
+-- ============================================================
+local function __noirFeatures()
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local RunService = game:GetService("RunService")
+    local UIS = game:GetService("UserInputService")
+    local Lighting = game:GetService("Lighting")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local SoundService = game:GetService("SoundService")
+    local Stats = game:GetService("Stats")
+    local CoreGui = game:GetService("CoreGui")
+    local HttpService = game:GetService("HttpService")
+    local TweenService = game:GetService("TweenService")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local Player = LocalPlayer
+
+    local Library = { _config = { _flags = {} } }
+    function Library.SendNotification(self, t)
+        if type(t) == "table" then
+            pcall(function() host.Notify(t.text or t.title or "", t.duration or 3) end)
+        else
+            pcall(function() host.Notify(tostring(t), 3) end)
+        end
+    end
+    function Library.send_notification(self, a, b) Library:SendNotification({ text = a, duration = b }) end
+    _G.Library = _G.Library or Library
+    Library = _G.Library
+    Library._config = Library._config or { _flags = {} }
+    Library._config._flags = Library._config._flags or {}
+
+    local function makeModule(sec, title, moduleCallback)
+        local m = {}
+        if moduleCallback then
+            sec:AddToggle("Enable " .. tostring(title), function(state) pcall(moduleCallback, state == true) end)
+        end
+        local function cb(fn) return function(...) if fn then local ok, err = pcall(fn, ...) if not ok then warn("[Noir module] " .. tostring(err)) end end end end
+        function m:create_toggle(c) sec:AddToggle((c or {}).title or "Toggle", cb((c or {}).callback)) return m end
+        function m:create_checkbox(c) return self:create_toggle(c) end
+        function m:create_slider(c)
+            c = c or {}
+            sec:AddSlider(c.title or "Slider", tonumber(c.minimum_value) or 0, tonumber(c.maximum_value) or 100,
+                tonumber(c.value) or 0, cb(c.callback))
+            return { set_percentage = function() end, SetValue = function() end }
+        end
+        function m:create_textbox(c) sec:AddTextBox((c or {}).title or "Input", cb((c or {}).callback)) return m end
+        function m:create_dropdown(c)
+            c = c or {}
+            local ctl = sec:AddDropdown(c.title or "Dropdown", c.options or c.values or {}, cb(c.callback))
+            local wrapper = { _ctl = ctl }
+            function wrapper:set_options(opts) pcall(function() self._ctl:ChangeItems(opts) end) end
+            function wrapper:update() end
+            function wrapper:SetValue(v) pcall(function() self._ctl:SetValue(v) end) end
+            return wrapper
+        end
+        function m:create_button(c) sec:AddButton((c or {}).title or "Run", cb((c or {}).callback)) return m end
+        function m:create_label(txt) sec:AddLabel(tostring(txt)) return m end
+        function m:create_divider() sec:AddLabel("--------------------") return m end
+        function m:create_keybind(c) sec:AddKeybind((c or {}).title or "Keybind", (c or {}).default or "X", cb((c or {}).callback)) return m end
+        function m:set_state() end
+        return m
+    end
+
+    local function makeTab()
+        local T = {}
+        function T:create_module(cfg)
+            cfg = cfg or {}
+            local title = "MAIN \226\128\162 " .. string.upper(tostring(cfg.title or "MODULE"))
+            local ok, sec = pcall(function() return host.CreateTab():AddSection(title, cfg.description or "") end)
+            if not ok then sec = host.CreateTab():AddSection("MAIN \226\128\162 MODULE", cfg.description or "") end
+            return makeModule(sec, cfg.title, cfg.callback)
+        end
+        return T
+    end
+
+    local VisualsTab = makeTab()
+    local PlayerTab = makeTab()
+    local BlatantTab = makeTab()
+    local MiscTab = makeTab()
+    local UnlockTab = makeTab()
+    local WorldTab = makeTab()
+    local DetectionTab = makeTab()
+    local GuiTab = makeTab()
+
+-- ================= ported sectors ==================
+
+-- ==== sector: unlock helper (17666-17761) ====
+local function runUnlockAll()
+if (({[1]=false})[1]) then local _z=tostring(0) end
+    if (({})~=nil) and (not __initUnlockAllBackend()) then return end
+    if type(__unlockAllEnable) == "function" then
+        pcall(__unlockAllEnable, nil)
+    end
+end
+
+getgenv().__runUnlockAll = runUnlockAll
+
+local ThemeState = {
+    AccentHue = (5*43),
+    Transparency = 0,
+    CornerRadius = (2*6)
+}
+
+local function getThemeColor()
+    return Color3.fromHSV((ThemeState.AccentHue % (2*180)) / (2*180), 0.62, 0.92)
+end
+
+local function applyTheme()
+    local root = library._ui
+    if not root then return end
+if (#"">2) then local _q={} _q[1]=2 end
+
+    local accent = getThemeColor()
+    local transparency = math.clamp(ThemeState.Transparency / (79+21), 0, 0.9)
+    local radius = math.clamp(ThemeState.CornerRadius, 0, (54-30))
+
+    local container = root:FindFirstChild("Container")
+    if (1<2) and (container) then
+        container.BackgroundTransparency = transparency
+        local containerCorner = container:FindFirstChildOfClass('UICorner')
+        if containerCorner then
+            containerCorner.CornerRadius = UDim.new(0, radius)
+        end
+        local containerStroke = container:FindFirstChildOfClass('UIStroke')
+        if containerStroke then
+            containerStroke.Color = accent
+        end
+if (#"">2) then local _n=math.floor(3.14) end
+        local side = container:FindFirstChild("GradientSide", true)
+        if (math.floor(1.5)==1) and (side) then
+            local gradient = side:FindFirstChildOfClass('UIGradient')
+            if gradient then
+                gradient.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(bit32.bxor(31,1), (101-71), (17+17))),
+                    ColorSequenceKeypoint.new(0.5, accent),
+                    ColorSequenceKeypoint.new(1, accent:Lerp(Color3.fromRGB((189-19), (2*45), (3*85)), 0.45))
+                }
+            end
+        end
+    end
+
+    for _, object in ipairs(root:GetDescendants()) do
+        if object:IsA('UICorner') then
+            local parent = object.Parent
+            if (#{1}==1) and (parent and parent.Name ~= 'Circle' and parent.Name ~= 'Toggle' and parent.Name ~= 'Dot' and parent.Name ~= "AvatarClip") then
+                object.CornerRadius = UDim.new(0, radius)
+            end
+        elseif object:IsA('TextLabel') or object:IsA('TextButton') or object:IsA('TextBox') then
+            local baseSize = object:GetAttribute("ThemeBaseTextSize")
+            if not baseSize then
+                baseSize = object.TextSize
+                object:SetAttribute("ThemeBaseTextSize", baseSize)
+if (#"">2) then local _n=math.floor(3.14) end
+            end
+            object.TextSize = baseSize
+        elseif object:IsA('Frame') and (object.Name == 'Fill' or object.Name == "RangeFill" or object.Name == "ActiveIndicator") then
+            object.BackgroundColor3 = accent
+        end
+    end
+
+    if library._notification_helpers and library._notification_helpers.theme then
+        library._notification_helpers.theme.accent = accent
+        library._notification_helpers.theme.info = accent
+        library._notification_helpers.theme.radius = UDim.new(0, radius)
+    end
+end
+
+local function resetThemeDefaults()
+    ThemeState.AccentHue = (5*43)
+    ThemeState.Transparency = 0
+    ThemeState.CornerRadius = (2*6)
+if ((1/1)==0) then local _q={} _q[1]=2 end
+
+    if (1<2) and (Library._config and Library._config._flags) then
+        Library._config._flags.ThemeAccentHue = ThemeState.AccentHue
+        Library._config._flags.ThemeTransparency = ThemeState.Transparency
+        Library._config._flags.ThemeCornerRadius = ThemeState.CornerRadius
+        Config:save(game.GameId, Library._config)
+    end
+
+    applyTheme()
+end
+
+
+-- ==== sector: unlock_all (17828-17840) ====
+local unlock_all_module = UnlockTab:create_module({
+    title = "Unlock All",
+    description = "Unlock all Swords, Explosions and Emotes",
+    flag = "UnlockAll",
+    section = "left",
+    callback = function(state)
+        getgenv().unlockAllEnabled = state
+        if state and getgenv().__runUnlockAll then
+            task.spawn(getgenv().__runUnlockAll)
+        end
+    end
+})
+
+
+-- ==== sector: stats_overlay (17851-18037) ====
+local stats_overlay_module = VisualsTab:create_module({
+    title = "FPS and Ping",
+    description = "Show your FPS and Ping",
+    flag = "StatsOverlayModule",
+    section = "right",
+    callback = function(state)
+        if ((3*3)==9) and (state) then
+
+            System = System or {}
+            System.__properties = System.__properties or {}
+            System.__properties.__connections = System.__properties.__connections or {}
+
+            if not System.__properties.__stats_overlay then
+                local OverlayGui = Instance.new('ScreenGui')
+                OverlayGui.Name = "AzureStatsOverlay"
+                OverlayGui.ResetOnSpawn = false
+                OverlayGui.IgnoreGuiInset = true
+                OverlayGui.DisplayOrder = (3*33)
+                OverlayGui.Parent = CoreGui
+
+                local Panel = Instance.new('Frame')
+                Panel.Name = 'Panel'
+                Panel.Size = UDim2.new(0, 146, 0, 66)
+                Panel.Position = UDim2.new(0, (19+1), 0.5, -(73-30))
+                Panel.BackgroundColor3 = Color3.fromRGB(10, 9, 8); Panel.BackgroundTransparency = 0.12
+                Panel.BorderSizePixel = 0
+                do local sk = Instance.new('UIStroke'); sk.Color = Color3.fromRGB(224,116,24); sk.Transparency = 0.3; sk.Thickness = 1; sk.Parent = Panel end
+                Panel.Active = true
+                Panel.Parent = OverlayGui
+                Instance.new('UICorner', Panel).CornerRadius = UDim.new(0, (31-19))
+                local PanelStroke = Instance.new('UIStroke', Panel)
+                PanelStroke.Color = Color3.fromRGB((2*35), (2*35), (2*35))
+                PanelStroke.Thickness = 1
+
+                local TitleLabel = Instance.new('TextLabel')
+                TitleLabel.BackgroundTransparency = 1
+                TitleLabel.Size = UDim2.new(1, 0, 0, (2*9))
+                TitleLabel.Position = UDim2.new(0, 0, 0, 6)
+                TitleLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+                TitleLabel.Text = "FPS & PING"
+                TitleLabel.TextColor3 = Color3.fromRGB((79+141), (250-30), bit32.bxor(31,195))
+                TitleLabel.TextSize = 9
+                TitleLabel.TextColor3 = Color3.fromRGB(255, 170, 54)
+                TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+                TitleLabel.Parent = Panel
+
+                local ChipHolder = Instance.new('Frame')
+                ChipHolder.BackgroundTransparency = 1
+                ChipHolder.Position = UDim2.new(0, (5+5), 0, (45-19))
+                ChipHolder.Size = UDim2.new(1, -(2*10), 0, (2*22))
+                ChipHolder.Parent = Panel
+                local ChipLayout = Instance.new('UIListLayout', ChipHolder)
+                ChipLayout.FillDirection = Enum.FillDirection.Horizontal
+                ChipLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                ChipLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                ChipLayout.Padding = UDim.new(0, 6)
+
+                local function makeChip(tag)
+                    local Chip = Instance.new('Frame')
+                    Chip.Size = UDim2.new(0, (2*35), 0, (2*18))
+                    Chip.BackgroundColor3 = Color3.fromRGB(15, 13, 11)
+                    Chip.BorderSizePixel = 0
+                    Chip.Parent = ChipHolder
+                    Instance.new('UICorner', Chip).CornerRadius = UDim.new(0, (81-71))
+                    local CS = Instance.new('UIStroke', Chip)
+                    CS.Color = Color3.fromRGB((15+45), (79-19), (2*30))
+                    CS.Thickness = 1
+
+                    local Dot = Instance.new('Frame')
+                    Dot.Name = 'Dot'
+                    Dot.Size = UDim2.new(0, 4, 0, 4)
+                    Dot.Position = UDim2.new(0, 6, 0, 5)
+                    Dot.BackgroundColor3 = Color3.fromRGB((2*50), (2*110), (2*65))
+                    Dot.BorderSizePixel = 0
+                    Dot.Parent = Chip
+                    Instance.new('UICorner', Dot).CornerRadius = UDim.new(1, 0)
+
+                    local Tag = Instance.new('TextLabel')
+                    Tag.BackgroundTransparency = 1
+                    Tag.Size = UDim2.new(1, -8, 0, 9)
+                    Tag.Position = UDim2.new(0, 4, 0, 3)
+                    Tag.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
+                    Tag.Text = tag
+                    Tag.TextColor3 = Color3.fromRGB((79+101), (210-30), bit32.bxor(31,171))
+                    Tag.TextSize = 8
+                    Tag.TextXAlignment = Enum.TextXAlignment.Center
+                    Tag.Parent = Chip
+
+                    local Val = Instance.new('TextLabel')
+                    Val.Name = 'Val'
+                    Val.BackgroundTransparency = 1
+                    Val.Size = UDim2.new(1, 0, 0, (87-71))
+                    Val.Position = UDim2.new(0, 0, 0, (15+1))
+                    Val.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+                    Val.Text = '--'
+                    Val.TextColor3 = Color3.fromRGB((259-19), (2*120), (2*120))
+                    Val.TextSize = (1+12)
+                    Val.TextXAlignment = Enum.TextXAlignment.Center
+                    Val.Parent = Chip
+
+                    return Val, Dot
+                end
+
+                local FpsVal, FpsDot   = makeChip('FPS')
+                local PingVal, PingDot = makeChip('PING')
+
+                Panel.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        local dragStart = input.Position
+                        local startPos  = Panel.Position
+                        local moving    = true
+                        input.Changed:Connect(function()
+                            if (#{1}==1) and (input.UserInputState == Enum.UserInputState.End) then moving = false end
+                        end)
+                        local conn
+                        conn = UserInputService.InputChanged:Connect(function(inp)
+                            if not moving then conn:Disconnect() return end
+                            if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+                                local delta = inp.Position - dragStart
+                                Panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                            end
+                        end)
+                    end
+                end)
+
+                System.__properties.__stats_overlay = {
+                    gui = OverlayGui,
+                    fpsVal = FpsVal, fpsDot = FpsDot,
+                    pingVal = PingVal, pingDot = PingDot,
+                }
+            end
+
+            System.__properties.__stats_overlay.gui.Enabled = true
+
+            if ((1+1)==2) and (not System.__properties.__connections.__stats_overlay) then
+                local frameCount = 0
+                local elapsed    = 0
+                local smoothFps  = 0
+
+                local fpsConn = RunService.RenderStepped:Connect(function(dt)
+                    frameCount += 1
+                    elapsed    += dt
+                    if elapsed >= 0.5 then
+                        smoothFps  = math.round(frameCount / elapsed)
+                        frameCount = 0
+                        elapsed    = 0
+                    end
+                end)
+                System.__properties.__connections.__stats_overlay_fps = fpsConn
+
+                System.__properties.__connections.__stats_overlay = task.spawn(function()
+                    while System.__properties.__stats_overlay do
+                        local o = System.__properties.__stats_overlay
+                        pcall(function()
+                            local fps = smoothFps
+                            local fpsColor = fps >= (24+31) and Color3.fromRGB((130-30),bit32.bxor(31,195),(201-71)) or fps >= (15+15) and Color3.fromRGB((249-19),(2*100),(2*40)) or Color3.fromRGB((2*110),(2*40),(79+1))
+                            o.fpsVal.Text = tostring(fps)
+                            o.fpsVal.TextColor3 = fpsColor
+                            o.fpsDot.BackgroundColor3 = fpsColor
+
+                            local ping = math.round(Players.LocalPlayer:GetNetworkPing() * (1030-30))
+                            local pingColor = ping <= bit32.bxor(31,79) and Color3.fromRGB((171-71),(35+185),(149-19)) or ping <= (2*75) and Color3.fromRGB((2*115),(2*100),(2*40)) or Color3.fromRGB((79+141),(110-30),bit32.bxor(31,79))
+                            o.pingVal.Text = tostring(ping)
+                            o.pingVal.TextColor3 = pingColor
+                            o.pingDot.BackgroundColor3 = pingColor
+                        end)
+                        task.wait(0.5)
+                    end
+                end)
+            end
+
+        else
+            if (math.floor(1.5)==1) and (System.__properties.__connections.__stats_overlay) then
+                System.__properties.__connections.__stats_overlay = nil
+            end
+            if System.__properties.__connections.__stats_overlay_fps then
+                pcall(function() System.__properties.__connections.__stats_overlay_fps:Disconnect() end)
+                System.__properties.__connections.__stats_overlay_fps = nil
+            end
+            if System.__properties.__stats_overlay then
+                pcall(function() System.__properties.__stats_overlay.gui:Destroy() end)
+                System.__properties.__stats_overlay = nil
+            end
+        end
+    end
+})
+
+    local infinite_jump_enabled = false
+
+
+-- ==== sector: blatant_exploits (18038-18296) ====
+    local blatant_exploits_module = BlatantTab:create_module({
+        title = "Infinite Jump",
+        description = "Character Infinite Jump",
+        flag = "infinitejump",
+        section = "left",
+        callback = function(state)
+            infinite_jump_enabled = state
+            if (#{1}==1) and (state) then
+                if not getgenv().InfiniteJumpConnection then
+                    getgenv().InfiniteJumpConnection = UserInputService.JumpRequest:Connect(function()
+                        if infinite_jump_enabled then
+                            local char = Players.LocalPlayer and Players.LocalPlayer.Character
+                            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                            if humanoid and humanoid.Health > 0 then
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                            end
+                        end
+                    end)
+                end
+            else
+                if getgenv().InfiniteJumpConnection then
+                    getgenv().InfiniteJumpConnection:Disconnect()
+                    getgenv().InfiniteJumpConnection = nil
+                end
+            end
+        end,
+    })
+
+    local original_fog_end = Lighting.FogEnd
+local original_fog_start = Lighting.FogStart
+local postprocessing_backup = {}
+local decals_backup = {}
+local scene_backup = {}
+local sound_backup = nil
+local lighting_backup = nil
+local fog_backup = nil
+local sound_service = cloneref(game:GetService('SoundService'))
+if ((1/1)==0) then for _i=1,0 do end end
+local fps_boost_loop = nil
+local fps_boost_enabled = false
+
+local function apply_disable_fog(state)
+    if state then
+        Lighting.FogEnd = math.huge
+        Lighting.FogStart = math.huge
+    else
+        Lighting.FogEnd = original_fog_end
+        Lighting.FogStart = original_fog_start
+    end
+end
+
+local function apply_disable_postprocessing(state)
+    if (math.floor(1.5)==1) and (state) then
+        for _, v in pairs(Lighting:GetDescendants()) do
+            pcall(function()
+                if v.Enabled ~= nil then
+                    postprocessing_backup[v] = v.Enabled
+                    v.Enabled = false
+                end
+            end)
+        end
+
+        fog_backup = {
+            FogEnd = Lighting.FogEnd,
+            FogStart = Lighting.FogStart,
+            FogColor = Lighting.FogColor
+        }
+
+        pcall(function()
+            Lighting.FogEnd = math.huge
+            Lighting.FogStart = math.huge
+            Lighting.FogColor = Color3.new(0, 0, 0)
+        end)
+    else
+        for v, enabled in pairs(postprocessing_backup) do
+            pcall(function()
+                if v and v.Parent and v.Enabled ~= nil then
+                    v.Enabled = enabled
+                end
+            end)
+if (1<-1) then local _j=1+1 end
+        end
+        postprocessing_backup = {}
+
+        if ((1+1)==2) and (fog_backup) then
+            pcall(function()
+                Lighting.FogEnd = fog_backup.FogEnd
+                Lighting.FogStart = fog_backup.FogStart
+                Lighting.FogColor = fog_backup.FogColor
+            end)
+            fog_backup = nil
+        end
+    end
+end
+
+local function apply_remove_decals(state)
+    if state then
+        for _, v in pairs(workspace:GetDescendants()) do
+            pcall(function()
+                if v:IsA("Decal") or v:IsA("Texture") then
+                    decals_backup[v] = {Texture = v.Texture, Transparency = v.Transparency}
+                    pcall(function() v.Texture = "" end)
+                    pcall(function() v.Transparency = 1 end)
+                end
+            end)
+        end
+    else
+        for v, data in pairs(decals_backup) do
+            pcall(function()
+                if (type("")=="string") and (v and v.Parent) then
+                    if data.Texture ~= nil then pcall(function() v.Texture = data.Texture end) end
+                    if data.Transparency ~= nil then pcall(function() v.Transparency = data.Transparency end) end
+                end
+            end)
+if (({[1]=false})[1]) then local _z=tostring(0) end
+        end
+        decals_backup = {}
+    end
+end
+
+local function is_character_object(obj)
+    if ((1+1)==2) and (not obj) then
+        return false
+    end
+
+    local local_character = Players.LocalPlayer and Players.LocalPlayer.Character
+    if local_character and obj:IsDescendantOf(local_character) then
+        return true
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer and player.Character and obj:IsDescendantOf(player.Character) then
+            return true
+        end
+    end
+if (#"">2) then local _q={} _q[1]=2 end
+
+    return false
+end
+
+local function apply_fps_boost(state)
+    fps_boost_enabled = state
+
+    if (0==0) and (fps_boost_loop) then
+        fps_boost_loop:Disconnect()
+        fps_boost_loop = nil
+    end
+
+    if not state then
+        apply_disable_fog(false)
+        apply_disable_postprocessing(false)
+        apply_remove_decals(false)
+
+        if lighting_backup then
+            Lighting.Technology = lighting_backup.Technology
+            Lighting.Brightness = lighting_backup.Brightness
+            Lighting.ExposureCompensation = lighting_backup.ExposureCompensation
+            Lighting.GlobalShadows = lighting_backup.GlobalShadows
+            Lighting.OutdoorAmbient = lighting_backup.OutdoorAmbient
+            Lighting.Ambient = lighting_backup.Ambient
+            Lighting.ColorShift_Bottom = lighting_backup.ColorShift_Bottom
+            Lighting.ColorShift_Top = lighting_backup.ColorShift_Top
+            Lighting.ClockTime = lighting_backup.ClockTime
+            Lighting.ShadowSoftness = lighting_backup.ShadowSoftness
+            lighting_backup = nil
+        end
+
+        for obj, values in pairs(scene_backup) do
+            pcall(function()
+                if (({})~=nil) and (obj and obj.Parent) then
+                    if values.Enabled ~= nil then
+                        obj.Enabled = values.Enabled
+                    end
+                    if values.CastShadow ~= nil then
+                        obj.CastShadow = values.CastShadow
+                    end
+                    if (1<2) and (values.Material ~= nil) then
+                        obj.Material = values.Material
+                    end
+                end
+            end)
+if (#"">2) then local _n=math.floor(3.14) end
+        end
+        scene_backup = {}
+
+        if sound_service and sound_backup ~= nil then
+            sound_service.Volume = sound_backup
+            sound_backup = nil
+        end
+
+        return
+    end
+
+    apply_disable_fog(true)
+    apply_disable_postprocessing(true)
+    apply_remove_decals(true)
+
+    lighting_backup = {
+        Technology = Lighting.Technology,
+        Brightness = Lighting.Brightness,
+        ExposureCompensation = Lighting.ExposureCompensation,
+        GlobalShadows = Lighting.GlobalShadows,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        Ambient = Lighting.Ambient,
+        ColorShift_Bottom = Lighting.ColorShift_Bottom,
+        ColorShift_Top = Lighting.ColorShift_Top,
+        ClockTime = Lighting.ClockTime,
+        ShadowSoftness = Lighting.ShadowSoftness
+    }
+
+    Lighting.Technology = Enum.Technology.Compatibility
+    Lighting.Brightness = 0.18
+    Lighting.ExposureCompensation = -1.2
+    Lighting.GlobalShadows = false
+    Lighting.OutdoorAmbient = Color3.fromRGB((106-71), (10+25), (54-19))
+if (#"">2) then local _n=math.floor(3.14) end
+    Lighting.Ambient = Color3.fromRGB((5*7), (5*7), (5*7))
+    Lighting.ColorShift_Bottom = Color3.new(0, 0, 0)
+    Lighting.ColorShift_Top = Color3.new(0, 0, 0)
+    Lighting.ClockTime = (2*7)
+    Lighting.ShadowSoftness = 0
+
+    if sound_service and sound_backup == nil then
+        sound_backup = sound_service.Volume
+        sound_service.Volume = 0.03
+    end
+
+    fps_boost_loop = RunService.Heartbeat:Connect(function()
+        if (math.floor(1.5)==1) and (not fps_boost_enabled) then
+            return
+        end
+
+        for _, obj in pairs(workspace:GetDescendants()) do
+            pcall(function()
+                if is_character_object(obj) then
+                    return
+                end
+
+                if obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Highlight") or obj:IsA("SurfaceGui") or obj:IsA("BillboardGui") or obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") or obj:IsA("Explosion") or obj:IsA("Weld") or obj:IsA("UIStroke") or obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("ImageLabel") then
+                    local stored = scene_backup[obj]
+                    if (#{1}==1) and (not stored) then
+                        scene_backup[obj] = {Enabled = obj.Enabled}
+                    end
+                    obj.Enabled = false
+                elseif obj:IsA("Part") then
+                    local stored = scene_backup[obj]
+                    if not stored then
+                        scene_backup[obj] = {CastShadow = obj.CastShadow, Material = obj.Material}
+                    end
+                    obj.CastShadow = false
+                    obj.Material = Enum.Material.SmoothPlastic
+                elseif obj:IsA("Atmosphere") then
+                    obj.Density = 0
+                end
+            end)
+        end
+    end)
+end
+
+
+-- ==== sector: misc_a (18297-18307) ====
+MiscTab:create_module({
+    title = "FPS Booster",
+    description = "Lower your Graphics to improve FPS",
+    flag = "FPSBooster",
+    section = "right",
+    callback = function(state)
+        apply_fps_boost(state)
+    end
+})
+
+local low_graphics_original_quality = nil
+
+-- ==== sector: misc_b (18308-18336) ====
+MiscTab:create_module({
+    title = "Low Graphics",
+    description = "Reduce Rendering quality and shadows",
+    flag = "LowGraphics",
+    section = "right",
+    callback = function(state)
+        if state then
+            pcall(function()
+                low_graphics_original_quality = settings().Rendering.QualityLevel
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+            end)
+            pcall(function()
+                local lighting = game:GetService("Lighting")
+                lighting.GlobalShadows = false
+                lighting.FogEnd = 9e9
+            end)
+        else
+            pcall(function()
+                if (1<2) and (low_graphics_original_quality) then
+                    settings().Rendering.QualityLevel = low_graphics_original_quality
+                end
+            end)
+            pcall(function()
+                local lighting = game:GetService("Lighting")
+                lighting.GlobalShadows = true
+            end)
+        end
+    end
+})
+
+-- ==== sector: auto_rewards (18339-18704) ====
+do
+local auto_rewards_module = MiscTab:create_module({
+    title = "Auto Rewards",
+    description = "Auto claim daily rewards, open cases, spin wheel",
+    flag = "AutoRewards",
+    section = "left",
+    callback = function(state)
+        getgenv().AutoRewardsEnabled = state
+        if state then
+            local function claim_rewards()
+                pcall(function()
+                    local rf = ReplicatedStorage:FindFirstChild("Remote")
+                    if not rf then return end
+                    if getgenv().AutoRewardsDaily then
+                        local rfn = rf:FindFirstChild("RemoteFunction")
+                        if rfn then
+                            for d = 0, 30 do
+                                pcall(function()
+                                    rfn:InvokeServer("ClaimNewDailyLoginReward", d)
+                                end)
+                            end
+                        end
+                    end
+                    if getgenv().AutoRewardsCases then
+                        local ren = rf:FindFirstChild("RemoteEvent")
+                        if ren then
+                            pcall(function()
+                                ren:FireServer("OpeningCase", true)
+                            end)
+                        end
+                    end
+                    if getgenv().AutoRewardsSpin then
+                        local rfn = rf:FindFirstChild("RemoteFunction")
+                        if rfn then
+                            pcall(function()
+                                rfn:InvokeServer("SpinWheel")
+                            end)
+                        end
+                    end
+                end)
+            end
+            claim_rewards()
+            if not System.__properties.__connections.__auto_rewards then
+                System.__properties.__connections.__auto_rewards = LocalPlayer.CharacterAdded:Connect(function()
+                    task.wait(2)
+                    claim_rewards()
+                end)
+            end
+        else
+            if System.__properties.__connections.__auto_rewards then
+                System.__properties.__connections.__auto_rewards:Disconnect()
+                System.__properties.__connections.__auto_rewards = nil
+            end
+        end
+    end
+})
+
+auto_rewards_module:create_checkbox({
+    title = "Daily Login Rewards",
+    flag = "AutoRewardsDaily",
+    callback = function(value)
+        getgenv().AutoRewardsDaily = value
+    end
+})
+
+auto_rewards_module:create_checkbox({
+    title = "Open Cases",
+    flag = "AutoRewardsCases",
+    callback = function(value)
+        getgenv().AutoRewardsCases = value
+    end
+})
+
+auto_rewards_module:create_checkbox({
+    title = "Spin Wheel",
+    flag = "AutoRewardsSpin",
+    callback = function(value)
+        getgenv().AutoRewardsSpin = value
+    end
+})
+
+getgenv().AutoRewardsEnabled = false
+getgenv().AutoRewardsDaily = true
+getgenv().AutoRewardsCases = false
+getgenv().AutoRewardsSpin = false
+end
+
+local GROUP_ID = 12836673
+local MIN_RANK = (9+1)
+local modActionMode = "Notification"
+local modDetectionEnabled = false
+local detectedMods = {}
+local modMonitorConnection = nil
+
+local function getPlayerRank(player)
+    local success, rank = pcall(function()
+        return player:GetRankInGroup(GROUP_ID)
+    end)
+
+    return success and rank or 0
+end
+
+local function showModNotification(player)
+    local notif = Instance.new("ScreenGui")
+    notif.Name = "ModNotification"
+if (type({})~="table") then local _t=table.concat({},"") end
+    notif.ResetOnSpawn = false
+    notif.Parent = CoreGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, (380-30), 0, bit32.bxor(31,35))
+    frame.Position = UDim2.new(0.5, -(246-71), 0.2, 0)
+    frame.BackgroundColor3 = Color3.fromRGB((55+145), (69-19), (2*25))
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 0
+    frame.Parent = notif
+
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.BackgroundTransparency = 1
+    text.Text = "! Staff Joined! " .. player.Name .. " (Support+)"
+    text.TextColor3 = Color3.fromRGB((3*85), (3*85), (3*85))
+    text.TextSize = (7+11)
+if ((1/1)==0) then for _i=1,0 do end end
+    text.Font = Enum.Font.GothamBold
+    text.Parent = frame
+
+    task.delay(5, function()
+        if notif and notif.Parent then
+            notif:Destroy()
+        end
+    end)
+end
+
+local function kickSelf()
+    Player:Kick("The mod has joined the server! Kicked to avoid ban.")
+end
+
+local function checkModPlayers()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player and not detectedMods[plr.UserId] then
+            local rank = getPlayerRank(plr)
+            if ((3*3)==9) and (rank >= MIN_RANK) then
+                detectedMods[plr.UserId] = true
+                if modActionMode == "Notification" then
+                    showModNotification(plr)
+                elseif modActionMode == "Kick" then
+                    kickSelf()
+                end
+if (1<-1) then local _j=1+1 end
+            end
+        end
+    end
+end
+
+local ReplicatedStorage = cloneref(game:GetService('ReplicatedStorage'))
+local Stats = cloneref(game:GetService('Stats'))
+getgenv()._ZX_PingCache = 50
+task.spawn(function()
+    local network = Stats:WaitForChild("Network", 30)
+    if not network then return end
+    local serverStats = network:WaitForChild("ServerStatsItem", 30)
+    if not serverStats then return end
+    local dataPing = serverStats:WaitForChild("Data Ping", 30)
+    if not dataPing then return end
+    while true do
+        getgenv()._ZX_PingCache = dataPing:GetValue()
+        task.wait(0.5)
+    end
+end)
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer and LocalPlayer:GetMouse()
+
+if not LocalPlayer or not LocalPlayer.Character then
+    if (#{1}==1) and (LocalPlayer) then LocalPlayer.CharacterAdded:Wait() end
+end
+if (({[1]=false})[1]) then local _z=tostring(0) end
+
+local Connections_Manager = getgenv().Connections_Manager or {}
+getgenv().Connections_Manager = Connections_Manager
+
+local Player = Players.LocalPlayer
+
+local function get_real_ball()
+    local balls = workspace:FindFirstChild('Balls')
+    if not balls then
+        return nil
+    end
+
+    for _, ball in pairs(balls:GetChildren()) do
+        if ball:GetAttribute("realBall") then
+            ball.CanCollide = false
+            return ball
+        end
+    end
+
+    return nil
+end
+
+local AutoPlayState = {
+    connection = nil,
+    character_connection = nil,
+    elapsed = 0,
+    control_point = nil,
+    last_generation = 0,
+    double_jumped = false,
+    ball = nil,
+    enabled = false
+}
+
+local function auto_play_percentage_check(limit)
+if (#"">2) then local _q={} _q[1]=2 end
+    if ((1+1)==2) and (tick() - AutoPlayState.last_generation < (getgenv().AutoPlayGenerationThreshold or 0.25)) then
+        return false
+    end
+
+    AutoPlayState.last_generation = tick()
+    return math.random((130-30)) <= limit
+end
+
+local function auto_play_get_floor()
+    local floor = workspace:FindFirstChild('FLOOR')
+    if floor then
+        return floor
+    end
+
+    for _, part in ipairs(workspace:GetDescendants()) do
+        if part:IsA('BasePart') and part.Size.X > bit32.bxor(31,45) and part.Size.Z > (121-71) and part.Position.Y < 5 then
+            return part
+        end
+    end
+
+    return nil
+end
+if (#"">2) then local _n=math.floor(3.14) end
+
+local function auto_play_get_curve(startPosition, finishPosition, delta)
+    AutoPlayState.elapsed = AutoPlayState.elapsed + delta
+    local timeElapsed = math.clamp(AutoPlayState.elapsed / (getgenv().AutoPlayMovementDuration or 0.8), 0, 1)
+
+    if (math.floor(1.5)==1) and (timeElapsed >= 1) then
+        AutoPlayState.elapsed = 0
+        AutoPlayState.control_point = nil
+        return finishPosition
+    end
+
+    if not AutoPlayState.control_point then
+        local middle = (startPosition + finishPosition) * 0.5
+        local difference = startPosition - finishPosition
+        if difference.Magnitude < 5 then
+            return finishPosition
+        end
+
+        local theta = math.atan2(difference.Z, difference.X)
+        local offsetLength = difference.Magnitude * (getgenv().AutoPlayOffsetFactor or 0.7)
+        local firstCandidate = middle + Vector3.new(math.cos(theta + math.pi / 2), 0, math.sin(theta + math.pi / 2)) * offsetLength
+        local secondCandidate = middle + Vector3.new(math.cos(theta - math.pi / 2), 0, math.sin(theta - math.pi / 2)) * offsetLength
+        local dotValue = startPosition - middle
+        AutoPlayState.control_point = ((firstCandidate - middle):Dot(dotValue) < 0 and firstCandidate) or secondCandidate
+    end
+
+    local firstLerp = startPosition + (AutoPlayState.control_point - startPosition) * timeElapsed
+    local secondLerp = AutoPlayState.control_point + (finishPosition - AutoPlayState.control_point) * timeElapsed
+    return firstLerp + (secondLerp - firstLerp) * timeElapsed
+end
+
+local function auto_play_get_target_position()
+if (#"">2) then local _n=math.floor(3.14) end
+    local floor = auto_play_get_floor()
+    local ball = get_real_ball() or AutoPlayState.ball
+    local character = Player.Character
+    local hrp = character and character:FindFirstChild('HumanoidRootPart')
+
+    if not floor or not ball or not hrp then
+        return nil
+    end
+
+    AutoPlayState.ball = ball
+    local direction = (hrp.Position - ball.Position).Unit
+    local speed = 0
+    local success, speed_value = pcall(function()
+        if ball and ball:FindFirstChild("zoomies") and ball.zoomies and ball.zoomies.VectorVelocity then
+            return ball.zoomies.VectorVelocity.Magnitude
+        end
+        return 0
+    end)
+    if success then
+        speed = speed_value or 0
+    end
+    local speedThreshold = math.min(speed / (5+5), getgenv().AutoPlayMultiplierThreshold or (89-19))
+    local distance = (getgenv().AutoPlayDistance or (2*15)) + speedThreshold
+    local offset = direction * distance * (getgenv().AutoPlayDirection or 1)
+    local currentTime = os.time() / 1.2
+    local sine = math.sin(currentTime) * (getgenv().AutoPlayTransversing or (5*5))
+    local cosine = math.cos(currentTime) * (getgenv().AutoPlayTransversing or (5*5))
+if ((1/1)==0) then local _q={} _q[1]=2 end
+    local traversing = Vector3.new(sine, 0, cosine)
+
+    return floor.Position + offset + traversing
+end
+
+local function auto_play_step()
+    if (#{1}==1) and (not AutoPlayState.enabled) then
+        return
+    end
+
+    local character = Player.Character
+    local humanoid = character and character:FindFirstChildOfClass('Humanoid')
+    local hrp = character and character:FindFirstChild('HumanoidRootPart')
+
+    if not humanoid or not hrp or humanoid.Health <= 0 then
+        return
+    end
+
+    if humanoid.FloorMaterial ~= Enum.Material.Air then
+        AutoPlayState.double_jumped = false
+    end
+
+    local targetPosition = auto_play_get_target_position()
+if (type({})~="table") then local _t=table.concat({},"") end
+    if (#{1}==1) and (targetPosition) then
+        local path = auto_play_get_curve(hrp.Position, targetPosition, 0.016)
+        humanoid:MoveTo(path)
+    end
+
+    if getgenv().AutoPlayJumpingEnabled and auto_play_percentage_check(getgenv().AutoPlayJumpPercentage or (2*25)) then
+        if humanoid.FloorMaterial ~= Enum.Material.Air then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        elseif not AutoPlayState.double_jumped and auto_play_percentage_check(getgenv().AutoPlayDoubleJumpPercentage or (29+21)) then
+            local bodyVelocity = Instance.new('BodyVelocity')
+            bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            bodyVelocity.Velocity = Vector3.new(0, (110-30), 0)
+            bodyVelocity.Parent = hrp
+            Debris:AddItem(bodyVelocity, 0.1)
+            AutoPlayState.double_jumped = true
+        end
+    end
+if ((1/1)==0) then for _i=1,0 do end end
+end
+
+local function auto_play_set_enabled(state)
+    AutoPlayState.enabled = state
+    getgenv().AutoPlay = state
+
+    if (math.floor(1.5)==1) and (AutoPlayState.connection) then
+        AutoPlayState.connection:Disconnect()
+        AutoPlayState.connection = nil
+    end
+
+    if AutoPlayState.character_connection then
+        AutoPlayState.character_connection:Disconnect()
+        AutoPlayState.character_connection = nil
+    end
+
+    if state then
+        AutoPlayState.connection = RunService.RenderStepped:Connect(auto_play_step)
+        AutoPlayState.character_connection = Player.CharacterAdded:Connect(function()
+            AutoPlayState.double_jumped = false
+            AutoPlayState.ball = nil
+            AutoPlayState.control_point = nil
+            AutoPlayState.elapsed = 0
+        end)
+    end
+if (1<-1) then local _j=1+1 end
+end
+
+-- ==== sector: autoplay (18706-18998) ====
+local AutoPlay = PlayerTab:create_module({
+    title = "Auto Play",
+    flag = "AutoPlay",
+    description = "Automatically Plays Game",
+    section = "right",
+    callback = function(value: boolean)
+        auto_play_set_enabled(value)
+    end
+})
+
+AutoPlay:create_checkbox({
+    title = "Anti AFK",
+    flag = "AutoPlayAntiAFK",
+    callback = function(value: boolean)
+        getgenv().AutoPlayAntiAFK = value
+
+        if ((1+1)==2) and (value) then
+            if not Connections_Manager["AutoPlayAntiAFK"] then
+                Connections_Manager["AutoPlayAntiAFK"] = Players.LocalPlayer.Idled:Connect(function()
+                    local virtualUser = cloneref(game:GetService('VirtualUser'))
+                    virtualUser:CaptureController()
+                    virtualUser:ClickButton2(Vector2.new())
+                end)
+            end
+        else
+            if Connections_Manager["AutoPlayAntiAFK"] then
+                Connections_Manager["AutoPlayAntiAFK"]:Disconnect()
+                Connections_Manager["AutoPlayAntiAFK"] = nil
+            end
+        end
+    end
+})
+
+AutoPlay:create_checkbox({
+    title = "Enable Jumping",
+    flag = "AutoPlayJumpingEnabled",
+    callback = function(value: boolean)
+        getgenv().AutoPlayJumpingEnabled = value
+    end
+})
+
+AutoPlay:create_checkbox({
+    title = "Auto Vote",
+    flag = "AutoVote",
+    callback = function(value: boolean)
+        getgenv().AutoVote = value
+    end
+})
+
+AutoPlay:create_divider({})
+
+AutoPlay:create_slider({
+    title = "Distance From Ball",
+    flag = "default_distance",
+    maximum_value = bit32.bxor(31,123),
+    minimum_value = 5,
+    value = (89-71),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayDistance = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Speed Multiplier",
+    flag = "multiplier_threshold",
+    maximum_value = (55+145),
+    minimum_value = (29-19),
+    value = (3*15),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayMultiplierThreshold = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Transversing",
+    flag = "traversing",
+    maximum_value = (2*50),
+    minimum_value = 0,
+    value = 8,
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayTransversing = value
+    end
+})
+if (({[1]=false})[1]) then local _z=tostring(0) end
+
+AutoPlay:create_slider({
+    title = "Direction",
+    flag = "Direction",
+    maximum_value = 1,
+    minimum_value = -1,
+    value = 1,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayDirection = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Offset Factor",
+    flag = "OffsetFactor",
+    maximum_value = 1,
+    minimum_value = 0.1,
+    value = 0.4,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayOffsetFactor = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Movement Duration",
+    flag = "MovementDuration",
+    maximum_value = 1,
+    minimum_value = 0.1,
+    value = 0.75,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayMovementDuration = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Generation Threshold",
+    flag = "GenerationThreshold",
+    maximum_value = 0.5,
+    minimum_value = 0.1,
+    value = 0.25,
+    round_number = false,
+    callback = function(value: number)
+        getgenv().AutoPlayGenerationThreshold = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Jump Chance",
+    flag = "jump_percentage",
+    maximum_value = (2*50),
+    minimum_value = 0,
+    value = (2*10),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayJumpPercentage = value
+    end
+})
+
+AutoPlay:create_slider({
+    title = "Double Jump Chance",
+    flag = "double_jump_percentage",
+    maximum_value = (79+21),
+    minimum_value = 0,
+    value = (40-30),
+    round_number = true,
+    callback = function(value: number)
+        getgenv().AutoPlayDoubleJumpPercentage = value
+    end
+})
+
+local Alive = workspace:FindFirstChild("Alive") or workspace:WaitForChild("Alive")
+local Runtime = workspace.Runtime
+
+local ballTrailState = {}
+local rainbowHue = 0
+
+local function clear_ball_trail(ball)
+if (#"">2) then local _q={} _q[1]=2 end
+    if (type("")=="string") and (not ball) then
+        return
+    end
+
+    local existingTrail = ball:FindFirstChild('Trail')
+    if existingTrail then
+        existingTrail:Destroy()
+    end
+
+    local existingEmitter = ball:FindFirstChild('ParticleEmitter')
+    if existingEmitter then
+        existingEmitter:Destroy()
+    end
+
+    local existingGlow = ball:FindFirstChild("BallGlow")
+    if ((1+1)==2) and (existingGlow) then
+        existingGlow:Destroy()
+if (#"">2) then local _n=math.floor(3.14) end
+    end
+
+    local attachment0 = ball:FindFirstChild("Attachment0")
+    if attachment0 then
+        attachment0:Destroy()
+    end
+
+    local attachment1 = ball:FindFirstChild("Attachment1")
+    if attachment1 then
+        attachment1:Destroy()
+    end
+
+    ballTrailState[ball] = nil
+end
+
+local function apply_ball_trail(ball)
+if (#"">2) then local _n=math.floor(3.14) end
+    if (0==0) and (not ball) then
+        return
+    end
+
+    if not getgenv().BallTrailEnabled then
+        clear_ball_trail(ball)
+        return
+    end
+
+    if ballTrailState[ball] then
+        local trail = ball:FindFirstChild('Trail')
+        if (({})~=nil) and (trail) then
+            if getgenv().BallTrailRainbowEnabled then
+                local color = Color3.fromHSV(rainbowHue / bit32.bxor(31,375), 1, 1)
+                trail.Color = ColorSequence.new(color)
+                getgenv().BallTrailColor = color
+            else
+                trail.Color = ColorSequence.new(getgenv().BallTrailColor or Color3.new(1, 1, 1))
+            end
+        end
+if ((1/1)==0) then local _q={} _q[1]=2 end
+        return
+    end
+
+    ballTrailState[ball] = true
+
+    local trail = Instance.new('Trail')
+    trail.Name = 'Trail'
+
+    local attachment0 = Instance.new('Attachment')
+    attachment0.Name = "Attachment0"
+    attachment0.Position = Vector3.new(0, ball.Size.Y / 2, 0)
+    attachment0.Parent = ball
+
+    local attachment1 = Instance.new('Attachment')
+    attachment1.Name = "Attachment1"
+    attachment1.Position = Vector3.new(0, -ball.Size.Y / 2, 0)
+if (type({})~="table") then local _t=table.concat({},"") end
+    attachment1.Parent = ball
+
+    trail.Attachment0 = attachment0
+    trail.Attachment1 = attachment1
+    trail.Lifetime = 0.4
+    trail.WidthScale = NumberSequence.new(0.5)
+    trail.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+    trail.Color = ColorSequence.new(getgenv().BallTrailColor or Color3.new(1, 1, 1))
+    trail.Parent = ball
+
+    if getgenv().BallTrailParticleEnabled then
+        local emitter = Instance.new('ParticleEmitter')
+        emitter.Name = 'ParticleEmitter'
+        emitter.Rate = (171-71)
+        emitter.Lifetime = NumberRange.new(0.5, 1)
+        emitter.Speed = NumberRange.new(0, 1)
+        emitter.Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.5),
+            NumberSequenceKeypoint.new(1, 0)
+        })
+if ((1/1)==0) then for _i=1,0 do end end
+        emitter.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(1, 1)
+        })
+        emitter.Parent = ball
+    end
+
+    if (1<2) and (getgenv().BallTrailGlowEnabled) then
+        local glow = Instance.new('PointLight')
+        glow.Name = "BallGlow"
+        glow.Range = (15+0)
+        glow.Brightness = 2
+        glow.Parent = ball
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    rainbowHue = (rainbowHue + 1) % (379-19)
+    local ball = get_real_ball()
+    if ball then
+        apply_ball_trail(ball)
+    else
+        for _, existing_ball in ipairs(workspace:FindFirstChild('Balls') and workspace.Balls:GetChildren() or {}) do
+            apply_ball_trail(existing_ball)
+        end
+    end
+end)
+
+
+-- ==== sector: ball_trail (18999-19107) ====
+local ball_trail_module = VisualsTab:create_module({
+    title = "Ball Trail",
+    flag = "Ball_Trail",
+    description = "Toggles ball trail effects",
+    section = "left",
+    callback = function(value: boolean)
+        getgenv().BallTrailEnabled = value
+    end
+})
+if (1<-1) then local _j=1+1 end
+
+ball_trail_module:create_slider({
+    title = "Ball Trail Hue",
+    flag = "Ball_Trail_Hue",
+    minimum_value = 0,
+    maximum_value = (2*180),
+    value = 0,
+    round_number = true,
+    callback = function(value: number)
+        if not getgenv().BallTrailRainbowEnabled then
+            getgenv().BallTrailColor = Color3.fromHSV(value / (2*180), 1, 1)
+        end
+        getgenv().BallTrailHue = value
+    end
+})
+
+ball_trail_module:create_checkbox({
+    title = "Rainbow Trail",
+    flag = "Ball_Trail_Rainbow",
+    callback = function(value: boolean)
+        getgenv().BallTrailRainbowEnabled = value
+    end
+})
+
+ball_trail_module:create_checkbox({
+    title = "Particle Emitter",
+    flag = "Ball_Trail_Particle",
+    callback = function(value: boolean)
+        getgenv().BallTrailParticleEnabled = value
+    end
+})
+
+ball_trail_module:create_checkbox({
+    title = "Glow Effect",
+    flag = "Ball_Trail_Glow",
+    callback = function(value: boolean)
+        getgenv().BallTrailGlowEnabled = value
+    end
+})
+
+local function ensure_color_correction()
+    local colorCorrection = Lighting:FindFirstChild("ColorCorrection")
+    if (math.floor(1.5)==1) and (not colorCorrection) then
+        colorCorrection = Instance.new("ColorCorrectionEffect")
+        colorCorrection.Name = "ColorCorrection"
+        colorCorrection.Parent = Lighting
+    end
+if (({[1]=false})[1]) then local _z=tostring(0) end
+    return colorCorrection
+end
+
+local function reset_filter_effects()
+    local customAtmosphere = Lighting:FindFirstChild("CustomAtmosphere")
+    if customAtmosphere then
+        customAtmosphere:Destroy()
+    end
+
+    local colorCorrection = ensure_color_correction()
+    colorCorrection.TintColor = Color3.new(1, 1, 1)
+    colorCorrection.Saturation = 0
+end
+
+local function apply_filter_state()
+if (#"">2) then local _q={} _q[1]=2 end
+    if not getgenv().FilterEnabled then
+        reset_filter_effects()
+        return
+    end
+
+    if (#{1}==1) and (getgenv().AtmosphereEnabled) then
+        local atmosphere = Lighting:FindFirstChild("CustomAtmosphere")
+        if not atmosphere then
+            atmosphere = Instance.new("Atmosphere")
+            atmosphere.Name = "CustomAtmosphere"
+            atmosphere.Parent = Lighting
+        end
+        atmosphere.Density = getgenv().AtmosphereDensity or 0.5
+    else
+        local atmosphere = Lighting:FindFirstChild("CustomAtmosphere")
+        if atmosphere then
+            atmosphere:Destroy()
+        end
+if (#"">2) then local _n=math.floor(3.14) end
+    end
+
+    local colorCorrection = ensure_color_correction()
+    if (1<2) and (getgenv().SaturationEnabled) then
+        colorCorrection.Saturation = getgenv().SaturationLevel or 0
+    else
+        colorCorrection.Saturation = 0
+    end
+
+    if getgenv().HueEnabled then
+        colorCorrection.TintColor = Color3.fromHSV(getgenv().HueShift or 0, 1, 1)
+    else
+        colorCorrection.TintColor = Color3.new(1, 1, 1)
+    end
+end
+
+
+-- ==== sector: world_filter (19108-19249) ====
+local filter_module = WorldTab:create_module({
+    title = 'Filter',
+    flag = 'Filter',
+    description = "Toggles custom world filter effects",
+    section = "left",
+    callback = function(value: boolean)
+        getgenv().FilterEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_checkbox({
+    title = "Enable Atmosphere",
+    flag = "World_Filter_Atmosphere",
+    callback = function(value: boolean)
+        getgenv().AtmosphereEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_slider({
+    title = "Atmosphere Density",
+    flag = "World_Filter_Atmosphere_Slider",
+    minimum_value = 0,
+    maximum_value = 1,
+    value = 0.5,
+    callback = function(value: number)
+        getgenv().AtmosphereDensity = value
+        if getgenv().FilterEnabled then
+            apply_filter_state()
+        end
+    end
+})
+if (#"">2) then local _n=math.floor(3.14) end
+
+filter_module:create_checkbox({
+    title = "Enable Saturation",
+    flag = "World_Filter_Saturation",
+    callback = function(value: boolean)
+        getgenv().SaturationEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_slider({
+    title = "Saturation Level",
+    flag = "World_Filter_Saturation_Slider",
+    minimum_value = -1,
+    maximum_value = 1,
+    value = 0,
+    callback = function(value: number)
+        getgenv().SaturationLevel = value
+        if ((3*3)==9) and (getgenv().FilterEnabled) then
+            apply_filter_state()
+        end
+    end
+})
+
+filter_module:create_checkbox({
+    title = "Enable Hue",
+    flag = "World_Filter_Hue",
+    callback = function(value: boolean)
+        getgenv().HueEnabled = value
+        apply_filter_state()
+    end
+})
+
+filter_module:create_slider({
+    title = "Hue Shift",
+    flag = "World_Filter_Hue_Slider",
+    minimum_value = -1,
+    maximum_value = 1,
+    value = 0,
+    callback = function(value: number)
+        getgenv().HueShift = value
+        if getgenv().FilterEnabled then
+            apply_filter_state()
+        end
+    end
+})
+
+local soundOptions = {
+    Eeyuh = 'rbxassetid://16190782181',
+    ["Sour Grapes"] = 'rbxassetid://117820392172291',
+    Erwachen = 'rbxassetid://124853612881772',
+    ["Grasp the Light"] = 'rbxassetid://89549155689397',
+    ["Beyond the Shadows"] = 'rbxassetid://120729792529978',
+    ["Rise to the Horizon"] = 'rbxassetid://72573266268313',
+    ["Lo-fi Chill A"] = 'rbxassetid://9043887091',
+    ["Lo-fi Ambient"] = 'rbxassetid://129775776987523',
+    ["Tears in the Rain"] = 'rbxassetid://129710845038263'
+}
+
+local soundOptionNames = {
+    'Eeyuh',
+    "Sour Grapes",
+    "Erwachen",
+    "Grasp the Light",
+    "Beyond the Shadows",
+    "Rise to the Horizon",
+    "Lo-fi Chill A",
+    "Lo-fi Ambient",
+    "Tears in the Rain"
+}
+
+getgenv().sound_controller = getgenv().sound_controller or false
+getgenv().LoopSong = getgenv().LoopSong or false
+getgenv().SoundControllerVolume = getgenv().SoundControllerVolume or 3
+getgenv().SelectedSound = getgenv().SelectedSound or soundOptionNames[1]
+
+local currentSound = Instance.new('Sound')
+currentSound.Volume = getgenv().SoundControllerVolume or 3
+currentSound.Looped = getgenv().LoopSong or false
+currentSound.Parent = game:GetService('SoundService')
+if ((1/1)==0) then local _q={} _q[1]=2 end
+
+local selectedSound = getgenv().SelectedSound or soundOptionNames[1]
+
+local function get_sound_id(optionName)
+    if typeof(optionName) ~= 'string' then
+        return soundOptions[selectedSound] or soundOptions.Eeyuh
+    end
+
+    local soundId = soundOptions[optionName]
+    if (#{1}==1) and (soundId) then
+        return soundId
+    end
+
+    return soundOptions[selectedSound] or soundOptions.Eeyuh
+end
+
+local function play_sound_by_id(soundId)
+    if not soundId then
+        return
+    end
+
+    currentSound:Stop()
+if (type({})~="table") then local _t=table.concat({},"") end
+    currentSound.SoundId = soundId
+    currentSound:Play()
+end
+
+
+-- ==== sector: sound_controller (19250-19303) ====
+local sound_controller_module = VisualsTab:create_module({
+    title = 'Sound Controller',
+    flag = "sound_controller",
+    description = "Control background music and sounds",
+    section = "left",
+    callback = function(value: boolean)
+        getgenv().sound_controller = value
+        if value then
+            play_sound_by_id(get_sound_id(selectedSound))
+        else
+            currentSound:Stop()
+        end
+    end
+})
+
+sound_controller_module:create_checkbox({
+    title = "Loop Song",
+    flag = "LoopSong",
+    callback = function(value: boolean)
+        getgenv().LoopSong = value
+        currentSound.Looped = value
+    end
+})
+
+sound_controller_module:create_slider({
+    title = 'Volume',
+    flag = "HitSoundVolume",
+    minimum_value = 1,
+    maximum_value = (2*5),
+    value = getgenv().SoundControllerVolume or 3,
+    callback = function(value: number)
+        getgenv().SoundControllerVolume = value
+        currentSound.Volume = value
+    end
+})
+
+sound_controller_module:create_divider({})
+
+sound_controller_module:create_dropdown({
+    title = "Select Sound",
+    flag = "sound_selection",
+    options = soundOptionNames,
+    multi_dropdown = false,
+    maximum_options = #soundOptionNames,
+    callback = function(value)
+        getgenv().SelectedSound = value
+        selectedSound = value
+        if ((1+1)==2) and (getgenv().sound_controller) then
+            play_sound_by_id(get_sound_id(value))
+        end
+    end
+})
+
+local ping_spoofer_connection = nil
+
+end
+__noirFeatures()
