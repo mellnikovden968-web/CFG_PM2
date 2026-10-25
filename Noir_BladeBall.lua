@@ -12457,6 +12457,7 @@ local function __noirFeatures()
     local TweenService = game:GetService("TweenService")
     local VirtualInputManager = game:GetService("VirtualInputManager")
     local Player = LocalPlayer
+    local _G = getgenv() -- shadow: never touch game-shared _G (BAC scans it)
 
     local Library = { _config = { _flags = {} } }
     function Library.SendNotification(self, t)
