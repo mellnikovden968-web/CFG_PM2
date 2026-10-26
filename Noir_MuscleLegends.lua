@@ -946,10 +946,99 @@ local C = {
     accent2 = Color3.fromRGB(255,170,54), text = Color3.fromRGB(245,242,238), dim = Color3.fromRGB(130,124,118),
     off = Color3.fromRGB(30,26,22), btn = Color3.fromRGB(20,17,14),
 }
+
+-- ===== Noir Theme Engine: 12 liquid-mirror palettes + live repaint registry =====
+local NOIR_THEMES = nil
+do
+    local function T(id, name, p, dots)
+        local function r(v) return Color3.fromRGB(v[1], v[2], v[3]) end
+        return {
+            id = id, name = name,
+            C = {
+                base = r(p[1]), surface = r(p[2]), panel = r(p[3]), card = r(p[4]), border = r(p[5]),
+                accent = r(p[6]), accent2 = r(p[7]), text = r(p[8]), dim = r(p[9]), off = r(p[10]), btn = r(p[11]),
+            },
+            dots = { Color3.fromRGB(dots[1][1], dots[1][2], dots[1][3]), Color3.fromRGB(dots[2][1], dots[2][2], dots[2][3]),
+                     Color3.fromRGB(dots[3][1], dots[3][2], dots[3][3]), Color3.fromRGB(dots[4][1], dots[4][2], dots[4][3]) },
+        }
+    end
+    -- p = { base, surface, panel, card, border, accent, accent2, text, dim, off, btn }
+    NOIR_THEMES = {
+        T("mirror_bw", "3D B&W Mirror", { {12,12,12},{20,20,20},{12,12,12},{19,19,19},{62,62,62},{236,236,236},{255,255,255},{244,244,244},{152,152,152},{33,33,33},{25,25,25} }, { {235,235,235},{168,168,168},{110,110,110},{40,40,40} }),
+        T("mercury", "Liquid Mercury", { {10,11,13},{16,18,22},{10,11,13},{16,18,22},{54,60,70},{198,206,220},{230,238,248},{240,242,246},{142,148,156},{30,33,38},{22,25,30} }, { {226,232,240},{188,196,210},{142,150,160},{70,76,86} }),
+        T("blood_moon", "Blood Moon", { {15,9,10},{21,12,13},{15,9,10},{20,12,13},{66,26,28},{214,36,46},{255,96,96},{246,240,240},{142,116,118},{34,22,24},{26,17,18} }, { {220,44,44},{255,110,110},{235,225,225},{60,20,22} }),
+        T("carbon_gold", "Smoked Carbon Gold", { {10,9,8},{15,13,11},{10,9,8},{15,13,11},{50,34,23},{224,116,24},{255,170,54},{245,242,238},{130,124,118},{30,26,22},{20,17,14} }, { {255,170,54},{224,116,24},{245,242,238},{60,36,16} }),
+        T("amethyst", "Cyber Amethyst", { {14,10,16},{19,14,22},{14,10,16},{19,14,22},{56,38,72},{172,92,244},{206,140,255},{244,240,248},{140,126,150},{30,24,36},{23,18,28} }, { {185,103,255},{216,168,255},{240,230,250},{58,34,78} }),
+        T("emerald", "Emerald Matrix", { {9,14,11},{12,19,15},{9,14,11},{13,18,15},{24,62,44},{40,206,120},{118,255,182},{238,248,242},{118,142,126},{22,32,26},{16,24,19} }, { {52,220,138},{120,255,190},{230,250,240},{18,58,40} }),
+        T("arctic", "Arctic Sapphire", { {8,12,15},{12,18,22},{8,12,15},{12,18,22},{28,54,66},{52,186,244},{140,222,255},{238,244,250},{120,138,148},{20,30,36},{15,23,28} }, { {72,196,255},{150,226,255},{235,246,255},{24,52,70} }),
+        T("sakura", "Sakura Blossom", { {17,11,13},{22,14,17},{17,11,13},{21,14,16},{64,36,46},{244,120,160},{255,176,204},{250,242,244},{150,124,132},{36,26,30},{27,20,22} }, { {255,140,175},{255,185,210},{250,240,245},{70,32,44} }),
+        T("solar", "Solar Gold 24K", { {14,12,7},{19,17,10},{14,12,7},{18,16,10},{68,56,20},{236,186,30},{255,222,92},{250,246,238},{146,134,110},{32,28,18},{24,21,13} }, { {255,205,60},{255,230,120},{250,245,235},{70,52,14} }),
+        T("crimson", "Crimson Samurai", { {13,9,9},{18,12,12},{13,9,9},{18,13,13},{62,30,30},{206,44,44},{255,168,64},{248,242,240},{140,118,118},{30,22,22},{23,17,17} }, { {228,52,52},{255,150,80},{245,238,230},{62,24,24} }),
+        T("alabaster", "White Alabaster Mirror", { {236,233,228},{228,224,218},{236,233,228},{246,243,238},{196,190,182},{96,88,76},{60,56,48},{32,30,26},{108,102,94},{214,208,200},{222,216,208} }, { {58,56,52},{150,146,138},{255,254,252},{236,233,229} }),
+        T("void", "Void Eclipse", { {14,9,15},{19,13,21},{14,9,15},{18,13,20},{60,34,66},{218,72,220},{255,120,238},{248,240,250},{140,120,144},{28,22,30},{22,17,24} }, { {235,90,235},{255,140,245},{245,235,248},{70,26,70} }),
+    }
+end
+
+local function __NoirFindTheme(id)
+    for _, t in ipairs(NOIR_THEMES) do if t.id == id then return t end end
+    return nil
+end
+
+local __noirThemeReg = {}
+local function __noirWatchColors(inst, props)
+    for k, v in pairs(props or {}) do
+        if typeof(v) == "Color3" then
+            for slot, col in pairs(C) do
+                if col == v then
+                    __noirThemeReg[#__noirThemeReg + 1] = { inst, k, slot }
+                    break
+                end
+            end
+        end
+    end
+end
+
+function __NoirApplyTheme(id, animate)
+    local theme = __NoirFindTheme(id)
+    if not theme then return false end
+    for slot, col in pairs(theme.C) do C[slot] = col end
+    pcall(function()
+        if NoirPersistence and NoirPersistence.data and NoirPersistence.data.colors then
+            if NoirPersistence.data.colors.theme ~= id then
+                NoirPersistence.data.colors.theme = id
+                NoirPersistence.Save()
+            end
+        end
+    end)
+    NoirGenv().__NoirCurrentTheme = id
+    for i = 1, #__noirThemeReg do
+        local e = __noirThemeReg[i]
+        local target = theme.C[e[3]]
+        if target then
+            pcall(function()
+                if animate and TweenService then
+                    TweenService:Create(e[1], TweenInfo.new(.38, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { [e[2]] = target }):Play()
+                else
+                    e[1][e[2]] = target
+                end
+            end)
+        end
+    end
+    return true
+end
+
+do
+    local saved = NoirPersistence and NoirPersistence.data and NoirPersistence.data.colors and NoirPersistence.data.colors.theme
+    if type(saved) == "string" then
+        local theme = __NoirFindTheme(saved)
+        if theme then for slot, col in pairs(theme.C) do C[slot] = col end end
+    end
+end
 local gui
 function New(class, props)
     local x = Instance.new(class)
     for k, v in pairs(props or {}) do if k ~= "\x50arent" then x[k] = v end end
+    pcall(__noirWatchColors, x, props)
     local langState = NoirGenv().__NoirLangState
     if type(langState) == "\x74able" then
         langState.renderedToSource = langState.renderedToSource or {}
@@ -1599,10 +1688,20 @@ do
         { "\x61im",    16898613777, Vector2.new(967, 759), "\x54rain" },
         { "\x77orld",  16898613509, Vector2.new(771, 563), "\x43ombat" },
         { "\x6disc",   16898613509, Vector2.new(820, 147), "\x4disc" },
+        { "\x73ettings", 16898613509, Vector2.new(820, 147), "\x53ettings" },
     }    for i, d in ipairs(navDefs) do
         local b = New("\x54extButton", { Parent = sidebar, Position = UDim2.fromOffset(19, 104 + (i - 1) * 42), Size = UDim2.fromOffset(40, 40),
             BackgroundColor3 = C.accent, BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Name = d[4] })
         corner(b, 12)
+        local navName = d[1]
+        b.MouseEnter:Connect(function()
+            local st = NoirGenv().__NoirState
+            if st and st.active ~= navName then TweenService:Create(b, TweenInfo.new(.16), { BackgroundTransparency = .8, BackgroundColor3 = C.accent }):Play() end
+        end)
+        b.MouseLeave:Connect(function()
+            local st = NoirGenv().__NoirState
+            if st and st.active ~= navName then TweenService:Create(b, TweenInfo.new(.22), { BackgroundTransparency = 1 }):Play() end
+        end)
         local ic = New("\x49mageLabel", { Parent = b, Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(24, 24),
             BackgroundTransparency = 1, Image = "\x72bxassetid://" .. d[2], ImageRectSize = Vector2.new(48, 48), ImageRectOffset = d[3],
             ImageColor3 = C.dim })
@@ -2162,6 +2261,7 @@ end)
 
 local activePage = "\x68ome"
 local selectPage
+NoirGenv().__NoirState = { active = activePage }
 do
     local pageObjects = { home = dashboard, main = mainContent, aim = content, world = worldContent, map = win:FindFirstChild("\x4dapContent"), farm = win:FindFirstChild("\x46armContent"), visual = visualContent, emotes = emotesContent, misc = miscContent, troll = trollContent, settings = settingsContent }
     pcall(function()
@@ -2193,6 +2293,7 @@ do
         local oldObject = pageObjects[oldPage]
         local newObject = pageObjects[page]
         activePage = page
+        NoirGenv().__NoirState.active = page
 
         for _, object in pairs(pageObjects) do
             if object ~= oldObject and object ~= newObject then
@@ -2250,6 +2351,126 @@ local __savedPage = NoirPersistence.data.dropdowns["\x4eoir::LastPage"]
 if type(__savedPage) ~= "\x73tring" or __savedPage == "" then __savedPage = "\x68ome" end
 local __restoreOk = pcall(selectPage, __savedPage)
 if not __restoreOk then pcall(selectPage, "\x68ome") end
+
+-- ===== Settings page: Theme Showcase (12 liquid-mirror palettes) + Appearance =====
+do
+    if settingsContent then
+        local header = New("\x46rame", { Parent = settingsContent, Size = UDim2.new(1, 0, 0, 46), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1 })
+        text(header, "\x54heme Showcase", 24, UDim2.fromOffset(6, 0))
+        text(header, "\x53elect from 12 liquid 3D-mirror palettes - instant live repaint, saved automatically.", 13, UDim2.fromOffset(8, 28), true)
+
+        local gridRows = math.ceil(#NOIR_THEMES / 3)
+        local grid = New("\x46rame", { Parent = settingsContent, Size = UDim2.new(1, 0, 0, gridRows * 64 + (gridRows - 1) * 10 + 4),
+            BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 2 })
+        New("\x55IGridLayout", { Parent = grid, CellPadding = UDim2.fromOffset(10, 10),
+            CellSize = UDim2.new(1 / 3, -9, 0, 64), SortOrder = Enum.SortOrder.LayoutOrder })
+
+        local strokesById, checksById = {}, {}
+        local currentId = (NoirPersistence.data.colors and NoirPersistence.data.colors.theme) or "carbon_gold"
+        if not __NoirFindTheme(currentId) then currentId = "carbon_gold" end
+        local function refreshSelection()
+            for tid, s in pairs(strokesById) do
+                local on = tid == currentId
+                s.Color = on and C.accent or C.border
+                s.Transparency = on and .05 or .55
+                s.Thickness = on and 1.8 or 1
+            end
+            for tid, chk in pairs(checksById) do chk.Visible = (tid == currentId) end
+        end
+
+        for i, t in ipairs(NOIR_THEMES) do
+            local card = New("\x54extButton", { Parent = grid, BackgroundColor3 = t.C.card, BackgroundTransparency = .08,
+                Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = i, ClipsDescendants = true })
+            corner(card, 12)
+            New("\x55IGradient", { Parent = card, Rotation = 115, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, t.C.card),
+                ColorSequenceKeypoint.new(.55, t.C.surface),
+                ColorSequenceKeypoint.new(1, t.C.card:Lerp(t.C.accent, .18)),
+            }) })
+            local s = New("\x55IStroke", { Parent = card, Color = C.border, Transparency = .55, Thickness = 1 })
+            pcall(function() s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border end)
+            strokesById[t.id] = s
+            New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(13, 10), Size = UDim2.new(1, -34, 0, 16),
+                BackgroundTransparency = 1, Text = t.name, TextColor3 = t.C.text, TextSize = 13, Font = Enum.Font.GothamBold,
+                TextXAlignment = Enum.TextXAlignment.Left })
+            for di = 1, 4 do
+                local dot = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(13 + (di - 1) * 17, 36),
+                    Size = UDim2.fromOffset(11, 11), BackgroundColor3 = t.dots[di], BorderSizePixel = 0 })
+                corner(dot, 6)
+                New("\x55IStroke", { Parent = dot, Color = Color3.fromRGB(255, 255, 255), Transparency = .85, Thickness = 1 })
+            end
+            local chk = New("\x54extLabel", { Parent = card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 10),
+                Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1, Text = "\226\156\147", TextColor3 = C.accent2,
+                TextSize = 14, Font = Enum.Font.GothamBold, Visible = false })
+            checksById[t.id] = chk
+            card.MouseEnter:Connect(function()
+                TweenService:Create(card, TweenInfo.new(.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .01 }):Play()
+            end)
+            card.MouseLeave:Connect(function()
+                TweenService:Create(card, TweenInfo.new(.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .08 }):Play()
+            end)
+            card.MouseButton1Click:Connect(function()
+                currentId = t.id
+                pcall(__NoirApplyTheme, t.id, true)
+                refreshSelection()
+                local core = NoirGenv().__NoirCore
+                if core and core.host and core.host.Notify then pcall(core.host.Notify, "\x54heme: " .. t.name, 3) end
+            end)
+        end
+        refreshSelection()
+
+        local appearance = New("\x46rame", { Parent = settingsContent, Size = UDim2.new(1, 0, 0, 96), LayoutOrder = 3,
+            BackgroundColor3 = C.panel, BackgroundTransparency = .86, BorderSizePixel = 0, ClipsDescendants = true })
+        corner(appearance, 10); stroke(appearance, C.border, .15)
+        text(appearance, "\x41ppearance", 14, UDim2.fromOffset(8, 6))
+        New("\x46rame", { Parent = appearance, Position = UDim2.fromOffset(0, 27), Size = UDim2.new(1, 0, 0, 1),
+            BackgroundColor3 = C.border, BorderSizePixel = 0 })
+        local rowF = New("\x46rame", { Parent = appearance, Position = UDim2.fromOffset(10, 40), Size = UDim2.new(1, -20, 0, 32),
+            BackgroundTransparency = 1 })
+        local lbl = text(rowF, "\x4denu Transparency", 14, UDim2.fromOffset(0, 0))
+        lbl.TextTransparency = .35
+        lbl.Size = UDim2.new(1, -120, 0, 20)
+        lbl.TextYAlignment = Enum.TextYAlignment.Center
+        local valTxt = New("\x54extLabel", { Parent = rowF, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0),
+            Size = UDim2.fromOffset(52, 18), BackgroundTransparency = 1, Text = "38%", TextColor3 = C.accent2,
+            TextSize = 13, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right })
+        local track = New("\x46rame", { Parent = rowF, Position = UDim2.new(0, 0, 1, -3), Size = UDim2.new(1, 0, 0, 3),
+            BackgroundColor3 = C.off, BorderSizePixel = 0 })
+        corner(track, 2)
+        local fill = New("\x46rame", { Parent = track, Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+        corner(fill, 2)
+        local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(0, 0, .5, 0),
+            Size = UDim2.fromOffset(13, 13), BackgroundColor3 = C.text })
+        corner(knob, 7); stroke(knob, C.border, .3)
+        local alphaKey = "Noir::WindowAlpha"
+        local curAlpha = tonumber(NoirPersistence.data.sliders[alphaKey]) or .38
+        local function setAlpha(a, persist)
+            curAlpha = math.clamp(tonumber(a) or .38, .05, .85)
+            local t01 = (curAlpha - .05) / .8
+            fill.Size = UDim2.fromScale(t01, 1)
+            knob.Position = UDim2.new(t01, 0, .5, 0)
+            valTxt.Text = tostring(math.floor(curAlpha * 100 + .5)) .. "%"
+            pcall(function() win.BackgroundTransparency = curAlpha end)
+            if persist ~= false then NoirPersistence.data.sliders[alphaKey] = curAlpha; NoirPersistence.Save() end
+        end
+        setAlpha(curAlpha, false)
+        local dragAlpha = false
+        track.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragAlpha = true
+                setAlpha(.05 + .8 * math.clamp((inp.Position.X - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1))
+            end
+        end)
+        UIS.InputChanged:Connect(function(inp)
+            if dragAlpha and (inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseMovement) then
+                setAlpha(.05 + .8 * math.clamp((inp.Position.X - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1))
+            end
+        end)
+        UIS.InputEnded:Connect(function(inp)
+            if dragAlpha and (inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1) then dragAlpha = false end
+        end)
+    end
+end
 
 local sectionCount, mainSectionCount, worldSectionCount, visualSectionCount, emotesSectionCount, miscSectionCount, configSectionCount, trollSectionCount, mapSectionCount, farmSectionCount = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 local sectionPanels, controls = {}, {}
@@ -2435,10 +2656,13 @@ function host.CreateTab()
                 state = v == true
                 if animate == false then
                     pill.BackgroundColor3 = state and C.accent or C.off
+                    pillStroke.Color = state and C.accent2 or C.border
+                    pillStroke.Transparency = state and .3 or 0
                     dot.Position = state and UDim2.new(1, -14, .5, 0) or UDim2.new(0, 2, .5, 0)
                     dot.BackgroundColor3 = C.text
                     dot.Size = UDim2.fromOffset(12, 12)
                 else
+                    TweenService:Create(pillStroke, TweenInfo.new(.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Color = state and C.accent2 or C.border, Transparency = state and .3 or 0 }):Play()
                     TweenService:Create(pill, TweenInfo.new(.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = state and C.accent or C.off }):Play()
                     TweenService:Create(dot, TweenInfo.new(.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = state and UDim2.new(1, -14, .5, 0) or UDim2.new(0, 2, .5, 0), BackgroundColor3 = C.text, Size = UDim2.fromOffset(12, 120, 30) }):Play()
                     task.delay(.20, function() if dot.Parent then TweenService:Create(dot, TweenInfo.new(.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(12, 12) }):Play() end end)
@@ -2459,11 +2683,32 @@ function host.CreateTab()
         end
         function api:AddButton(label, callback)
             yieldDuringBuild()
-            local b = New("\x54extButton", { Parent = holder, Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = C.btn,
-                BackgroundTransparency = .72, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.Gotham, AutoButtonColor = false })
-            corner(b, 8); ringStroke(b, 1.2, .55)
-            b.MouseEnter:Connect(function() TweenService:Create(b, TweenInfo.new(.18), { BackgroundTransparency = .58, BackgroundColor3 = Color3.fromRGB(48,52,56) }):Play() end)
-            b.MouseLeave:Connect(function() TweenService:Create(b, TweenInfo.new(.18), { BackgroundTransparency = .72, BackgroundColor3 = C.btn }):Play() end)
+            local b = New("\x54extButton", { Parent = holder, Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = C.btn,
+                BackgroundTransparency = .68, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamBold, AutoButtonColor = false })
+            corner(b, 9)
+            New("\x55IGradient", { Parent = b, Rotation = 90, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(196, 196, 196)),
+            }), Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, .82), NumberSequenceKeypoint.new(1, .9),
+            }) })
+            local bRing = ringStroke(b, 1.2, .55)
+            local bScale = New("\x55IScale", { Parent = b, Scale = 1 })
+            b.MouseEnter:Connect(function()
+                TweenService:Create(b, TweenInfo.new(.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .42, BackgroundColor3 = C.btn:Lerp(C.accent, .22) }):Play()
+                TweenService:Create(bRing, TweenInfo.new(.16), { Transparency = .28 }):Play()
+            end)
+            b.MouseLeave:Connect(function()
+                TweenService:Create(b, TweenInfo.new(.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .68, BackgroundColor3 = C.btn }):Play()
+                TweenService:Create(bRing, TweenInfo.new(.2), { Transparency = .55 }):Play()
+                TweenService:Create(bScale, TweenInfo.new(.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+            end)
+            b.MouseButton1Down:Connect(function()
+                TweenService:Create(bScale, TweenInfo.new(.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = .96 }):Play()
+            end)
+            b.MouseButton1Up:Connect(function()
+                TweenService:Create(bScale, TweenInfo.new(.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+            end)
             local lastClick = 0
             local function fire()
                 local now = os.clock()
@@ -4568,7 +4813,14 @@ task.defer(function()
     win2.Visible = true
     local scaleObj = win2:FindFirstChildWhichIsA("UIScale")
     if scaleObj then scaleObj.Scale = .68 end
-    TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .38, Rotation = 0 }):Play()
+    local openAlpha = .38
+    pcall(function()
+        local pers = core2.NoirPersistence
+        if pers and pers.data and pers.data.sliders then
+            openAlpha = tonumber(pers.data.sliders["Noir::WindowAlpha"]) or .38
+        end
+    end)
+    TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = openAlpha, Rotation = 0 }):Play()
     if scaleObj then
         TweenService2:Create(scaleObj, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
     end
