@@ -4229,16 +4229,68 @@ do
             })
         end
 
+        local nullDbg = (NoirGenv().__VeltroNullDebug == true)
+        local function nullSectionApi(tag)
+            tag = tag or "null"
+            local elem = setmetatable({}, {
+                __index = function(_, k)
+                    return function(...)
+                        if nullDbg then print("[NULLAPI] el." .. tostring(k)) end
+                        return elem
+                    end
+                end,
+                __newindex = function(self, k, v)
+                    if nullDbg then print("[NULLAPI] el.__newindex " .. tostring(k)) end
+                    rawset(self, k, v)
+                end,
+            })
+            return setmetatable({}, {
+                __index = function(_, m)
+                    if m == "SetOpen" or m == "Open" or m == "Close" then
+                        return function() return 0 end
+                    end
+                    if m == "SetTitles" then
+                        return function(_, t)
+                            if nullDbg then print("[NULLAPI] SetTitles -> " .. tostring(t)) end
+                            return elem
+                        end
+                    end
+                    return function(...)
+                        if nullDbg then print("[NULLAPI] sec." .. tostring(m)) end
+                        return elem
+                    end
+                end,
+                __newindex = function(self, k, v)
+                    if nullDbg then print("[NULLAPI] sec.__newindex " .. tostring(k)) end
+                    rawset(self, k, v)
+                end,
+            })
+        end
+
         local sectionWatch = {}
         NoirGenv().__VeltroSectionWatch = sectionWatch
-        local function buildSectionApi(section, tabName)
+        local function neuter(cfg)
+            local copy = {}
+            if type(cfg) == "table" then
+                for k, v in pairs(cfg) do
+                    if type(v) ~= "function" then copy[k] = v end
+                end
+            end
+            return copy
+        end
+        local function buildSectionApi(section, tabName, killCb)
             local api = {}
             local watch = { section = section, count = 0 }
             sectionWatch[#sectionWatch + 1] = watch
             local function mark() watch.count += 1 end
+            local function sane(cfg)
+                cfg = type(cfg) == "table" and cfg or {}
+                if killCb then cfg = neuter(cfg) end
+                return cfg
+            end
 
             function api:AddButton(cfg)
-                cfg = type(cfg) == "table" and cfg or {}
+                cfg = sane(cfg)
             mark()
                 local b = section:AddButton(tostring(cfg.Title or "Button"), function() cbwrap(cfg.Callback) end)
                 local e = {}
@@ -4249,7 +4301,7 @@ do
             end
 
             function api:AddToggle(cfg)
-                cfg = type(cfg) == "table" and cfg or {}
+                cfg = sane(cfg)
             mark()
                 VeltroLib.Flags[tostring(cfg.Flag or cfg.Title or "")] = cfg.Default == true
                 local setter = section:AddToggle(tostring(cfg.Title or "Toggle"), function(v)
@@ -4268,7 +4320,7 @@ do
             end
 
             function api:AddSlider(cfg)
-                cfg = type(cfg) == "table" and cfg or {}
+                cfg = sane(cfg)
             mark()
                 local min = tonumber(cfg.Min) or 0
                 local max = tonumber(cfg.Max) or 100
@@ -4285,7 +4337,7 @@ do
             end
 
             function api:AddTextBox(cfg)
-                cfg = type(cfg) == "table" and cfg or {}
+                cfg = sane(cfg)
             mark()
                 local ctl = section:AddTextBox(tostring(cfg.Title or cfg.Placeholder or "Value"), function(v)
                     VeltroLib.Flags[tostring(cfg.Flag or cfg.Title or "")] = v
@@ -4300,7 +4352,7 @@ do
             end
 
             function api:AddDropdown(cfg)
-                cfg = type(cfg) == "table" and cfg or {}
+                cfg = sane(cfg)
             mark()
                 local opts = {}
                 if type(cfg.Options) == "table" then
@@ -4429,9 +4481,10 @@ do
                     local sname = tostring(scfg.Name or "Section")
                     local hidden = (tname == "Killing" and sname == "Spectate")
                     local section = tabHost:AddSection(prefixFor(tname) .. tname .. ": " .. sname, "")
-                    local api = buildSectionApi(section, tname)
+                    local ok, api = pcall(buildSectionApi, section, tname, hidden)
+                    if not ok then api = nullSectionApi(tname .. ":" .. sname) end
                     local w = sectionWatch[#sectionWatch]
-                    if w and hidden then w.hidden = true end
+                    if w then w.hidden = hidden end
                     if hidden then pcall(function() section.__panel.Visible = false end) end
                     return api
                 end
