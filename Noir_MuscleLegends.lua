@@ -4427,8 +4427,13 @@ do
                 function tab:AddSection(scfg)
                     scfg = type(scfg) == "table" and scfg or {}
                     local sname = tostring(scfg.Name or "Section")
+                    local hidden = (tname == "Killing" and sname == "Spectate")
                     local section = tabHost:AddSection(prefixFor(tname) .. tname .. ": " .. sname, "")
-                    return buildSectionApi(section, tname)
+                    local api = buildSectionApi(section, tname)
+                    local w = sectionWatch[#sectionWatch]
+                    if w and hidden then w.hidden = true end
+                    if hidden then pcall(function() section.__panel.Visible = false end) end
+                    return api
                 end
                 setmetatable(tab, { __index = function() return function() return dummyElem() end end })
                 return tab
@@ -4487,8 +4492,8 @@ task.defer(function()
         local watch = NoirGenv().__VeltroSectionWatch
         if type(watch) == "table" then
             for _, w in ipairs(watch) do
-                if w.count == 0 and w.section and w.section.__panel then
-                    w.section.__panel.Visible = false
+                if w.section and w.section.__panel and (w.count == 0 or w.hidden) then
+                    pcall(function() w.section.__panel.Visible = false end)
                 end
             end
         end
