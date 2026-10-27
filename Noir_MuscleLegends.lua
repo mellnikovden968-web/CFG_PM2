@@ -964,21 +964,21 @@ do
     end
     -- p = { base, surface, panel, card, border, accent, accent2, text, dim, off, btn }
     NOIR_THEMES = {
-        T("mirror_bw", "3D B&W Mirror", { {16,16,16},{22,22,22},{14,14,14},{24,24,24},{70,70,70},{235,235,235},{255,255,255},{245,245,245},{148,148,148},{34,34,34},{26,26,26} }, { {235,235,235},{168,168,168},{110,110,110},{40,40,40} }),
-        T("mercury", "Liquid Mercury", { {12,14,17},{17,20,24},{12,14,17},{18,21,26},{52,60,72},{190,204,224},{228,240,252},{240,243,247},{138,146,156},{26,30,36},{20,23,28} }, { {226,232,240},{188,196,210},{142,150,160},{70,76,86} }),
-        T("blood_moon", "Blood Moon", { {20,8,9},{27,11,12},{20,8,9},{28,13,14},{84,30,32},{226,40,48},{255,104,104},{250,238,238},{148,108,110},{40,18,20},{30,14,15} }, { {220,44,44},{255,110,110},{235,225,225},{60,20,22} }),
-        T("carbon_gold", "Smoked Carbon Gold", { {12,10,7},{17,14,10},{12,10,7},{18,15,10},{72,52,26},{224,116,24},{255,178,64},{248,243,236},{138,128,116},{32,27,20},{24,20,14} }, { {255,178,64},{224,116,24},{248,243,236},{60,36,16} }),
-        T("amethyst", "Cyber Amethyst", { {17,10,22},{22,14,29},{17,10,22},{24,15,31},{68,40,90},{178,96,255},{210,150,255},{247,240,252},{144,128,156},{32,22,40},{25,17,32} }, { {185,103,255},{216,168,255},{240,230,250},{58,34,78} }),
-        T("emerald", "Emerald Matrix", { {8,16,12},{11,21,16},{8,16,12},{12,23,17},{24,72,46},{44,214,128},{130,255,190},{238,250,244},{116,146,128},{20,36,28},{15,27,21} }, { {52,220,138},{120,255,190},{230,250,240},{18,58,40} }),
-        T("arctic", "Arctic Sapphire", { {8,14,20},{11,19,26},{8,14,20},{12,21,29},{28,60,80},{56,192,250},{150,226,255},{238,246,252},{118,140,152},{20,32,40},{15,25,31} }, { {72,196,255},{150,226,255},{235,246,255},{24,52,70} }),
-        T("sakura", "Sakura Blossom", { {20,11,15},{26,14,19},{20,11,15},{28,16,21},{76,38,52},{250,124,168},{255,184,212},{252,242,246},{152,124,134},{38,24,30},{29,18,23} }, { {255,140,175},{255,185,210},{252,242,246},{70,32,44} }),
-        T("solar", "Solar Gold 24K", { {18,13,6},{24,17,8},{18,13,6},{26,19,9},{84,64,22},{240,192,36},{255,226,96},{252,248,238},{150,136,108},{36,28,16},{27,21,11} }, { {255,205,60},{255,230,120},{252,248,238},{70,52,14} }),
-        T("crimson", "Crimson Samurai", { {16,9,9},{22,12,12},{16,9,9},{24,13,13},{78,32,30},{212,46,44},{255,178,72},{250,243,240},{144,118,118},{34,22,22},{26,17,17} }, { {228,52,52},{255,178,80},{250,243,238},{62,24,24} }),
-        T("alabaster", "White Alabaster Mirror", { {236,233,228},{228,224,218},{236,233,228},{246,243,238},{196,190,182},{96,88,76},{60,56,48},{32,30,26},{108,102,94},{214,208,200},{222,216,208} }, { {58,56,52},{150,146,138},{255,254,252},{236,233,229} }),
-        T("void", "Void Eclipse", { {16,9,19},{21,13,25},{16,9,19},{23,14,28},{66,36,76},{224,76,228},{255,126,240},{250,240,252},{142,120,148},{30,20,34},{23,16,26} }, { {235,90,235},{255,140,245},{245,235,248},{70,26,70} }),
-        T("neon_osaka", "Neon Osaka", { {7,14,19},{10,19,26},{7,14,19},{11,21,29},{26,66,86},{24,224,226},{120,245,255},{236,248,252},{112,142,150},{18,32,40},{13,24,31} }, { {24,224,226},{120,245,255},{236,248,252},{16,70,78} }),
-        T("acid", "Acid Verdant", { {11,15,6},{15,20,8},{11,15,6},{16,22,9},{54,74,20},{172,232,44},{216,255,110},{244,250,236},{128,142,112},{24,30,14},{18,23,10} }, { {172,232,44},{216,255,110},{244,250,236},{44,54,18} }),
-        T("rose_gold", "Rose Gold Mirror", { {244,236,230},{236,226,219},{244,236,230},{252,244,237},{210,188,176},{214,150,120},{166,104,84},{40,32,28},{122,108,100},{226,214,206},{234,222,214} }, { {214,150,120},{166,104,84},{255,254,252},{236,222,212} }),
+        T("mirror_bw", "3D B&W Mirror", { {16,16,16},{22,22,22},{14,14,14},{24,24,24},{96,96,96},{235,235,235},{243,243,243},{245,245,245},{178,178,178},{47,47,47},{38,38,38} }, { {235,235,235},{168,168,168},{110,110,110},{40,40,40} }),
+        T("mercury", "Liquid Mercury", { {12,14,17},{17,20,24},{12,14,17},{18,21,26},{76,83,93},{190,204,224},{217,225,237},{240,243,247},{173,176,180},{37,41,46},{30,33,38} }, { {226,232,240},{188,196,210},{142,150,160},{70,76,86} }),
+        T("blood_moon", "Blood Moon", { {20,8,9},{27,11,12},{20,8,9},{28,13,14},{95,22,26},{226,40,48},{238,130,135},{250,238,238},{183,170,170},{49,12,14},{41,11,13} }, { {220,44,44},{255,110,110},{235,225,225},{60,20,22} }),
+        T("carbon_gold", "Smoked Carbon Gold", { {12,10,7},{17,14,10},{12,10,7},{18,15,10},{88,49,15},{224,116,24},{237,174,121},{248,243,236},{179,174,168},{42,25,9},{33,21,9} }, { {255,178,64},{224,116,24},{248,243,236},{60,36,16} }),
+        T("amethyst", "Cyber Amethyst", { {17,10,22},{22,14,29},{17,10,22},{24,15,31},{76,43,107},{178,96,255},{210,163,255},{247,240,252},{180,172,185},{40,22,55},{33,19,45} }, { {185,103,255},{216,168,255},{240,230,250},{58,34,78} }),
+        T("emerald", "Emerald Matrix", { {8,16,12},{11,21,16},{8,16,12},{12,23,17},{23,88,55},{44,214,128},{133,231,181},{238,250,244},{170,181,176},{13,44,28},{12,36,24} }, { {52,220,138},{120,255,190},{230,250,240},{18,58,40} }),
+        T("arctic", "Arctic Sapphire", { {8,14,20},{11,19,26},{8,14,20},{12,21,29},{27,79,104},{56,192,250},{140,218,252},{238,246,252},{170,178,184},{15,39,52},{13,32,43} }, { {72,196,255},{150,226,255},{235,246,255},{24,52,70} }),
+        T("sakura", "Sakura Blossom", { {20,11,15},{26,14,19},{20,11,15},{28,16,21},{103,53,71},{250,124,168},{252,179,205},{252,242,246},{184,174,178},{52,27,36},{43,22,30} }, { {255,140,175},{255,185,210},{252,242,246},{70,32,44} }),
+        T("solar", "Solar Gold 24K", { {18,13,6},{24,17,8},{18,13,6},{26,19,9},{99,78,18},{240,192,36},{246,218,128},{252,248,238},{184,179,169},{49,38,10},{40,31,9} }, { {255,205,60},{255,230,120},{252,248,238},{70,52,14} }),
+        T("crimson", "Crimson Samurai", { {16,9,9},{22,12,12},{16,9,9},{24,13,13},{88,24,24},{212,46,44},{230,134,133},{250,243,240},{182,174,172},{43,14,14},{36,13,12} }, { {228,52,52},{255,178,80},{250,243,238},{62,24,24} }),
+        T("alabaster", "White Alabaster Mirror", { {236,233,228},{228,224,218},{236,233,228},{246,243,238},{195,190,183},{96,88,76},{74,68,59},{32,30,26},{91,88,84},{216,213,207},{222,218,213} }, { {58,56,52},{150,146,138},{255,254,252},{236,233,229} }),
+        T("void", "Void Eclipse", { {16,9,19},{21,13,25},{16,9,19},{23,14,28},{91,35,96},{224,76,228},{237,151,239},{250,240,252},{181,172,184},{45,18,48},{37,16,40} }, { {235,90,235},{255,140,245},{245,235,248},{70,26,70} }),
+        T("neon_osaka", "Neon Osaka", { {7,14,19},{10,19,26},{7,14,19},{11,21,29},{15,90,96},{24,224,226},{121,237,238},{236,248,252},{168,179,184},{9,43,48},{9,35,40} }, { {24,224,226},{120,245,255},{236,248,252},{16,70,78} }),
+        T("acid", "Acid Verdant", { {11,15,6},{15,20,8},{11,15,6},{16,22,9},{69,93,21},{172,232,44},{207,242,133},{244,250,236},{175,181,168},{34,45,11},{27,37,10} }, { {172,232,44},{216,255,110},{244,250,236},{44,54,18} }),
+        T("rose_gold", "Rose Gold Mirror", { {244,236,230},{236,226,219},{244,236,230},{252,244,237},{239,212,197},{214,150,120},{159,112,90},{40,32,28},{99,90,85},{240,224,215},{241,227,219} }, { {214,150,120},{166,104,84},{255,254,252},{236,222,212} }),
     }
 end
 
@@ -1059,6 +1059,167 @@ do
         local theme = __NoirFindTheme(saved)
         if theme then for slot, col in pairs(theme.C) do C[slot] = col end end
     end
+end
+
+-- ===== Noir overlay bridge: floating buttons (bind circles, quick toggles, Shoot-Murderer) follow the active theme =====
+do
+    local __noirOverlayNames = {
+        ["@odh_bjp_bigstorage"] = true, ["@odh_bjp_bindstorage"] = true,
+        MM2ShootMurdererButton = true, NoirKnifeSheriffBind = true, NoirGrabGunBindButton = true,
+        NoirAimlockOverlay = true, NoirInvisibleBindButton = true, NoirDesyncBindButton = true,
+        NoirRoundTimer = true, NoirEmotesButtons = true, NoirEmotesQuick = true,
+        NoirEmoteButtons = true, NoirEmotesNative = true,
+        NoirSpeedGlitchToggle = true, NoirBackshotsToggle = true, NoirBombJumpToggle = true, NoirJerkToggle = true,
+        NoirMiscAimlock = true, NoirAutoPredictionMonitor = true, NoirSnpBackground = true, NoirSnpCursor = true,
+    }
+    local __noirOverlaySeen = setmetatable({}, { __mode = "k" })
+    local __noirOverlayReg = {}
+    local function __noirLum(c) return 0.299 * c.R + 0.587 * c.G + 0.114 * c.B end
+    local function __noirChroma(c)
+        local mx, mn = math.max(c.R, c.G, c.B), math.min(c.R, c.G, c.B)
+        return mx - mn
+    end
+    local function __noirOverlaySlot(prop, value)
+        if typeof(value) ~= "Color3" then return nil end
+        if __noirChroma(value) > 0.28 then return nil end
+        local L = __noirLum(value)
+        if prop == "Color" then return L > 0.55 and "accent2" or "border" end
+        if prop == "TextColor3" or prop == "PlaceholderColor3" then return L > 0.55 and "text" or "dim" end
+        if prop == "ImageColor3" then if L > 0.72 then return "text" elseif L > 0.4 then return "dim" else return nil end end
+        if prop == "BackgroundColor3" then
+            if L > 0.75 then return "surface" end
+            if L > 0.30 then return "card" end
+            return "btn"
+        end
+        if prop == "ScrollBarImageColor3" then return "accent" end
+        return nil
+    end
+    local __noirPainting = false
+    local function __noirAddWatch(inst, prop, slot)
+        __noirOverlayReg[#__noirOverlayReg + 1] = { inst, prop, slot }
+        pcall(function()
+            inst:GetPropertyChangedSignal(prop):Connect(function()
+                if __noirPainting then return end
+                local target = C[slot]
+                if not target then return end
+                task.defer(function()
+                    if __noirPainting then return end
+                    pcall(function()
+                        if inst[prop] ~= target then inst[prop] = target end
+                    end)
+                end)
+            end)
+        end)
+    end
+    local function __noirOverlayRegister(inst)
+        if __noirOverlaySeen[inst] then return end
+        __noirOverlaySeen[inst] = true
+        pcall(function()
+            if inst:IsA("UIStroke") then
+                local slot = __noirOverlaySlot("Color", inst.Color)
+                if slot then __noirAddWatch(inst, "Color", slot) end
+                local grad = inst:FindFirstChildOfClass("UIGradient")
+                if grad then __noirOverlayReg[#__noirOverlayReg + 1] = { grad, "__gradientStroke", "" } end
+            elseif inst:IsA("GuiObject") then
+                local bs = __noirOverlaySlot("BackgroundColor3", inst.BackgroundColor3)
+                if bs then __noirAddWatch(inst, "BackgroundColor3", bs) end
+                if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+                    local ts = __noirOverlaySlot("TextColor3", inst.TextColor3)
+                    if ts then __noirAddWatch(inst, "TextColor3", ts) end
+                end
+                if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+                    local islot = __noirOverlaySlot("ImageColor3", inst.ImageColor3)
+                    if islot then __noirAddWatch(inst, "ImageColor3", islot) end
+                end
+                if inst:IsA("ScrollingFrame") then
+                    __noirAddWatch(inst, "ScrollBarImageColor3", "accent")
+                end
+            end
+        end)
+    end
+    local function __noirOverlayRoots()
+        local roots, seen = {}, {}
+        local function push(r)
+            if typeof(r) == "Instance" and not seen[r] then seen[r] = true roots[#roots + 1] = r end
+        end
+        pcall(function() push(guiParent) end)
+        pcall(function() push(CoreGui) end)
+        pcall(function()
+            local pg = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            push(pg)
+        end)
+        pcall(function()
+            local gh = nil
+            if type(gethui) == "function" then gh = gethui
+            elseif type(get_hidden_gui) == "function" then gh = get_hidden_gui
+            elseif type(gethiddenui) == "function" then gh = gethiddenui end
+            if gh then push(gh()) end
+        end)
+        return roots
+    end
+    local function __noirOverlayScan()
+        for _, root in ipairs(__noirOverlayRoots()) do
+            for name in pairs(__noirOverlayNames) do
+                local g = root:FindFirstChild(name)
+                if g then
+                    for _, d in ipairs(g:GetDescendants()) do __noirOverlayRegister(d) end
+                end
+            end
+        end
+    end
+    function __noirOverlayRepaint()
+        __noirPainting = true
+        local i = 1
+        while i <= #__noirOverlayReg do
+            local e = __noirOverlayReg[i]
+            local inst = e[1]
+            if not (inst and inst.Parent) then
+                table.remove(__noirOverlayReg, i)
+            else
+                pcall(function()
+                    if e[2] == "__gradientStroke" then
+                        local kps = inst.Color.Keypoints
+                        local saturated = false
+                        for _, kp in ipairs(kps) do
+                            if __noirChroma(kp.Value) > 0.15 then saturated = true break end
+                        end
+                        if not saturated then
+                            local nk = {}
+                            for idx, kp in ipairs(kps) do
+                                nk[idx] = ColorSequenceKeypoint.new(kp.Time, __noirLum(kp.Value) > 0.55 and C.accent2 or C.border)
+                            end
+                            inst.Color = ColorSequence.new(nk)
+                        end
+                    else
+                        local target = C[e[3]]
+                        if target then inst[e[2]] = target end
+                    end
+                end)
+                i = i + 1
+            end
+        end
+        __noirPainting = false
+    end
+    local __noirApplyThemeUpstream = __NoirApplyTheme
+    function __NoirApplyTheme(id, animate)
+        local ok = __noirApplyThemeUpstream(id, animate)
+        task.defer(function()
+            pcall(__noirOverlayScan)
+            pcall(__noirOverlayRepaint)
+        end)
+        return ok
+    end
+    task.spawn(function()
+        local genv = NoirGenv()
+        genv.__NoirOverlayBridgeToken = (genv.__NoirOverlayBridgeToken or 0) + 1
+        local token = genv.__NoirOverlayBridgeToken
+        task.wait(1.25)
+        while genv.__NoirOverlayBridgeToken == token do
+            pcall(__noirOverlayScan)
+            pcall(__noirOverlayRepaint)
+            task.wait(1)
+        end
+    end)
 end
 local gui
 function New(class, props)
