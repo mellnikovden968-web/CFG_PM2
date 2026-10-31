@@ -18,14 +18,15 @@ export type WindowOptions = {
 }
 
 local DEFAULT = {
-	-- Slightly lifted surfaces: controls remain readable even on a dark game scene.
-	Background = Color3.fromRGB(18, 21, 31),
-	Surface = Color3.fromRGB(28, 33, 47),
-	Surface2 = Color3.fromRGB(36, 42, 59),
-	SurfaceHover = Color3.fromRGB(47, 55, 76),
-	Text = Color3.fromRGB(244, 246, 255),
-	Muted = Color3.fromRGB(177, 187, 210),
-	Border = Color3.fromRGB(82, 92, 122),
+	-- Opaque, neutral surfaces. Never put a UIGradient inside CanvasGroup:
+	-- CanvasGroup multiplies every descendant and would dim all text on mobile.
+	Background = Color3.fromRGB(18, 18, 23),
+	Surface = Color3.fromRGB(27, 28, 36),
+	Surface2 = Color3.fromRGB(36, 37, 47),
+	SurfaceHover = Color3.fromRGB(49, 51, 64),
+	Text = Color3.fromRGB(235, 237, 245),
+	Muted = Color3.fromRGB(165, 169, 185),
+	Border = Color3.fromRGB(67, 70, 86),
 	Accent = Color3.fromRGB(122, 105, 255),
 	Success = Color3.fromRGB(76, 214, 151),
 	Danger = Color3.fromRGB(255, 99, 120),
@@ -691,9 +692,14 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	window.ScreenGui = screen
 	local toastHolder = create("Frame", {Name = "Notifications", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 18), Size = UDim2.new(0, 315, 1, -36), Parent = screen})
 	list(toastHolder, 8); window.ToastHolder = toastHolder
-	local main = create("CanvasGroup", {Name = "Main", BackgroundColor3 = window.Theme.Background, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = options.Size or UDim2.fromOffset(760, 510), Parent = screen})
-	round(main, 14); outline(main, window.Theme.Border, 0.22); window.Main = main
-	local sizeConstraint = create("UISizeConstraint", {MinSize = Vector2.new(560, 390), MaxSize = Vector2.new(940, 650), Parent = main})
+	-- Use viewport percentages rather than fixed pixels. Phone DPI scaling can turn a
+	-- 760×510 window into a panel taller than the whole screen.
+	local main = create("CanvasGroup", {
+		Name = "Main", BackgroundColor3 = window.Theme.Background, BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = options.Size or UDim2.fromScale(0.78, 0.76), ClipsDescendants = true, Parent = screen,
+	})
+	round(main, 13); outline(main, window.Theme.Border, 0.08); window.Main = main
 	local scale = create("UIScale", {Scale = 1, Parent = main}); window.Scale = scale
 	-- A persistent reopen button is essential on phones where RightControl is unavailable.
 	local reopen = create("TextButton", {
@@ -709,9 +715,8 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	reopen.MouseLeave:Connect(function() tween(reopen, {BackgroundColor3 = window.Theme.Accent}, 0.12) end)
 	window.ReopenButton = reopen
 	window:_accent(reopen, "BackgroundColor3")
-	local shade = create("UIGradient", {Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(37,42,61)), ColorSequenceKeypoint.new(0.15, window.Theme.Background), ColorSequenceKeypoint.new(1, window.Theme.Background)}), Rotation = 90, Parent = main})
 
-	local top = create("Frame", {Name = "Topbar", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 58), Parent = main})
+	local top = create("Frame", {Name = "Topbar", BackgroundTransparency = 1, Active = true, Size = UDim2.new(1, 0, 0, 58), Parent = main})
 	local title = textLabel(options.Title or "Nova", window.Theme.Text, 18, Enum.FontWeight.Bold); title.Position = UDim2.new(0, 20, 0, 9); title.Size = UDim2.new(0, 260, 0, 20); title.Parent = top
 	local subtitle = textLabel(options.Subtitle or "Универсальный интерфейс", window.Theme.Muted, 11); subtitle.Position = UDim2.new(0, 20, 0, 31); subtitle.Size = UDim2.new(0, 270, 0, 15); subtitle.Parent = top
 	local search = create("TextBox", {Name = "Search", BackgroundColor3 = window.Theme.Surface, BorderSizePixel = 0, ClearTextOnFocus = false, PlaceholderText = "Поиск…", PlaceholderColor3 = window.Theme.Muted, Text = "", TextColor3 = window.Theme.Text, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(1, -260, 0.5, -14), Size = UDim2.new(0, 153, 0, 28), Parent = top})
@@ -724,25 +729,40 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	topButton("×", -64, function() window:Destroy() end)
 
 	local separator = create("Frame", {BackgroundColor3 = window.Theme.Border, BackgroundTransparency = 0.45, BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 58), Size = UDim2.new(1, 0, 0, 1), Parent = main})
-	local sidebar = create("Frame", {Name = "Sidebar", BackgroundColor3 = window.Theme.Surface, BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 59), Size = UDim2.new(0, 180, 1, -59), Parent = main})
+	local sidebar = create("Frame", {Name = "Sidebar", BackgroundColor3 = window.Theme.Surface, BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 59), Size = UDim2.new(0.24, 0, 1, -59), Parent = main})
 	local nav = create("ScrollingFrame", {BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = window.Theme.Border, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Position = UDim2.new(0, 8, 0, 10), Size = UDim2.new(1, -16, 1, -20), Parent = sidebar})
 	padding(nav, 3, 3); list(nav, 5)
-	local pageHolder = create("Frame", {Name = "Pages", BackgroundTransparency = 1, Position = UDim2.new(0, 180, 0, 59), Size = UDim2.new(1, -180, 1, -59), Parent = main})
+	local pageHolder = create("Frame", {Name = "Pages", BackgroundTransparency = 1, Position = UDim2.new(0.24, 0, 0, 59), Size = UDim2.new(0.76, 0, 1, -59), Parent = main})
 
-	-- Drag from neutral top-bar area; controls do not start a drag.
-	local dragStart: Vector2? = nil; local startPos: UDim2? = nil; local dragging = false
+	-- Drag works with both mouse and touch and cannot leave the screen bounds.
+	local dragStart: Vector2? = nil
+	local startTopLeft: Vector2? = nil
+	local dragging = false
 	top.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if input.Position.X < search.AbsolutePosition.X - 12 then dragging = true; dragStart = input.Position; startPos = main.Position end
-		end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		-- Reserve the right side for search and top buttons; drag from title/header area.
+		if input.Position.X >= search.AbsolutePosition.X - 12 then return end
+		dragging = true
+		dragStart = input.Position
+		startTopLeft = main.AbsolutePosition
 	end)
 	table.insert(window._connections, UserInputService.InputChanged:Connect(function(input)
-		if dragging and dragStart and startPos and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		if not dragging or not dragStart or not startTopLeft then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+		local size = main.AbsoluteSize
+		local wanted = startTopLeft + (input.Position - dragStart)
+		local maxX = math.max(0, viewport.X - size.X)
+		local maxY = math.max(0, viewport.Y - size.Y)
+		local left = math.clamp(wanted.X, 0, maxX)
+		local topY = math.clamp(wanted.Y, 0, maxY)
+		main.Position = UDim2.fromOffset(left + size.X * 0.5, topY + size.Y * 0.5)
+	end))
+	table.insert(window._connections, UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging, dragStart, startTopLeft = false, nil, nil
 		end
 	end))
-	table.insert(window._connections, UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end))
 	search:GetPropertyChangedSignal("Text"):Connect(function() window:_applySearch(search.Text) end)
 	local toggleKey = options.ToggleKey or Enum.KeyCode.RightControl
 	table.insert(window._connections, UserInputService.InputBegan:Connect(function(input, processed)
