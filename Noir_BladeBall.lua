@@ -9603,7 +9603,7 @@ do
         ["NATIVE KNIFE UTILITIES • equipped Knife only"] = "Нативные утилиты ножа • только экипированный нож",
         ["NETWORK LATENCY"] = "ЗАДЕРЖКА СЕТИ",
         ["NOIR HUB"] = "NOIR HUB",
-        ["NOIR SILENT AIM"] = "NOIR SILENT AIM",
+        ["NOIR HUB"] = "NOIR HUB",
         ["Nearest player or Sheriff-only targeting"] = "Прицеливание по ближайшему или только по шерифу",
         ["No Shadows"] = "Без теней",
         ["Noir Client • v4"] = "Noir Client • v4",
@@ -9730,8 +9730,6 @@ do
         ["Keep"] = "Держать",
         ["Backshots"] = "Backshots (сзади)",
         ["TROLL • BACKSHOTS"] = "ТРОЛЛИНГ • BACKSHOTS",
-        ["Stream Mode: ON"] = "Режим записи: ВКЛ",
-        ["Stream Mode: OFF"] = "Режим записи: ВЫКЛ",
         ["Hides button visuals only; buttons remain clickable."] = "Скрывает только вид кнопок; нажимать на них по-прежнему можно.",
         ["Restore buttons: Right Shift or hold three fingers for 1.3 seconds."] = "Вернуть вид кнопок: Right Shift или удерживайте три пальца 1,3 секунды.",
     }
@@ -9932,7 +9930,7 @@ do
         ["NATIVE KNIFE UTILITIES • equipped Knife only"] = "أدوات السكين الأصلية • السكين المجهز فقط",
         ["NETWORK LATENCY"] = "زمن استجابة الشبكة",
         ["NOIR HUB"] = "NOIR HUB",
-        ["NOIR SILENT AIM"] = "التصويب الصامت Noir",
+        ["NOIR HUB"] = "التصويب الصامت Noir",
         ["Nearest player or Sheriff-only targeting"] = "استهداف أقرب لاعب أو الشرطي فقط",
         ["No Shadows"] = "بدون ظلال",
         ["Noir Client • v4"] = "Noir Client • v4",
@@ -10059,8 +10057,6 @@ do
         ["Keep"] = "إبقاء",
         ["Backshots"] = "Backshots",
         ["TROLL • BACKSHOTS"] = "المقالب • Backshots",
-        ["Stream Mode: ON"] = "وضع البث: تشغيل",
-        ["Stream Mode: OFF"] = "وضع البث: إيقاف",
         ["Hides button visuals only; buttons remain clickable."] = "يخفي مظهر الأزرار فقط؛ وتبقى قابلة للنقر.",
         ["Restore buttons: Right Shift or hold three fingers for 1.3 seconds."] = "إظهار الأزرار مجددًا: اضغط Right Shift أو اضغط بثلاثة أصابع لمدة 1.3 ثانية.",
         ["Language updated."] = "تم تغيير اللغة.",
@@ -10681,358 +10677,6 @@ gui = New("\x53creenGui", { Name = "\x4eoirSilentAimUI", ResetOnSpawn = false, I
 __NOIR_GUARD.gui = gui
 
 
-local streamModeButton = nil
-local function createStreamModeController()
-local STREAM_MODE_GLOBAL = "__NoirStreamModeController"
-local streamEnvironment = NoirGenv()
-local previousStreamMode = rawget(streamEnvironment, STREAM_MODE_GLOBAL)
-if type(previousStreamMode) == "table" and type(previousStreamMode.Destroy) == "function" then
-    pcall(previousStreamMode.Destroy, previousStreamMode)
-end
-
-local StreamMode = {
-    active = false,
-    saved = setmetatable({}, { __mode = "k" }),
-    watched = setmetatable({}, { __mode = "k" }),
-    roots = setmetatable({}, { __mode = "k" }),
-    markedRoots = setmetatable({}, { __mode = "k" }),
-    rootConnections = {},
-    propertyConnections = {},
-    inputConnections = {},
-    playerGuiConnection = nil,
-}
-local STREAM_MODE_MAIN_GUI = "NoirSilentAimUI"
-local STREAM_MODE_NAMED_SCREENS = {
-    ["@fling"] = true,
-    ["@odh_bjp_bigstorage"] = true,
-    ["@odh_bjp_bindstorage"] = true,
-    ["@wallhopstorage"] = true,
-    ["@bindstorage_v6"] = true,
-    ["@bindstorage_v5"] = true,
-    ["@flingstorage_v1"] = true,
-    ["MM2ShootMurdererButton"] = true,
-}
-local STREAM_MODE_MARKER_PREFIX = "@fling_"
-
-local function streamSetVisual(self, instance, property, hiddenValue)
-    local properties = self.saved[instance]
-    if not properties then
-        properties = {}
-        self.saved[instance] = properties
-    end
-    local state = properties[property]
-    if not state then
-        local ok, original = pcall(function() return instance[property] end)
-        if not ok then return false end
-        state = { original = original, hidden = hiddenValue }
-        properties[property] = state
-    else
-        state.hidden = hiddenValue
-    end
-    local watched = self.watched[instance]
-    if not watched then
-        watched = {}
-        self.watched[instance] = watched
-    end
-    if not watched[property] then
-        watched[property] = true
-        local ok, connection = pcall(function()
-            return instance:GetPropertyChangedSignal(property):Connect(function()
-                if not self.active then return end
-                local savedProperties = self.saved[instance]
-                local currentState = savedProperties and savedProperties[property]
-                if not currentState then return end
-                local readOk, current = pcall(function() return instance[property] end)
-                if readOk and current ~= currentState.hidden then
-
-                    pcall(function() instance[property] = currentState.hidden end)
-                end
-            end)
-        end)
-        if ok and connection then table.insert(self.propertyConnections, connection) end
-    end
-    pcall(function() instance[property] = hiddenValue end)
-    return true
-end
-local function streamHideVisual(self, instance)
-    local ok, className, isGuiObject = pcall(function()
-        return instance.ClassName, instance:IsA("GuiObject")
-    end)
-    if not ok then return false end
-    local changed = false
-    if isGuiObject then
-        changed = streamSetVisual(self, instance, "BackgroundTransparency", 1) or changed
-    end
-    if className == "TextButton" or className == "TextLabel" or className == "TextBox" then
-        changed = streamSetVisual(self, instance, "TextTransparency", 1) or changed
-        changed = streamSetVisual(self, instance, "TextStrokeTransparency", 1) or changed
-    end
-    if className == "ImageButton" or className == "ImageLabel" or className == "ViewportFrame" then
-        changed = streamSetVisual(self, instance, "ImageTransparency", 1) or changed
-    end
-    if className == "ScrollingFrame" then
-        changed = streamSetVisual(self, instance, "ScrollBarImageTransparency", 1) or changed
-    end
-    if className == "UIStroke" then
-        changed = streamSetVisual(self, instance, "Transparency", 1) or changed
-    end
-    return changed
-end
-
-local function streamIsButtonDecoration(instance)
-    local ok, className = pcall(function() return instance.ClassName end)
-    return ok and (className == "TextLabel" or className == "ImageLabel" or className == "ViewportFrame" or className == "UIStroke")
-end
-
-local function streamHideButtonVisuals(self, button)
-    local changed = streamHideVisual(self, button)
-
-    local ok, children = pcall(function() return button:GetChildren() end)
-    if ok then
-        for _, child in ipairs(children) do
-            if streamIsButtonDecoration(child) then
-                changed = streamHideVisual(self, child) or changed
-            end
-        end
-    end
-    return changed
-end
-
-local function streamFindMarkedRoot(self, instance)
-    local cursor = instance
-    while cursor do
-        if self.markedRoots[cursor] then return cursor end
-        local ok, parent = pcall(function() return cursor.Parent end)
-        if not ok then break end
-        cursor = parent
-    end
-    return nil
-end
-
-local function streamIsManagedGui(self, instance)
-    if streamFindMarkedRoot(self, instance) then return true end
-    local cursor = instance
-    while cursor do
-        local ok, isScreenGui, name = pcall(function()
-            return cursor:IsA("ScreenGui"), cursor.Name
-        end)
-        if ok and isScreenGui then
-            
-            if name == STREAM_MODE_MAIN_GUI then return false end
-            return name:sub(1, 4) == "Noir" or STREAM_MODE_NAMED_SCREENS[name] == true
-        end
-        local parentOk, parent = pcall(function() return cursor.Parent end)
-        if not parentOk then break end
-        cursor = parent
-    end
-    return false
-end
-function StreamMode:IsActive()
-    return self.active == true
-end
-
-function StreamMode:ApplyInstance(instance)
-    if not self.active or typeof(instance) ~= "Instance" then return false end
-    local ok, name, className, isButton = pcall(function()
-        return instance.Name, instance.ClassName, instance:IsA("GuiButton")
-    end)
-    if not ok then return false end
-
-    if className == "StringValue" and name:sub(1, #STREAM_MODE_MARKER_PREFIX) == STREAM_MODE_MARKER_PREFIX then
-        local parentOk, parent = pcall(function() return instance.Parent end)
-        if parentOk and parent then
-            local guiOk, parentIsGuiObject = pcall(function() return parent:IsA("GuiObject") end)
-            if guiOk and parentIsGuiObject then
-                self.markedRoots[parent] = true
-                return streamHideButtonVisuals(self, parent)
-            end
-        end
-    end
-
-    
-    if className == "TextButton" and name == "NoirRestoreButton" then
-        return streamHideButtonVisuals(self, instance)
-    end
-    if not streamIsManagedGui(self, instance) then return false end
-    if isButton then
-        return streamHideButtonVisuals(self, instance)
-    end
-
-    local parentOk, parent = pcall(function() return instance.Parent end)
-    if parentOk and parent and streamIsButtonDecoration(instance) then
-        local parentButtonOk, parentIsButton = pcall(function() return parent:IsA("GuiButton") end)
-        if parentButtonOk and parentIsButton then
-            return streamHideVisual(self, instance)
-        end
-    end
-
-    local markedRoot = streamFindMarkedRoot(self, instance)
-    if markedRoot and parentOk and parent == markedRoot and streamIsButtonDecoration(instance) then
-        return streamHideVisual(self, instance)
-    end
-    
-    return false
-end
-function StreamMode:ApplyGui(instance)
-    return self:ApplyInstance(instance)
-end
-
-function StreamMode:AttachRoot(root)
-    if not self.active or typeof(root) ~= "Instance" or self.roots[root] then return end
-    self.roots[root] = true
-    local ok, connection = pcall(function()
-        return root.DescendantAdded:Connect(function(descendant)
-            local function applyNewControl()
-                if self.active then self:ApplyInstance(descendant) end
-            end
-            local deferred = false
-            if type(task) == "table" and type(task.defer) == "function" then
-                deferred = pcall(function() task.defer(applyNewControl) end)
-            end
-            if not deferred then applyNewControl() end
-        end)
-    end)
-    if ok and connection then table.insert(self.rootConnections, connection) end
-    self:ApplyInstance(root)
-    local descendantsOk, descendants = pcall(function() return root:GetDescendants() end)
-    if descendantsOk then
-        for _, descendant in ipairs(descendants) do self:ApplyInstance(descendant) end
-    end
-end
-
-function StreamMode:AttachRoots()
-    if not self.active then return end
-    local roots, seen = {}, {}
-    local function add(root)
-        if typeof(root) == "Instance" and not seen[root] then
-            seen[root] = true
-            roots[#roots + 1] = root
-        end
-    end
-    if type(gethui) == "function" then local ok, root = pcall(gethui); if ok then add(root) end end
-    if type(getcore) == "function" then local ok, root = pcall(getcore); if ok then add(root) end end
-    add(CoreGui)
-    local playerGuiOk, playerGui = pcall(function() return LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
-    if playerGuiOk then add(playerGui) end
-    for _, root in ipairs(roots) do self:AttachRoot(root) end
-    if not self.playerGuiConnection then
-        local ok, connection = pcall(function()
-            return LocalPlayer.ChildAdded:Connect(function(child)
-                local childOk, isPlayerGui = pcall(function() return child:IsA("PlayerGui") end)
-                if self.active and childOk and isPlayerGui then self:AttachRoot(child) end
-            end)
-        end)
-        if ok then self.playerGuiConnection = connection end
-    end
-end
-
-function StreamMode:DisconnectRoots()
-    for _, connection in ipairs(self.rootConnections) do pcall(function() connection:Disconnect() end) end
-    table.clear(self.rootConnections)
-    if self.playerGuiConnection then pcall(function() self.playerGuiConnection:Disconnect() end) end
-    self.playerGuiConnection = nil
-    table.clear(self.roots)
-end
-
-function StreamMode:DisconnectPropertyWatchers()
-    for _, connection in ipairs(self.propertyConnections) do pcall(function() connection:Disconnect() end) end
-    table.clear(self.propertyConnections)
-end
-
-function StreamMode:SetActive(value, silent)
-    value = value == true
-    if value == self.active then
-        if value then self:AttachRoots() end
-        return false
-    end
-    self.active = value
-    if value then
-        self:AttachRoots()
-    else
-        self:DisconnectRoots()
-        self:DisconnectPropertyWatchers()
-        for instance, properties in pairs(self.saved) do
-            for property, state in pairs(properties) do
-                pcall(function() instance[property] = state.original end)
-            end
-        end
-        table.clear(self.saved)
-        table.clear(self.watched)
-        table.clear(self.markedRoots)
-    end
-    if not silent and type(self.onChanged) == "function" then pcall(self.onChanged, value) end
-    return true
-end
-
-function StreamMode:Toggle()
-    return self:SetActive(not self.active)
-end
-
-function StreamMode:Destroy()
-    self:SetActive(false, true)
-    for _, connection in ipairs(self.inputConnections) do pcall(function() connection:Disconnect() end) end
-    table.clear(self.inputConnections)
-    self.onChanged = nil
-end
-
-local function updateStreamModeButton()
-    if streamModeButton and streamModeButton.Parent then
-        streamModeButton.Text = NoirTr(StreamMode.active and "Stream Mode: ON" or "Stream Mode: OFF")
-    end
-end
-StreamMode.onChanged = function(enabled)
-    NoirPersistence.data.toggles["Noir::StreamMode"] = enabled
-    NoirPersistence.Save()
-    updateStreamModeButton()
-end
-rawset(streamEnvironment, STREAM_MODE_GLOBAL, StreamMode)
-
-local activeStreamTouches = {}
-local streamTouchHolding, streamTouchFired, streamTouchToken = false, false, nil
-local function streamTouchCount()
-    local count = 0
-    for _ in pairs(activeStreamTouches) do count = count + 1 end
-    return count
-end
-local inputBeganOk, streamInputBegan = pcall(function()
-    return UIS.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.RightShift then
-            local textFocused = false
-            pcall(function() textFocused = UIS:GetFocusedTextBox() ~= nil end)
-            if not textFocused then StreamMode:Toggle() end
-            return
-        end
-        if input.UserInputType == Enum.UserInputType.Touch then
-            activeStreamTouches[input] = true
-            if streamTouchCount() >= 3 and not streamTouchHolding then
-                streamTouchHolding, streamTouchFired = true, false
-                local token = {}
-                streamTouchToken = token
-                task.delay(1.3, function()
-                    if streamTouchToken ~= token or not streamTouchHolding or streamTouchFired or streamTouchCount() < 3 then return end
-                    streamTouchFired = true
-                    StreamMode:Toggle()
-                end)
-            end
-        end
-    end)
-end)
-if inputBeganOk and streamInputBegan then table.insert(StreamMode.inputConnections, streamInputBegan) end
-local inputEndedOk, streamInputEnded = pcall(function()
-    return UIS.InputEnded:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.Touch then return end
-        activeStreamTouches[input] = nil
-        if streamTouchCount() < 3 then
-            streamTouchHolding, streamTouchFired, streamTouchToken = false, false, nil
-        end
-    end)
-end)
-if inputEndedOk and streamInputEnded then table.insert(StreamMode.inputConnections, streamInputEnded) end
-
-StreamMode:SetActive(NoirPersistence.data.toggles["Noir::StreamMode"] == true, true)
-return StreamMode, updateStreamModeButton
-end
-local StreamMode, updateStreamModeButton = createStreamModeController()
 
 local scale = New("\x55IScale", { Parent = gui, Scale = 1 })
 function rescale()
@@ -11608,7 +11252,7 @@ text(pill, "\x43onnected", 13, UDim2.fromOffset(26, 7))
 local heroCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(446, 0), Size = UDim2.new(1, -446, 0, 168), BackgroundColor3 = C.card, BackgroundTransparency = .84 })
 corner(heroCard, 18); stroke(heroCard, C.border, .45)
 New("\x55IGradient", { Parent = heroCard, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(60,48,32)), ColorSequenceKeypoint.new(1, Color3.fromRGB(24,18,14)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .72), NumberSequenceKeypoint.new(1, .86) }), Rotation = 25 })
-text(heroCard, "\x4eOIR SILENT AIM", 26, UDim2.fromOffset(26, 24))
+text(heroCard, "\x4eOIR HUB", 26, UDim2.fromOffset(26, 24))
 text(heroCard, "\x764 • gun & knife prediction, player and object ESP, presets", 14, UDim2.fromOffset(27, 62), true)
 local statText = text(heroCard, "", 14, UDim2.fromOffset(27, 96), true)
 local fpsCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
