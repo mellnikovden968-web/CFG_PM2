@@ -1,5 +1,5 @@
 --!strict
--- NovaUI — автономная UI-библиотека для Roblox Studio / разрешённых собственных проектов.
+-- NovaUI Auto — готовый автономный интерфейс. Один loadstring(...)() сразу открывает меню.
 -- Не содержит игровых механик, загрузчиков, обходов или сетевых перехватов.
 
 local TweenService = game:GetService("TweenService")
@@ -18,13 +18,14 @@ export type WindowOptions = {
 }
 
 local DEFAULT = {
-	Background = Color3.fromRGB(14, 16, 23),
-	Surface = Color3.fromRGB(21, 24, 34),
-	Surface2 = Color3.fromRGB(27, 31, 44),
-	SurfaceHover = Color3.fromRGB(35, 40, 56),
-	Text = Color3.fromRGB(241, 244, 255),
-	Muted = Color3.fromRGB(151, 161, 184),
-	Border = Color3.fromRGB(57, 64, 87),
+	-- Slightly lifted surfaces: controls remain readable even on a dark game scene.
+	Background = Color3.fromRGB(18, 21, 31),
+	Surface = Color3.fromRGB(28, 33, 47),
+	Surface2 = Color3.fromRGB(36, 42, 59),
+	SurfaceHover = Color3.fromRGB(47, 55, 76),
+	Text = Color3.fromRGB(244, 246, 255),
+	Muted = Color3.fromRGB(177, 187, 210),
+	Border = Color3.fromRGB(82, 92, 122),
 	Accent = Color3.fromRGB(122, 105, 255),
 	Success = Color3.fromRGB(76, 214, 151),
 	Danger = Color3.fromRGB(255, 99, 120),
@@ -213,12 +214,14 @@ function Window:SetVisible(visible: boolean)
 	if visible == self.Visible then return end
 	self.Visible = visible
 	if visible then
+		self.ReopenButton.Visible = false
 		self.Main.Visible = true
 		self.Main.GroupTransparency = 1
 		self.Scale.Scale = 0.96
 		tween(self.Main, {GroupTransparency = 0}, 0.2)
 		tween(self.Scale, {Scale = 1}, 0.26, Enum.EasingStyle.Back)
 	else
+		self.ReopenButton.Visible = true
 		local fade = tween(self.Main, {GroupTransparency = 1}, 0.15)
 		tween(self.Scale, {Scale = 0.96}, 0.15)
 		setVisibleAfter(self.Main, fade, false)
@@ -238,7 +241,7 @@ function Window:Notify(options: any)
 	local kind = string.lower(options.Type or "info")
 	local tint = kind == "success" and self.Theme.Success or (kind == "error" or kind == "danger") and self.Theme.Danger or self.Theme.Accent
 
-	local card = create("Frame", {
+	local card = create("CanvasGroup", {
 		Name = "Toast",
 		BackgroundColor3 = self.Theme.Surface,
 		BorderSizePixel = 0,
@@ -409,32 +412,34 @@ end
 
 function Section:Toggle(options: any)
 	options = options or {}
+	local window = self.Window
 	local title = options.Title or options.Name or "Переключатель"
 	local value = options.Default == true
 	local row = self:_row(title, 42)
 	local button = create("TextButton", {BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false, Text = "", Size = UDim2.fromScale(1, 1), Parent = row})
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 0); label.Size = UDim2.new(1, -78, 1, 0); label.Parent = row
-	local track = create("Frame", {BackgroundColor3 = self.Window.Theme.Border, BorderSizePixel = 0, Position = UDim2.new(1, -51, 0.5, -10), Size = UDim2.new(0, 39, 0, 20), Parent = row})
+	local track = create("Frame", {BackgroundColor3 = window.Theme.Border, BorderSizePixel = 0, Position = UDim2.new(1, -51, 0.5, -10), Size = UDim2.new(0, 39, 0, 20), Parent = row})
 	round(track, 20)
 	local knob = create("Frame", {BackgroundColor3 = Color3.fromRGB(235, 238, 250), BorderSizePixel = 0, Position = UDim2.new(0, 3, 0.5, -7), Size = UDim2.new(0, 14, 0, 14), Parent = track})
 	round(knob, 14)
 	local control = {}
 	function control:Set(nextValue: boolean, silent: boolean?)
 		value = nextValue == true
-		self.Window:_store(options.Flag, value)
-		tween(track, {BackgroundColor3 = value and self.Window.Theme.Accent or self.Window.Theme.Border}, 0.16)
+		window:_store(options.Flag, value)
+		tween(track, {BackgroundColor3 = value and window.Theme.Accent or window.Theme.Border}, 0.16)
 		tween(knob, {Position = value and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)}, 0.18, Enum.EasingStyle.Back)
-		if not silent then self.Window:_callback(options.Callback, value) end
+		if not silent then window:_callback(options.Callback, value) end
 	end
 	function control:Get() return value end
 	button.Activated:Connect(function() control:Set(not value) end)
 	control:Set(value, true)
-	if options.Flag then self.Window._controls[options.Flag] = control end
+	if options.Flag then window._controls[options.Flag] = control end
 	return control
 end
 
 function Section:Slider(options: any)
 	options = options or {}
+	local window = self.Window
 	local title = options.Title or options.Name or "Слайдер"
 	local min = tonumber(options.Min) or 0
 	local max = tonumber(options.Max) or 100
@@ -443,11 +448,11 @@ function Section:Slider(options: any)
 	local value = tonumber(options.Default) or min
 	local row = self:_row(title, 53)
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 5); label.Size = UDim2.new(1, -78, 0, 17); label.Parent = row
-	local amount = textLabel("", self.Window.Theme.Accent, 11, Enum.FontWeight.SemiBold); amount.TextXAlignment = Enum.TextXAlignment.Right; amount.Position = UDim2.new(1, -72, 0, 5); amount.Size = UDim2.new(0, 60, 0, 17); amount.Parent = row
+	local amount = textLabel("", window.Theme.Accent, 11, Enum.FontWeight.SemiBold); amount.TextXAlignment = Enum.TextXAlignment.Right; amount.Position = UDim2.new(1, -72, 0, 5); amount.Size = UDim2.new(0, 60, 0, 17); amount.Parent = row
 	self.Window:_accent(amount, "TextColor3")
-	local track = create("Frame", {BackgroundColor3 = self.Window.Theme.Border, BorderSizePixel = 0, Position = UDim2.new(0, 11, 1, -16), Size = UDim2.new(1, -22, 0, 5), Parent = row})
+	local track = create("Frame", {BackgroundColor3 = window.Theme.Border, BorderSizePixel = 0, Position = UDim2.new(0, 11, 1, -16), Size = UDim2.new(1, -22, 0, 5), Parent = row})
 	round(track, 5)
-	local fill = create("Frame", {BackgroundColor3 = self.Window.Theme.Accent, BorderSizePixel = 0, Size = UDim2.new(0, 0, 1, 0), Parent = track})
+	local fill = create("Frame", {BackgroundColor3 = window.Theme.Accent, BorderSizePixel = 0, Size = UDim2.new(0, 0, 1, 0), Parent = track})
 	round(fill, 5); self.Window:_accent(fill, "BackgroundColor3")
 	local hitbox = create("TextButton", {BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, Position = UDim2.new(0, -5, 0, -8), Size = UDim2.new(1, 10, 1, 16), Parent = track})
 	local control = {}
@@ -459,8 +464,8 @@ function Section:Slider(options: any)
 		local alpha = (value - min) / (max - min)
 		amount.Text = (options.Prefix or "") .. formatNumber(value) .. (options.Suffix or "")
 		tween(fill, {Size = UDim2.new(alpha, 0, 1, 0)}, 0.12)
-		self.Window:_store(options.Flag, value)
-		if not silent then self.Window:_callback(options.Callback, value) end
+		window:_store(options.Flag, value)
+		if not silent then window:_callback(options.Callback, value) end
 	end
 	function control:Get() return value end
 	local dragging = false
@@ -471,32 +476,33 @@ function Section:Slider(options: any)
 	hitbox.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; update(input) end
 	end)
-	table.insert(self.Window._connections, UserInputService.InputChanged:Connect(function(input)
+	table.insert(window._connections, UserInputService.InputChanged:Connect(function(input)
 		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then update(input) end
 	end))
-	table.insert(self.Window._connections, UserInputService.InputEnded:Connect(function(input)
+	table.insert(window._connections, UserInputService.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
 	end))
 	control:Set(value, true)
-	if options.Flag then self.Window._controls[options.Flag] = control end
+	if options.Flag then window._controls[options.Flag] = control end
 	return control
 end
 
 function Section:Dropdown(options: any)
 	options = options or {}
+	local window = self.Window
 	local title = options.Title or options.Name or "Список"
 	local values = options.Values or {}
 	local selected = options.Default
 	local isMulti = options.Multi == true
 	local selectedSet: {[any]: boolean} = {}
 	if isMulti and type(selected) == "table" then for _, item in ipairs(selected) do selectedSet[item] = true end end
-	local container = create("Frame", {Name = "Dropdown_" .. title, BackgroundColor3 = self.Window.Theme.Surface2, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 42), ClipsDescendants = true, Parent = self.Body})
-	round(container, 7); local border = outline(container, self.Window.Theme.Border, 0.62)
+	local container = create("Frame", {Name = "Dropdown_" .. title, BackgroundColor3 = window.Theme.Surface2, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 42), ClipsDescendants = true, Parent = self.Body})
+	round(container, 7); local border = outline(container, window.Theme.Border, 0.62)
 	self.Window:_registerSearch(self.Tab, container, title .. " " .. table.concat(values, " "))
 	local header = create("TextButton", {BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 42), Parent = container})
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 0); label.Size = UDim2.new(0.55, -11, 0, 42); label.Parent = header
-	local current = textLabel("", self.Window.Theme.Muted, 11); current.TextXAlignment = Enum.TextXAlignment.Right; current.Position = UDim2.new(0.45, 0, 0, 0); current.Size = UDim2.new(0.55, -39, 0, 42); current.Parent = header
-	local chevron = textLabel("⌄", self.Window.Theme.Accent, 18, Enum.FontWeight.Bold); chevron.TextXAlignment = Enum.TextXAlignment.Center; chevron.Position = UDim2.new(1, -31, 0, 0); chevron.Size = UDim2.new(0, 22, 0, 40); chevron.Parent = header; self.Window:_accent(chevron, "TextColor3")
+	local current = textLabel("", window.Theme.Muted, 11); current.TextXAlignment = Enum.TextXAlignment.Right; current.Position = UDim2.new(0.45, 0, 0, 0); current.Size = UDim2.new(0.55, -39, 0, 42); current.Parent = header
+	local chevron = textLabel("⌄", window.Theme.Accent, 18, Enum.FontWeight.Bold); chevron.TextXAlignment = Enum.TextXAlignment.Center; chevron.Position = UDim2.new(1, -31, 0, 0); chevron.Size = UDim2.new(0, 22, 0, 40); chevron.Parent = header; self.Window:_accent(chevron, "TextColor3")
 	local optionsArea = create("Frame", {BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.new(0, 8, 0, 44), Size = UDim2.new(1, -16, 0, 0), Parent = container})
 	local layout = list(optionsArea, 4)
 	local expanded = false
@@ -514,8 +520,8 @@ function Section:Dropdown(options: any)
 		else current.Text = selected and tostring(selected) or "Выбрать" end
 		for choice, button in pairs(buttons) do
 			local on = isMulti and selectedSet[choice] or selected == choice
-			tween(button, {BackgroundColor3 = on and self.Window.Theme.Accent or self.Window.Theme.Surface}, 0.12)
-			button.TextColor3 = on and Color3.fromRGB(255,255,255) or self.Window.Theme.Muted
+			tween(button, {BackgroundColor3 = on and window.Theme.Accent or window.Theme.Surface}, 0.12)
+			button.TextColor3 = on and Color3.fromRGB(255,255,255) or window.Theme.Muted
 		end
 	end
 	local function resize(open: boolean)
@@ -529,12 +535,12 @@ function Section:Dropdown(options: any)
 		if isMulti then
 			selectedSet = {}
 			if type(nextValue) == "table" then for _, choice in ipairs(nextValue) do selectedSet[choice] = true end end
-			self.Window:_store(options.Flag, chosenList())
-			if not silent then self.Window:_callback(options.Callback, chosenList()) end
+			window:_store(options.Flag, chosenList())
+			if not silent then window:_callback(options.Callback, chosenList()) end
 		else
 			selected = nextValue
-			self.Window:_store(options.Flag, selected)
-			if not silent then self.Window:_callback(options.Callback, selected) end
+			window:_store(options.Flag, selected)
+			if not silent then window:_callback(options.Callback, selected) end
 		end
 		refresh()
 	end
@@ -544,7 +550,7 @@ function Section:Dropdown(options: any)
 		for _, button in pairs(buttons) do button:Destroy() end
 		table.clear(buttons)
 		for _, choice in ipairs(values) do
-			local button = create("TextButton", {BackgroundColor3 = self.Window.Theme.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = tostring(choice), TextColor3 = self.Window.Theme.Muted, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 27), Parent = optionsArea})
+			local button = create("TextButton", {BackgroundColor3 = window.Theme.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = tostring(choice), TextColor3 = window.Theme.Muted, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 27), Parent = optionsArea})
 			round(button, 5); padding(button, 8, 0); buttons[choice] = button
 			button.Activated:Connect(function()
 				if isMulti then selectedSet[choice] = not selectedSet[choice]; control:Set(chosenList()) else control:Set(choice); resize(false) end
@@ -555,69 +561,96 @@ function Section:Dropdown(options: any)
 	header.Activated:Connect(function() resize(not expanded) end)
 	control:SetValues(values)
 	control:Set(isMulti and (type(selected) == "table" and selected or {}) or selected, true)
-	if options.Flag then self.Window._controls[options.Flag] = control end
+	if options.Flag then window._controls[options.Flag] = control end
 	return control
 end
 
 function Section:Textbox(options: any)
 	options = options or {}
+	local window = self.Window
 	local title = options.Title or options.Name or "Текст"
 	local value = tostring(options.Default or "")
 	local row = self:_row(title, 48)
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 0); label.Size = UDim2.new(0.42, -11, 1, 0); label.Parent = row
-	local input = create("TextBox", {BackgroundColor3 = self.Window.Theme.Surface, BorderSizePixel = 0, ClearTextOnFocus = false, PlaceholderText = options.Placeholder or "Введите текст…", PlaceholderColor3 = self.Window.Theme.Muted, Text = value, TextColor3 = self.Window.Theme.Text, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0.42, 0, 0.5, -14), Size = UDim2.new(0.58, -11, 0, 28), Parent = row})
-	round(input, 6); outline(input, self.Window.Theme.Border, 0.62); padding(input, 8, 0)
+	local input = create("TextBox", {BackgroundColor3 = window.Theme.Surface, BorderSizePixel = 0, ClearTextOnFocus = false, PlaceholderText = options.Placeholder or "Введите текст…", PlaceholderColor3 = window.Theme.Muted, Text = value, TextColor3 = self.Window.Theme.Text, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0.42, 0, 0.5, -14), Size = UDim2.new(0.58, -11, 0, 28), Parent = row})
+	round(input, 6); outline(input, window.Theme.Border, 0.62); padding(input, 8, 0)
 	local control = {}
 	function control:Set(nextValue: any, silent: boolean?)
-		value = tostring(nextValue or ""); input.Text = value; self.Window:_store(options.Flag, value); if not silent then self.Window:_callback(options.Callback, value) end
+		value = tostring(nextValue or ""); input.Text = value; window:_store(options.Flag, value); if not silent then window:_callback(options.Callback, value) end
 	end
 	function control:Get() return value end
 	input.FocusLost:Connect(function(enterPressed) if options.EnterOnly and not enterPressed then input.Text = value; return end control:Set(input.Text) end)
 	control:Set(value, true)
-	if options.Flag then self.Window._controls[options.Flag] = control end
+	if options.Flag then window._controls[options.Flag] = control end
 	return control
 end
 
 function Section:Keybind(options: any)
 	options = options or {}
+	local window = self.Window
 	local title = options.Title or options.Name or "Клавиша"
 	local key = normalizeKey(options.Default) or Enum.KeyCode.Unknown
 	local row = self:_row(title, 42)
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 0); label.Size = UDim2.new(1, -132, 1, 0); label.Parent = row
-	local bindButton = create("TextButton", {BackgroundColor3 = self.Window.Theme.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", TextColor3 = self.Window.Theme.Muted, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold), TextSize = 11, Position = UDim2.new(1, -111, 0.5, -13), Size = UDim2.new(0, 99, 0, 26), Parent = row})
-	round(bindButton, 6); outline(bindButton, self.Window.Theme.Border, 0.6)
+	local bindButton = create("TextButton", {BackgroundColor3 = window.Theme.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", TextColor3 = window.Theme.Muted, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold), TextSize = 11, Position = UDim2.new(1, -111, 0.5, -13), Size = UDim2.new(0, 99, 0, 26), Parent = row})
+	round(bindButton, 6); outline(bindButton, window.Theme.Border, 0.6)
 	local waiting = false
 	local control = {}
 	local function draw() bindButton.Text = waiting and "Нажмите клавишу" or (key == Enum.KeyCode.Unknown and "Не задано" or key.Name) end
 	function control:Set(nextKey: any, silent: boolean?)
 		key = normalizeKey(nextKey) or Enum.KeyCode.Unknown
-		self.Window:_store(options.Flag, key); draw(); if not silent then self.Window:_callback(options.Changed, key) end
+			window:_store(options.Flag, key); draw(); if not silent then window:_callback(options.Changed, key) end
 	end
 	function control:Get() return key end
-	bindButton.Activated:Connect(function() waiting = true; draw(); tween(bindButton, {BackgroundColor3 = self.Window.Theme.Accent}, 0.12) end)
-	table.insert(self.Window._connections, UserInputService.InputBegan:Connect(function(input, processed)
+	bindButton.Activated:Connect(function() waiting = true; draw(); tween(bindButton, {BackgroundColor3 = window.Theme.Accent}, 0.12) end)
+	table.insert(window._connections, UserInputService.InputBegan:Connect(function(input, processed)
 		if waiting then
-			if input.UserInputType == Enum.UserInputType.Keyboard then waiting = false; tween(bindButton, {BackgroundColor3 = self.Window.Theme.Surface}, 0.12); control:Set(input.KeyCode) end
+			if input.UserInputType == Enum.UserInputType.Keyboard then waiting = false; tween(bindButton, {BackgroundColor3 = window.Theme.Surface}, 0.12); control:Set(input.KeyCode) end
 			return
 		end
 		if not processed and key ~= Enum.KeyCode.Unknown and input.KeyCode == key then safeCall(options.Callback, key) end
 	end))
 	control:Set(key, true)
-	if options.Flag then self.Window._controls[options.Flag] = control end
+	if options.Flag then window._controls[options.Flag] = control end
+	return control
+end
+
+function Section:Progress(options: any)
+	options = options or {}
+	local window = self.Window
+	local title = options.Title or options.Name or "Прогресс"
+	local value = math.clamp(tonumber(options.Default or options.Value) or 0, 0, 1)
+	local row = self:_row(title, 49)
+	local label = textLabel(title, window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 5); label.Size = UDim2.new(1, -72, 0, 17); label.Parent = row
+	local amount = textLabel("", window.Theme.Muted, 11, Enum.FontWeight.SemiBold); amount.TextXAlignment = Enum.TextXAlignment.Right; amount.Position = UDim2.new(1, -66, 0, 5); amount.Size = UDim2.new(0, 54, 0, 17); amount.Parent = row
+	local track = create("Frame", {BackgroundColor3 = window.Theme.Border, BorderSizePixel = 0, Position = UDim2.new(0, 11, 1, -16), Size = UDim2.new(1, -22, 0, 5), Parent = row}); round(track, 5)
+	local fill = create("Frame", {BackgroundColor3 = window.Theme.Accent, BorderSizePixel = 0, Size = UDim2.new(0, 0, 1, 0), Parent = track}); round(fill, 5); window:_accent(fill, "BackgroundColor3")
+	local control = {}
+	function control:Set(nextValue: number, silent: boolean?)
+		value = math.clamp(tonumber(nextValue) or 0, 0, 1)
+		amount.Text = math.floor(value * 100 + 0.5) .. "%"
+		tween(fill, {Size = UDim2.new(value, 0, 1, 0)}, 0.16)
+		window:_store(options.Flag, value)
+		if not silent then window:_callback(options.Callback, value) end
+	end
+	function control:Get() return value end
+	control:Set(value, true)
+	if options.Flag then window._controls[options.Flag] = control end
 	return control
 end
 
 function Section:Colorpicker(options: any)
 	options = options or {}
+	local window = self.Window
 	local title = options.Title or options.Name or "Цвет"
 	local palette = options.Palette or {
 		Color3.fromRGB(122,105,255), Color3.fromRGB(69,156,255), Color3.fromRGB(58,204,174), Color3.fromRGB(76,214,151),
 		Color3.fromRGB(244,180,65), Color3.fromRGB(255,117,91), Color3.fromRGB(255,99,120), Color3.fromRGB(220,101,255),
 		Color3.fromRGB(245,245,245), Color3.fromRGB(168,177,198), Color3.fromRGB(70,76,96), Color3.fromRGB(25,27,38),
 	}
-	local value = typeof(options.Default) == "Color3" and options.Default or self.Window.Theme.Accent
-	local container = create("Frame", {Name = "Color_" .. title, BackgroundColor3 = self.Window.Theme.Surface2, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 42), ClipsDescendants = true, Parent = self.Body})
-	round(container, 7); local border = outline(container, self.Window.Theme.Border, 0.62); self.Window:_registerSearch(self.Tab, container, title)
+	local value = typeof(options.Default) == "Color3" and options.Default or window.Theme.Accent
+	local container = create("Frame", {Name = "Color_" .. title, BackgroundColor3 = window.Theme.Surface2, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 42), ClipsDescendants = true, Parent = self.Body})
+	round(container, 7); local border = outline(container, window.Theme.Border, 0.62); self.Window:_registerSearch(self.Tab, container, title)
 	local head = create("TextButton", {BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false, Text = "", Size = UDim2.new(1, 0, 0, 42), Parent = container})
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 0); label.Size = UDim2.new(1, -67, 1, 0); label.Parent = head
 	local swatch = create("Frame", {BackgroundColor3 = value, BorderSizePixel = 0, Position = UDim2.new(1, -42, 0.5, -12), Size = UDim2.new(0, 30, 0, 24), Parent = head}); round(swatch, 6); outline(swatch, Color3.fromRGB(255,255,255), 0.75)
@@ -627,7 +660,7 @@ function Section:Colorpicker(options: any)
 	local control = {}
 	function control:Set(nextColor: Color3, silent: boolean?)
 		if typeof(nextColor) ~= "Color3" then return end
-		value = nextColor; swatch.BackgroundColor3 = value; self.Window:_store(options.Flag, value); if not silent then self.Window:_callback(options.Callback, value) end
+		value = nextColor; swatch.BackgroundColor3 = value; window:_store(options.Flag, value); if not silent then window:_callback(options.Callback, value) end
 	end
 	function control:Get() return value end
 	for _, color in ipairs(palette) do
@@ -636,7 +669,7 @@ function Section:Colorpicker(options: any)
 	end
 	head.Activated:Connect(function() expanded = not expanded; tween(container, {Size = UDim2.new(1, 0, 0, expanded and 130 or 42)}, 0.18); tween(border, {Transparency = expanded and 0.16 or 0.62}, 0.16) end)
 	control:Set(value, true)
-	if options.Flag then self.Window._controls[options.Flag] = control end
+	if options.Flag then window._controls[options.Flag] = control end
 	return control
 end
 
@@ -652,6 +685,8 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	window.Values, window.Tabs, window._controls, window._connections, window._accentObjects = {}, {}, {}, {}, {}
 	window.Visible, window._destroyed = true, false
 
+	local previous = playerGui:FindFirstChild("NovaUI")
+	if previous then previous:Destroy() end
 	local screen = create("ScreenGui", {Name = "NovaUI", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = playerGui})
 	window.ScreenGui = screen
 	local toastHolder = create("Frame", {Name = "Notifications", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 18), Size = UDim2.new(0, 315, 1, -36), Parent = screen})
@@ -660,7 +695,21 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	round(main, 14); outline(main, window.Theme.Border, 0.22); window.Main = main
 	local sizeConstraint = create("UISizeConstraint", {MinSize = Vector2.new(560, 390), MaxSize = Vector2.new(940, 650), Parent = main})
 	local scale = create("UIScale", {Scale = 1, Parent = main}); window.Scale = scale
-	local shade = create("UIGradient", {Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(27,30,45)), ColorSequenceKeypoint.new(0.15, window.Theme.Background), ColorSequenceKeypoint.new(1, window.Theme.Background)}), Rotation = 90, Parent = main})
+	-- A persistent reopen button is essential on phones where RightControl is unavailable.
+	local reopen = create("TextButton", {
+		Name = "ReopenButton", BackgroundColor3 = window.Theme.Accent, BorderSizePixel = 0,
+		Text = "◈  UI", TextColor3 = Color3.fromRGB(255, 255, 255),
+		FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold), TextSize = 13,
+		AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 18, 1, -18), Size = UDim2.fromOffset(82, 38),
+		Visible = false, AutoButtonColor = false, Parent = screen,
+	})
+	round(reopen, 11); outline(reopen, Color3.fromRGB(255,255,255), 0.72)
+	reopen.Activated:Connect(function() window:SetVisible(true) end)
+	reopen.MouseEnter:Connect(function() tween(reopen, {BackgroundColor3 = window.Theme.SurfaceHover}, 0.12) end)
+	reopen.MouseLeave:Connect(function() tween(reopen, {BackgroundColor3 = window.Theme.Accent}, 0.12) end)
+	window.ReopenButton = reopen
+	window:_accent(reopen, "BackgroundColor3")
+	local shade = create("UIGradient", {Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(37,42,61)), ColorSequenceKeypoint.new(0.15, window.Theme.Background), ColorSequenceKeypoint.new(1, window.Theme.Background)}), Rotation = 90, Parent = main})
 
 	local top = create("Frame", {Name = "Topbar", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 58), Parent = main})
 	local title = textLabel(options.Title or "Nova", window.Theme.Text, 18, Enum.FontWeight.Bold); title.Position = UDim2.new(0, 20, 0, 9); title.Size = UDim2.new(0, 260, 0, 20); title.Parent = top
@@ -721,4 +770,58 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	return window
 end
 
-return NovaUI
+-- Auto-start dashboard --------------------------------------------------------
+-- This file is intentionally an application entry point, not a require-only library.
+-- Calling loadstring(game:HttpGet(URL))() opens the interface immediately.
+local ui = NovaUI:CreateWindow({
+	Title = "Nova Control",
+	Subtitle = "Universal interface • ready",
+	Accent = Color3.fromRGB(124, 105, 255),
+	ToggleKey = Enum.KeyCode.RightControl,
+})
+
+local overview = ui:Tab({Title = "Обзор", Icon = "◈"})
+local session = overview:Section({Title = "Сессия", Description = "Готовая интерактивная панель. Элементы работают сами по себе; к их Callback можно позже привязать разрешённую логику твоего проекта."})
+session:Paragraph({Title = "Статус", Content = "Интерфейс загружен. Используй боковые вкладки, поиск в шапке и маленькую кнопку «◈ UI» после сворачивания."})
+session:Progress({Title = "Готовность", Flag = "readiness", Default = 1})
+session:Button({Title = "Показать уведомление", Icon = "✦", Callback = function()
+	ui:Notify({Title = "Nova Control", Text = "Интерфейс работает корректно.", Type = "success"})
+end})
+
+local controlsTab = ui:Tab({Title = "Контролы", Icon = "⌁"})
+local controls = controlsTab:Section({Title = "Основные настройки", Description = "Полный набор обычных UI-компонентов."})
+controls:Toggle({Title = "Главный переключатель", Flag = "enabled", Default = true, Callback = function(enabled)
+	ui:Notify({Title = "Состояние", Text = enabled and "Переключатель включён." or "Переключатель выключен.", Type = enabled and "success" or "info", Duration = 2})
+end})
+controls:Slider({Title = "Интенсивность", Flag = "intensity", Min = 0, Max = 100, Default = 60, Step = 5, Suffix = "%"})
+controls:Dropdown({Title = "Режим", Flag = "mode", Values = {"Стандарт", "Мягкий", "Контрастный", "Пользовательский"}, Default = "Стандарт"})
+controls:Dropdown({Title = "Видимые блоки", Flag = "blocks", Multi = true, Values = {"Статус", "Счётчик", "Подсказки", "Уведомления"}, Default = {"Статус", "Уведомления"}})
+controls:Textbox({Title = "Название профиля", Flag = "profile", Default = "Основной", Placeholder = "Введите название…"})
+controls:Keybind({Title = "Быстрое действие", Flag = "actionKey", Default = Enum.KeyCode.F, Callback = function()
+	ui:Notify({Title = "Горячая клавиша", Text = "Быстрое действие получило нажатие.", Type = "success"})
+end})
+
+local appearanceTab = ui:Tab({Title = "Оформление", Icon = "✦"})
+local appearance = appearanceTab:Section({Title = "Тема и анимации"})
+appearance:Colorpicker({Title = "Акцентный цвет", Flag = "accent", Default = Color3.fromRGB(124, 105, 255), Callback = function(color)
+	ui:SetAccent(color)
+end})
+appearance:Toggle({Title = "Компактный режим", Flag = "compact", Default = false, Callback = function(enabled)
+	ui:Notify({Title = "Макет", Text = enabled and "Компактный режим выбран." or "Обычный размер выбран.", Type = "info", Duration = 2})
+end})
+appearance:Label({Text = "Свернуть можно кнопкой «—» в шапке. На телефоне появится «◈ UI» для возврата."})
+
+local profileTab = ui:Tab({Title = "Профиль", Icon = "⚙"})
+local profile = profileTab:Section({Title = "Данные интерфейса", Description = "Значения контролов доступны как единый снимок конфигурации."})
+profile:Button({Title = "Сохранить снимок в консоль", Icon = "›", Callback = function()
+	print("[Nova Control] Config:", ui:ExportConfig())
+	ui:Notify({Title = "Конфигурация", Text = "Текущие значения отправлены в консоль.", Type = "success"})
+end})
+profile:Button({Title = "Восстановить значения по умолчанию", Icon = "↺", Callback = function()
+	ui:ApplyConfig({enabled = true, intensity = 60, mode = "Стандарт", blocks = {"Статус", "Уведомления"}, profile = "Основной", compact = false})
+	ui:Notify({Title = "Готово", Text = "Настройки интерфейса восстановлены.", Type = "success"})
+end})
+profile:Paragraph({Title = "О файле", Content = "NovaUI Auto — единый независимый файл без внешних библиотек, картинок или HTTP-запросов после загрузки."})
+
+ui:Notify({Title = "Nova Control", Text = "Панель готова к работе.", Type = "success", Duration = 3})
+return ui
