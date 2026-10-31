@@ -111,6 +111,12 @@ local function formatNumber(value: number): string
 	return string.format("%.2f", value):gsub("0+$", ""):gsub("%.$", "")
 end
 
+-- Mouse input uses Vector2 while mobile touch input can expose Vector3.
+-- Normalise once before calculating any GUI drag delta.
+local function point2(position: Vector2 | Vector3): Vector2
+	return Vector2.new(position.X, position.Y)
+end
+
 local function textLabel(text: string, color: Color3, size: number, weight: Enum.FontWeight?)
 	return create("TextLabel", {
 		BackgroundTransparency = 1,
@@ -222,10 +228,32 @@ function Window:SetVisible(visible: boolean)
 		tween(self.Main, {GroupTransparency = 0}, 0.2)
 		tween(self.Scale, {Scale = 1}, 0.26, Enum.EasingStyle.Back)
 	else
-		self.ReopenButton.Visible = true
+		self.ReopenButton.Visible = self.LauncherEnabled ~= false
 		local fade = tween(self.Main, {GroupTransparency = 1}, 0.15)
 		tween(self.Scale, {Scale = 0.96}, 0.15)
 		setVisibleAfter(self.Main, fade, false)
+	end
+end
+
+function Window:Center()
+	if self._destroyed then return end
+	tween(self.Main, {Position = UDim2.fromScale(0.5, 0.5)}, 0.22, Enum.EasingStyle.Quart)
+end
+
+function Window:SetUserScale(value: number)
+	if self._destroyed then return end
+	self._userScale = math.clamp(tonumber(value) or 1, 0.72, 1.08)
+	tween(self.UserScale, {Scale = self._userScale}, 0.18)
+end
+
+function Window:GetUserScale()
+	return self._userScale or 1
+end
+
+function Window:SetLauncherEnabled(enabled: boolean)
+	self.LauncherEnabled = enabled ~= false
+	if self.ReopenButton then
+		self.ReopenButton.Visible = (not self.Visible) and self.LauncherEnabled
 	end
 end
 
@@ -260,15 +288,50 @@ function Window:Notify(options: any)
 	list(body, 3)
 	local head = textLabel(title, self.Theme.Text, 13, Enum.FontWeight.Bold); head.Size = UDim2.new(1, 0, 0, 16); head.Parent = body
 	local copy = textLabel(message, self.Theme.Muted, 12); copy.TextWrapped = true; copy.TextYAlignment = Enum.TextYAlignment.Top; copy.AutomaticSize = Enum.AutomaticSize.Y; copy.Size = UDim2.new(1, 0, 0, 0); copy.Parent = body
+	local timerTrack = create("Frame", {BackgroundColor3 = self.Theme.Border, BackgroundTransparency = 0.3, BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 11, 1, -5), Size = UDim2.new(1, -22, 0, 2), Parent = card})
+	round(timerTrack, 2)
+	local timerFill = create("Frame", {BackgroundColor3 = tint, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), Parent = timerTrack})
+	round(timerFill, 2)
 
 	card.GroupTransparency = 1
 	tween(card, {GroupTransparency = 0}, 0.18)
+	tween(timerFill, {Size = UDim2.new(0, 0, 1, 0)}, duration, Enum.EasingStyle.Linear)
 	task.delay(duration, function()
 		if not card.Parent then return end
 		local out = tween(card, {GroupTransparency = 1}, 0.18)
 		out.Completed:Connect(function() if card then card:Destroy() end end)
 	end)
 	return card
+end
+
+function Window:Confirm(options: any)
+	options = options or {}
+	local title = options.Title or "Подтверждение"
+	local message = options.Text or options.Content or "Продолжить действие?"
+	local overlay = create("CanvasGroup", {Name = "Dialog", BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0.42, BorderSizePixel = 0, Active = true, Size = UDim2.fromScale(1, 1), Parent = self.ScreenGui})
+	local panel = create("Frame", {BackgroundColor3 = self.Theme.Surface, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0.72, 0, 0, 174), Parent = overlay})
+	round(panel, 12); outline(panel, self.Theme.Border, 0.12); padding(panel, 15, 13)
+	local header = textLabel(title, self.Theme.Text, 15, Enum.FontWeight.Bold); header.Size = UDim2.new(1, 0, 0, 20); header.Parent = panel
+	local body = textLabel(message, self.Theme.Muted, 12); body.TextWrapped = true; body.TextYAlignment = Enum.TextYAlignment.Top; body.Position = UDim2.new(0, 0, 0, 30); body.Size = UDim2.new(1, 0, 0, 61); body.Parent = panel
+	local actions = create("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -37), Size = UDim2.new(1, 0, 0, 32), Parent = panel})
+	local function actionButton(text: string, position: UDim2, color: Color3)
+		local button = create("TextButton", {BackgroundColor3 = color, BorderSizePixel = 0, AutoButtonColor = false, Text = text, TextColor3 = Color3.fromRGB(255,255,255), FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold), TextSize = 11, Position = position, Size = UDim2.new(0.5, -4, 1, 0), Parent = actions})
+		round(button, 7)
+		button.MouseEnter:Connect(function() tween(button, {BackgroundColor3 = self.Theme.SurfaceHover}, 0.12) end)
+		return button
+	end
+	local cancelled = actionButton(options.CancelText or "Отмена", UDim2.new(0, 0, 0, 0), self.Theme.Surface2)
+	local accepted = actionButton(options.ConfirmText or "Подтвердить", UDim2.new(0.5, 4, 0, 0), self.Theme.Accent)
+	local function close(result: boolean)
+		if not overlay.Parent then return end
+		local out = tween(overlay, {GroupTransparency = 1}, 0.14)
+		out.Completed:Connect(function() if overlay then overlay:Destroy() end end)
+		if result then safeCall(options.Callback) else safeCall(options.CancelCallback) end
+	end
+	cancelled.Activated:Connect(function() close(false) end)
+	accepted.Activated:Connect(function() close(true) end)
+	overlay.GroupTransparency = 1; tween(overlay, {GroupTransparency = 0}, 0.16)
+	return overlay
 end
 
 function Window:ExportConfig(): {[string]: any}
@@ -319,32 +382,40 @@ end
 function Tab:Section(options: any)
 	options = options or {}
 	local section = setmetatable({}, Section)
-	section.Window = self.Window
-	section.Tab = self
-	section.Title = options.Title or "Секция"
+	section.Window, section.Tab = self.Window, self
+	section.Title, section.Collapsible, section.Collapsed = options.Title or "Секция", options.Collapsible == true, options.Collapsed == true
 
-	local card = create("Frame", {
-		Name = "Section_" .. section.Title,
-		BackgroundColor3 = self.Window.Theme.Surface,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		Parent = self.Body,
-	})
+	local card = create("Frame", {Name = "Section_" .. section.Title, BackgroundColor3 = self.Window.Theme.Surface, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Parent = self.Body})
 	round(card, 10); outline(card, self.Window.Theme.Border, 0.38)
-	local cardList = list(card, 7)
-	cardList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	local cardList = list(card, 7); cardList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	padding(card, 11, 10)
-
-	local header = textLabel(section.Title, self.Window.Theme.Text, 13, Enum.FontWeight.Bold)
-	header.Size = UDim2.new(1, 0, 0, 17); header.Parent = card
+	local headerRow = create("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18), Parent = card})
+	local header = textLabel(section.Title, self.Window.Theme.Text, 13, Enum.FontWeight.Bold); header.Size = UDim2.new(1, section.Collapsible and -28 or 0, 1, 0); header.Parent = headerRow
+	local description: TextLabel? = nil
 	if options.Description then
-		local description = textLabel(options.Description, self.Window.Theme.Muted, 11)
+		description = textLabel(options.Description, self.Window.Theme.Muted, 11)
 		description.TextWrapped = true; description.TextYAlignment = Enum.TextYAlignment.Top; description.AutomaticSize = Enum.AutomaticSize.Y; description.Size = UDim2.new(1, 0, 0, 0); description.Parent = card
 	end
 	local body = create("Frame", {Name = "Controls", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Parent = card})
 	list(body, 5)
 	section.Card, section.Body = card, body
+	function section:SetCollapsed(value: boolean)
+		self.Collapsed = value == true
+		body.Visible = not self.Collapsed
+		if description then description.Visible = not self.Collapsed end
+		if self._chevron then self._chevron.Text = self.Collapsed and ">" or "v" end
+	end
+	function section:ToggleCollapsed()
+		self:SetCollapsed(not self.Collapsed)
+	end
+	if section.Collapsible then
+		local collapse = create("TextButton", {BackgroundColor3 = self.Window.Theme.Surface2, BorderSizePixel = 0, AutoButtonColor = false, Text = "v", TextColor3 = self.Window.Theme.Accent, FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold), TextSize = 16, Position = UDim2.new(1, -25, 0, -3), Size = UDim2.fromOffset(25, 24), Parent = headerRow})
+		round(collapse, 6)
+		self.Window:_accent(collapse, "TextColor3")
+		collapse.Activated:Connect(function() section:ToggleCollapsed() end)
+		section._chevron = collapse
+	end
+	section:SetCollapsed(section.Collapsed)
 	return section
 end
 
@@ -399,7 +470,7 @@ function Section:Button(options: any)
 	local row, stroke = self:_row(title, 40)
 	local button = create("TextButton", {BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false, Text = "", Size = UDim2.fromScale(1, 1), Parent = row})
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.SemiBold); label.Position = UDim2.new(0, 11, 0, 0); label.Size = UDim2.new(1, -48, 1, 0); label.Parent = row
-	local arrow = textLabel(options.Icon or "›", self.Window.Theme.Accent, 22, Enum.FontWeight.Bold); arrow.TextXAlignment = Enum.TextXAlignment.Center; arrow.Position = UDim2.new(1, -35, 0, 0); arrow.Size = UDim2.new(0, 25, 1, 0); arrow.Parent = row
+	local arrow = textLabel(options.Icon or ">", self.Window.Theme.Accent, 22, Enum.FontWeight.Bold); arrow.TextXAlignment = Enum.TextXAlignment.Center; arrow.Position = UDim2.new(1, -35, 0, 0); arrow.Size = UDim2.new(0, 25, 1, 0); arrow.Parent = row
 	self.Window:_accent(arrow, "TextColor3")
 	button.MouseEnter:Connect(function() tween(row, {BackgroundColor3 = self.Window.Theme.SurfaceHover}, 0.12); tween(stroke, {Transparency = 0.15}, 0.12) end)
 	button.MouseLeave:Connect(function() tween(row, {BackgroundColor3 = self.Window.Theme.Surface2}, 0.12); tween(stroke, {Transparency = 0.62}, 0.12) end)
@@ -503,7 +574,7 @@ function Section:Dropdown(options: any)
 	local header = create("TextButton", {BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 42), Parent = container})
 	local label = textLabel(title, self.Window.Theme.Text, 12, Enum.FontWeight.Medium); label.Position = UDim2.new(0, 11, 0, 0); label.Size = UDim2.new(0.55, -11, 0, 42); label.Parent = header
 	local current = textLabel("", window.Theme.Muted, 11); current.TextXAlignment = Enum.TextXAlignment.Right; current.Position = UDim2.new(0.45, 0, 0, 0); current.Size = UDim2.new(0.55, -39, 0, 42); current.Parent = header
-	local chevron = textLabel("⌄", window.Theme.Accent, 18, Enum.FontWeight.Bold); chevron.TextXAlignment = Enum.TextXAlignment.Center; chevron.Position = UDim2.new(1, -31, 0, 0); chevron.Size = UDim2.new(0, 22, 0, 40); chevron.Parent = header; self.Window:_accent(chevron, "TextColor3")
+	local chevron = textLabel("v", window.Theme.Accent, 18, Enum.FontWeight.Bold); chevron.TextXAlignment = Enum.TextXAlignment.Center; chevron.Position = UDim2.new(1, -31, 0, 0); chevron.Size = UDim2.new(0, 22, 0, 40); chevron.Parent = header; self.Window:_accent(chevron, "TextColor3")
 	local optionsArea = create("Frame", {BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.new(0, 8, 0, 44), Size = UDim2.new(1, -16, 0, 0), Parent = container})
 	local layout = list(optionsArea, 4)
 	local expanded = false
@@ -684,7 +755,7 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	window.Theme = table.clone(DEFAULT)
 	window.Theme.Accent = options.Accent or DEFAULT.Accent
 	window.Values, window.Tabs, window._controls, window._connections, window._accentObjects = {}, {}, {}, {}, {}
-	window.Visible, window._destroyed = true, false
+	window.Visible, window._destroyed, window.LauncherEnabled, window._userScale = true, false, true, 1
 
 	local previous = playerGui:FindFirstChild("NovaUI")
 	if previous then previous:Destroy() end
@@ -701,16 +772,16 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	})
 	round(main, 13); outline(main, window.Theme.Border, 0.08); window.Main = main
 	local scale = create("UIScale", {Scale = 1, Parent = main}); window.Scale = scale
+	local userScale = create("UIScale", {Scale = 1, Parent = main}); window.UserScale = userScale
 	-- A persistent reopen button is essential on phones where RightControl is unavailable.
 	local reopen = create("TextButton", {
 		Name = "ReopenButton", BackgroundColor3 = window.Theme.Accent, BorderSizePixel = 0,
-		Text = "◈  UI", TextColor3 = Color3.fromRGB(255, 255, 255),
+		Text = "OPEN", TextColor3 = Color3.fromRGB(255, 255, 255),
 		FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold), TextSize = 13,
-		AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 18, 1, -18), Size = UDim2.fromOffset(82, 38),
-		Visible = false, AutoButtonColor = false, Parent = screen,
+		AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, 18, 1, -56), Size = UDim2.fromOffset(82, 38),
+		Visible = false, Active = true, AutoButtonColor = false, Parent = screen,
 	})
 	round(reopen, 11); outline(reopen, Color3.fromRGB(255,255,255), 0.72)
-	reopen.Activated:Connect(function() window:SetVisible(true) end)
 	reopen.MouseEnter:Connect(function() tween(reopen, {BackgroundColor3 = window.Theme.SurfaceHover}, 0.12) end)
 	reopen.MouseLeave:Connect(function() tween(reopen, {BackgroundColor3 = window.Theme.Accent}, 0.12) end)
 	window.ReopenButton = reopen
@@ -734,33 +805,51 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 	padding(nav, 3, 3); list(nav, 5)
 	local pageHolder = create("Frame", {Name = "Pages", BackgroundTransparency = 1, Position = UDim2.new(0.24, 0, 0, 59), Size = UDim2.new(0.76, 0, 1, -59), Parent = main})
 
-	-- Drag works with both mouse and touch and cannot leave the screen bounds.
+	-- Two independent drag systems. Both normalise touch Vector3 coordinates first.
 	local dragStart: Vector2? = nil
 	local startTopLeft: Vector2? = nil
 	local dragging = false
+	local launchStart: Vector2? = nil
+	local launchTopLeft: Vector2? = nil
+	local launcherDragging, launcherMoved = false, false
+	local function viewport()
+		return workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+	end
+	local function clampTopLeft(position: Vector2, size: Vector2)
+		local view = viewport()
+		return Vector2.new(math.clamp(position.X, 0, math.max(0, view.X - size.X)), math.clamp(position.Y, 0, math.max(0, view.Y - size.Y)))
+	end
 	top.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		-- Reserve the right side for search and top buttons; drag from title/header area.
 		if input.Position.X >= search.AbsolutePosition.X - 12 then return end
-		dragging = true
-		dragStart = input.Position
-		startTopLeft = main.AbsolutePosition
+		dragging, dragStart, startTopLeft = true, point2(input.Position), main.AbsolutePosition
+	end)
+	reopen.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		launcherDragging, launcherMoved = true, false
+		launchStart, launchTopLeft = point2(input.Position), reopen.AbsolutePosition
 	end)
 	table.insert(window._connections, UserInputService.InputChanged:Connect(function(input)
-		if not dragging or not dragStart or not startTopLeft then return end
 		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
-		local size = main.AbsoluteSize
-		local wanted = startTopLeft + (input.Position - dragStart)
-		local maxX = math.max(0, viewport.X - size.X)
-		local maxY = math.max(0, viewport.Y - size.Y)
-		local left = math.clamp(wanted.X, 0, maxX)
-		local topY = math.clamp(wanted.Y, 0, maxY)
-		main.Position = UDim2.fromOffset(left + size.X * 0.5, topY + size.Y * 0.5)
+		local current = point2(input.Position)
+		if dragging and dragStart and startTopLeft then
+			local topLeft = clampTopLeft(startTopLeft + (current - dragStart), main.AbsoluteSize)
+			main.Position = UDim2.fromOffset(topLeft.X + main.AbsoluteSize.X * 0.5, topLeft.Y + main.AbsoluteSize.Y * 0.5)
+		end
+		if launcherDragging and launchStart and launchTopLeft then
+			local delta = current - launchStart
+			if delta.Magnitude > 6 then launcherMoved = true end
+			local topLeft = clampTopLeft(launchTopLeft + delta, reopen.AbsoluteSize)
+			reopen.Position = UDim2.fromOffset(topLeft.X, topLeft.Y)
+		end
 	end))
 	table.insert(window._connections, UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging, dragStart, startTopLeft = false, nil, nil
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if dragging then dragging, dragStart, startTopLeft = false, nil, nil end
+		if launcherDragging then
+			local shouldOpen = not launcherMoved
+			launcherDragging, launchStart, launchTopLeft = false, nil, nil
+			if shouldOpen then window:SetVisible(true) end
 		end
 	end))
 	search:GetPropertyChangedSignal("Text"):Connect(function() window:_applySearch(search.Text) end)
@@ -791,57 +880,98 @@ function NovaUI:CreateWindow(options: WindowOptions?)
 end
 
 -- Auto-start dashboard --------------------------------------------------------
--- This file is intentionally an application entry point, not a require-only library.
--- Calling loadstring(game:HttpGet(URL))() opens the interface immediately.
+-- This is an application entry point: one loadstring(...)() opens the menu.
 local ui = NovaUI:CreateWindow({
-	Title = "Nova Control",
-	Subtitle = "Universal interface • ready",
+	Title = "NOVA CONTROL",
+	Subtitle = "Universal control panel",
 	Accent = Color3.fromRGB(124, 105, 255),
 	ToggleKey = Enum.KeyCode.RightControl,
 })
 
-local overview = ui:Tab({Title = "Обзор", Icon = "◈"})
-local session = overview:Section({Title = "Сессия", Description = "Готовая интерактивная панель. Элементы работают сами по себе; к их Callback можно позже привязать разрешённую логику твоего проекта."})
-session:Paragraph({Title = "Статус", Content = "Интерфейс загружен. Используй боковые вкладки, поиск в шапке и маленькую кнопку «◈ UI» после сворачивания."})
-session:Progress({Title = "Готовность", Flag = "readiness", Default = 1})
-session:Button({Title = "Показать уведомление", Icon = "✦", Callback = function()
-	ui:Notify({Title = "Nova Control", Text = "Интерфейс работает корректно.", Type = "success"})
+local themes = {
+	["Violet"] = Color3.fromRGB(124, 105, 255),
+	["Ocean"] = Color3.fromRGB(50, 146, 255),
+	["Emerald"] = Color3.fromRGB(55, 196, 142),
+	["Amber"] = Color3.fromRGB(245, 171, 61),
+	["Rose"] = Color3.fromRGB(238, 91, 125),
+}
+
+local overview = ui:Tab({Title = "Overview", Icon = "01"})
+local session = overview:Section({Title = "SESSION", Description = "The panel is ready. Drag the window by the title area; the menu and the OPEN launcher stay inside the screen.", Collapsible = true})
+session:Paragraph({Title = "Ready", Content = "Controls are UI-only and are safe placeholders for the logic you are permitted to add to your own project."})
+session:Progress({Title = "Interface readiness", Flag = "readiness", Default = 1})
+session:Button({Title = "Show notification", Icon = ">", Callback = function()
+	ui:Notify({Title = "NOVA CONTROL", Text = "Interface and animations are active.", Type = "success"})
+end})
+local quick = overview:Section({Title = "QUICK ACTIONS", Collapsible = true, Collapsed = true})
+quick:Button({Title = "Center window", Callback = function() ui:Center() end})
+quick:Button({Title = "Open confirmation dialog", Callback = function()
+	ui:Confirm({Title = "Interface check", Text = "Show a confirmation action?", ConfirmText = "Confirm", Callback = function()
+		ui:Notify({Title = "Confirmed", Text = "Dialog actions work.", Type = "success"})
+	end})
 end})
 
-local controlsTab = ui:Tab({Title = "Контролы", Icon = "⌁"})
-local controls = controlsTab:Section({Title = "Основные настройки", Description = "Полный набор обычных UI-компонентов."})
-controls:Toggle({Title = "Главный переключатель", Flag = "enabled", Default = true, Callback = function(enabled)
-	ui:Notify({Title = "Состояние", Text = enabled and "Переключатель включён." or "Переключатель выключен.", Type = enabled and "success" or "info", Duration = 2})
+local controlsTab = ui:Tab({Title = "Controls", Icon = "02"})
+local controls = controlsTab:Section({Title = "PRIMARY CONTROLS", Description = "Every standard control is interactive and exposes its current value through Flags.", Collapsible = true})
+controls:Toggle({Title = "Master switch", Flag = "enabled", Default = true, Callback = function(enabled)
+	ui:Notify({Title = "State", Text = enabled and "Master switch enabled." or "Master switch disabled.", Type = enabled and "success" or "info", Duration = 2})
 end})
-controls:Slider({Title = "Интенсивность", Flag = "intensity", Min = 0, Max = 100, Default = 60, Step = 5, Suffix = "%"})
-controls:Dropdown({Title = "Режим", Flag = "mode", Values = {"Стандарт", "Мягкий", "Контрастный", "Пользовательский"}, Default = "Стандарт"})
-controls:Dropdown({Title = "Видимые блоки", Flag = "blocks", Multi = true, Values = {"Статус", "Счётчик", "Подсказки", "Уведомления"}, Default = {"Статус", "Уведомления"}})
-controls:Textbox({Title = "Название профиля", Flag = "profile", Default = "Основной", Placeholder = "Введите название…"})
-controls:Keybind({Title = "Быстрое действие", Flag = "actionKey", Default = Enum.KeyCode.F, Callback = function()
-	ui:Notify({Title = "Горячая клавиша", Text = "Быстрое действие получило нажатие.", Type = "success"})
+controls:Slider({Title = "Intensity", Flag = "intensity", Min = 0, Max = 100, Default = 60, Step = 5, Suffix = "%"})
+controls:Dropdown({Title = "Operation mode", Flag = "mode", Values = {"Standard", "Quiet", "Precision", "Custom"}, Default = "Standard"})
+controls:Dropdown({Title = "Visible widgets", Flag = "widgets", Multi = true, Values = {"Status", "Hints", "Counter", "Notifications"}, Default = {"Status", "Notifications"}})
+controls:Textbox({Title = "Profile name", Flag = "profile", Default = "Default", Placeholder = "Enter a profile name"})
+controls:Keybind({Title = "Quick action", Flag = "actionKey", Default = Enum.KeyCode.F, Callback = function()
+	ui:Notify({Title = "Quick action", Text = "The bound key was pressed.", Type = "success"})
 end})
+local advanced = controlsTab:Section({Title = "ADVANCED", Description = "Expandable section for extra settings.", Collapsible = true, Collapsed = true})
+advanced:Toggle({Title = "Show detailed hints", Flag = "hints", Default = true})
+advanced:Slider({Title = "Update interval", Flag = "interval", Min = 1, Max = 60, Default = 15, Step = 1, Suffix = " s"})
+advanced:Label("Use the search box in the header to find controls on the current tab.")
 
-local appearanceTab = ui:Tab({Title = "Оформление", Icon = "✦"})
-local appearance = appearanceTab:Section({Title = "Тема и анимации"})
-appearance:Colorpicker({Title = "Акцентный цвет", Flag = "accent", Default = Color3.fromRGB(124, 105, 255), Callback = function(color)
+local interfaceTab = ui:Tab({Title = "Interface", Icon = "03"})
+local appearance = interfaceTab:Section({Title = "APPEARANCE", Description = "Theme, scale and launcher settings are applied live.", Collapsible = true})
+appearance:Dropdown({Title = "Accent preset", Flag = "preset", Values = {"Violet", "Ocean", "Emerald", "Amber", "Rose"}, Default = "Violet", Callback = function(name)
+	ui:SetAccent(themes[name] or themes.Violet)
+end})
+appearance:Colorpicker({Title = "Custom accent", Flag = "accent", Default = themes.Violet, Callback = function(color)
 	ui:SetAccent(color)
 end})
-appearance:Toggle({Title = "Компактный режим", Flag = "compact", Default = false, Callback = function(enabled)
-	ui:Notify({Title = "Макет", Text = enabled and "Компактный режим выбран." or "Обычный размер выбран.", Type = "info", Duration = 2})
+appearance:Slider({Title = "Interface scale", Flag = "uiScale", Min = 72, Max = 108, Default = 100, Step = 1, Suffix = "%", Callback = function(value)
+	ui:SetUserScale(value / 100)
 end})
-appearance:Label({Text = "Свернуть можно кнопкой «—» в шапке. На телефоне появится «◈ UI» для возврата."})
+appearance:Toggle({Title = "Floating OPEN launcher", Flag = "launcher", Default = true, Callback = function(enabled)
+	ui:SetLauncherEnabled(enabled)
+end})
+appearance:Button({Title = "Center this window", Callback = function() ui:Center() end})
+local interaction = interfaceTab:Section({Title = "TOUCH GUIDE", Collapsible = true, Collapsed = true})
+interaction:Paragraph({Title = "Move the menu", Content = "Drag the left part of the top header. When minimized, drag OPEN anywhere; tap it without moving to restore the menu."})
+interaction:Paragraph({Title = "Mobile layout", Content = "The panel measures itself from the current screen, so it remains inside the viewport in landscape and portrait modes."})
 
-local profileTab = ui:Tab({Title = "Профиль", Icon = "⚙"})
-local profile = profileTab:Section({Title = "Данные интерфейса", Description = "Значения контролов доступны как единый снимок конфигурации."})
-profile:Button({Title = "Сохранить снимок в консоль", Icon = "›", Callback = function()
-	print("[Nova Control] Config:", ui:ExportConfig())
-	ui:Notify({Title = "Конфигурация", Text = "Текущие значения отправлены в консоль.", Type = "success"})
+local shortcutsTab = ui:Tab({Title = "Shortcuts", Icon = "04"})
+local shortcuts = shortcutsTab:Section({Title = "ACTIVE KEYS", Description = "A compact hotkey reference.", Collapsible = true})
+shortcuts:Paragraph({Title = "RightControl", Content = "Hide or restore the main window on a physical keyboard."})
+shortcuts:Paragraph({Title = "F", Content = "Default Quick action key. Tap the key chip in Controls to rebind it."})
+shortcuts:Button({Title = "Test hotkey notification", Callback = function()
+	ui:Notify({Title = "Shortcuts", Text = "Keybind panel is available.", Type = "info"})
 end})
-profile:Button({Title = "Восстановить значения по умолчанию", Icon = "↺", Callback = function()
-	ui:ApplyConfig({enabled = true, intensity = 60, mode = "Стандарт", blocks = {"Статус", "Уведомления"}, profile = "Основной", compact = false})
-	ui:Notify({Title = "Готово", Text = "Настройки интерфейса восстановлены.", Type = "success"})
-end})
-profile:Paragraph({Title = "О файле", Content = "NovaUI Auto — единый независимый файл без внешних библиотек, картинок или HTTP-запросов после загрузки."})
 
-ui:Notify({Title = "Nova Control", Text = "Панель готова к работе.", Type = "success", Duration = 3})
+local systemTab = ui:Tab({Title = "System", Icon = "05"})
+local system = systemTab:Section({Title = "PROFILE & CONFIG", Description = "Values are kept in-memory and can be exported to the executor console.", Collapsible = true})
+system:Button({Title = "Print current configuration", Callback = function()
+	print("[NOVA CONTROL] Config:", ui:ExportConfig())
+	ui:Notify({Title = "Configuration", Text = "Current values were written to the console.", Type = "success"})
+end})
+system:Button({Title = "Restore interface defaults", Callback = function()
+	ui:Confirm({Title = "Restore defaults", Text = "Restore all demonstration values?", ConfirmText = "Restore", Callback = function()
+		ui:ApplyConfig({enabled = true, intensity = 60, mode = "Standard", widgets = {"Status", "Notifications"}, profile = "Default", hints = true, interval = 15, preset = "Violet", launcher = true, uiScale = 100})
+		ui:SetAccent(themes.Violet); ui:SetUserScale(1); ui:SetLauncherEnabled(true); ui:Center()
+		ui:Notify({Title = "Restored", Text = "Interface defaults have been restored.", Type = "success"})
+	end})
+end})
+system:Button({Title = "Close panel", Callback = function()
+	ui:Confirm({Title = "Close NOVA CONTROL", Text = "The launcher will also close. Run the loader again to reopen.", ConfirmText = "Close", Callback = function() ui:Destroy() end})
+end})
+system:Paragraph({Title = "Build", Content = "NOVA CONTROL is a one-file, responsive UI shell with no external assets or requests after it is loaded."})
+
+ui:Notify({Title = "NOVA CONTROL", Text = "Panel ready. Drag the header to move it.", Type = "success", Duration = 3})
 return ui
