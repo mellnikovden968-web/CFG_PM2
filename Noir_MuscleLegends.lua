@@ -1866,7 +1866,7 @@ local function ensureRestoreButton()
     local x = math.clamp(pos.X, 0, math.max(0, view.X - size.X))
     local y = math.clamp(pos.Y, 0, math.max(0, view.Y - size.Y))
     local k = math.max(scale.Scale, .001)
-    restore.Position = UDim2.fromOffset(x / k, y / k)
+    restore.Position = UDim2.fromOffset((x + size.X) / k, (y + size.Y * .5) / k)
     restore.ZIndex = 5000
     if not win.Visible then restore.Visible = true end
 end
@@ -1893,7 +1893,7 @@ UIS.InputChanged:Connect(function(input)
         local topLeft = restoreTopLeft + delta
         topLeft = Vector2.new(math.clamp(topLeft.X, 0, math.max(0, view.X-size.X)), math.clamp(topLeft.Y, 0, math.max(0, view.Y-size.Y)))
         local k = math.max(scale.Scale, .001)
-        restore.Position = UDim2.fromOffset(topLeft.X / k, topLeft.Y / k)
+        restore.Position = UDim2.fromOffset((topLeft.X + size.X) / k, (topLeft.Y + size.Y * .5) / k)
     end
 end)
 UIS.InputEnded:Connect(function(input)
