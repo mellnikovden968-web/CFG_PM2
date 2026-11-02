@@ -553,6 +553,7 @@ function kitiTitle(parent, value)
     local l = text(parent, value, 14, UDim2.fromOffset(20, 6))
     l.Font = Enum.Font.GothamBold
     l.Size = UDim2.new(1, -30, 0, 15)
+    l.TextTruncate = Enum.TextTruncate.AtEnd
     l.TextColor3 = C.text
     l.TextTransparency = 0
     return l
@@ -560,11 +561,13 @@ end
 function kitiDesc(parent, value)
     local l = text(parent, value, 11, UDim2.fromOffset(20, 27), true)
     l.Size = UDim2.new(1, -30, 0, 14)
+    l.TextTruncate = Enum.TextTruncate.AtEnd
     return l
 end
 function text(parent, value, size, pos, dim)
     return New("\x54extLabel", { Parent = parent, BackgroundTransparency = 1, Text = NoirTr(value), TextColor3 = dim and C.dim or C.text,
         TextSize = size, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd, TextWrapped = false,
         TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = .82,
         Position = pos or UDim2.new(), Size = UDim2.new(1, 0, 0, size + 8) })
 end
@@ -1005,7 +1008,7 @@ local function makeIconParts(box)
         track(f); track(s)
         return f, s
     end
-    local function line(cx, cy, len, th, rot) return fill(cx, cy, len, th, th / 2, rot) end
+    local function line(cx, cy, len, th, rot) return fill(cx, cy, len, th, 0, rot) end
     local function ring(cx, cy, d, th) return outline(cx, cy, d, d, d / 2, 0, th) end
     local function dot(cx, cy, d) return fill(cx, cy, d, d, d / 2) end
     return parts, fill, outline, line, ring, dot
@@ -1208,20 +1211,9 @@ text(status, "\x4eoir Hub • v4", 15, UDim2.fromOffset(16, 45))
 local header = New("\x46rame", { Parent = win, Position = UDim2.fromOffset(79, 0), Size = UDim2.new(1, -79, 0, 60), BackgroundTransparency = 1 })
 local headerTitle = text(header, "NOIR UI", 24, UDim2.fromOffset(28, 24)); headerTitle.Visible = false
 local headerSub = text(header, "Interface template", 13, UDim2.fromOffset(29, 56), true); headerSub.Visible = false
-do
-    local headStatus = New("\x46rame", { Parent = header, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 17),
-        Size = UDim2.fromOffset(128, 26), BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
-    corner(headStatus, 13); stroke(headStatus, C.accent, .5)
-    local hsDot = New("\x46rame", { Parent = headStatus, Position = UDim2.fromOffset(11, 10), Size = UDim2.fromOffset(6, 6),
-        BackgroundColor3 = C.accent, BorderSizePixel = 0 })
-    corner(hsDot, 3)
-    New("\x55IStroke", { Parent = hsDot, Color = C.accent, Thickness = 3, Transparency = .55, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    local hsText = text(headStatus, "SECURE LINK", 9, UDim2.fromOffset(23, 5))
-    hsText.Font = Enum.Font.GothamBold; hsText.TextColor3 = C.accent2
-    hsText.Size = UDim2.new(1, -28, 1, 0); hsText.TextYAlignment = Enum.TextYAlignment.Center
-    New("\x46rame", { Parent = header, Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1),
-        BackgroundColor3 = C.border, BackgroundTransparency = .72, BorderSizePixel = 0 })
-end
+-- Top-right SECURE LINK badge removed to keep the header uncluttered.
+New("\x46rame", { Parent = header, Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1),
+    BackgroundColor3 = C.border, BackgroundTransparency = .72, BorderSizePixel = 0 })
 local creatorImage = ""
 do
     local customAsset = (type(getcustomasset) == "\x66unction" and getcustomasset) or (type(getsynasset) == "\x66unction" and getsynasset)
@@ -1955,7 +1947,7 @@ function host.Notify(title, duration)
         ZIndex = 1001 })
     local message = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(18, 29), Size = UDim2.new(1, -30, 0, 30),
         BackgroundTransparency = 1, Text = tostring(title), TextColor3 = C.text,
-        TextSize = 14, Font = Enum.Font.Gotham, TextWrapped = true,
+        TextSize = 14, Font = Enum.Font.Gotham, TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
         ZIndex = 1001 })
     local progress = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(18, 69), Size = UDim2.new(1, -30, 0, 2),
@@ -2016,7 +2008,8 @@ function host.CreateTab()
         end
         local panel = New("\x46rame", { Parent = col, Size = UDim2.new(1, 0, 0, 90), AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundColor3 = C.panel, BackgroundTransparency = .72, ClipsDescendants = true })
-        corner(panel, 12); stroke(panel, C.border, .35)
+        corner(panel, 2); stroke(panel, C.border, .35)
+        hudBrackets(panel, 10, 1.25, C.accent, .62, 5)
         New("\x55IGradient", { Parent = panel, Rotation = 20, Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(13, 44, 50)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 18, 24)) }),
             Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .68), NumberSequenceKeypoint.new(1, .9) }) })
@@ -2051,6 +2044,8 @@ function host.CreateTab()
             rowLabel.TextTransparency = .1
             rowLabel.Size = UDim2.new(1, -160, 0, h or 20)
             rowLabel.TextYAlignment = Enum.TextYAlignment.Center
+            rowLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            rowLabel.ClipsDescendants = true
             local hover = NoirFX.new(0, 20, 1, function(v)
                 local c = math.clamp(v, 0, 1)
                 rowLabel.TextTransparency = .1 - .1 * c
@@ -2070,22 +2065,23 @@ function host.CreateTab()
             local state = savedToggle == true
             local r = row(label, 20)
             local pill = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 1), Size = UDim2.fromOffset(34, 18),
-                BackgroundColor3 = C.off, Text = "", AutoButtonColor = false })
-            corner(pill, 9); local pillStroke = stroke(pill, C.border, 0)
-            local pillGlow = New("\x55IStroke", { Parent = pill, Color = C.accent, Thickness = 3, Transparency = 1,
+                BackgroundColor3 = C.off, Text = "", AutoButtonColor = false, BorderSizePixel = 0 })
+            local pillStroke = stroke(pill, C.border, 0, 1.2)
+            local pillGlow = New("\x55IStroke", { Parent = pill, Color = C.accent, Thickness = 2.5, Transparency = 1,
                 ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-            local dot = New("\x46rame", { Parent = pill, AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 2, .5, 0),
-                Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.dim })
-            corner(dot, 7)
+            local dot = New("\x46rame", { Parent = pill, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(0, 8, .5, 0),
+                Size = UDim2.fromOffset(9, 9), BackgroundColor3 = C.dim, BorderSizePixel = 0, Rotation = 45 })
+            local dotStroke = stroke(dot, C.accent2, .25, 1)
             local togSpring = NoirFX.new(state and 1 or 0, 24, .62, function(t)
                 local c = math.clamp(t, 0, 1)
-                local stretch = math.sin(c * math.pi) * 6
-                dot.Position = UDim2.new(0, 2 + t * 16 - stretch * c, .5, 0)
-                dot.Size = UDim2.fromOffset(14 + stretch, 14)
-                pill.BackgroundColor3 = C.off:Lerp(C.accent, c)
+                local size = 9 + 1.5 * math.sin(c * math.pi)
+                dot.Position = UDim2.new(0, 8 + t * 18, .5, 0)
+                dot.Size = UDim2.fromOffset(size, size)
+                pill.BackgroundColor3 = C.off:Lerp(Color3.fromRGB(11, 48, 51), c)
                 pillStroke.Color = C.border:Lerp(C.accent2, c)
-                pillGlow.Transparency = 1 - .6 * c
-                dot.BackgroundColor3 = C.dim:Lerp(Color3.fromRGB(6, 20, 24), c)
+                pillGlow.Transparency = 1 - .62 * c
+                dot.BackgroundColor3 = C.dim:Lerp(C.accent, c)
+                dotStroke.Color = C.accent2:Lerp(Color3.fromRGB(220, 255, 251), c)
             end)
             local function set(v, persist, animate)
                 state = v == true
@@ -2143,18 +2139,17 @@ function host.CreateTab()
             local value = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -56, 0, 0), Size = UDim2.fromOffset(56, 18), BackgroundColor3 = C.surface,
                 BackgroundTransparency = 1, Text = tostring(default), TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham,
                 TextXAlignment = Enum.TextXAlignment.Right, ClearTextOnFocus = false })
-            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -9), Size = UDim2.new(1, 0, 0, 6), BackgroundColor3 = C.off })
-            corner(track, 3)
+            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -8), Size = UDim2.new(1, 0, 0, 4), BackgroundColor3 = C.off, BorderSizePixel = 0 })
             local fill = New("\x46rame", { Parent = track, Size = UDim2.fromScale((default - min) / (max - min), 1), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
-            corner(fill, 3)
+            -- Flat rail end keeps the HUD slider crisp and technical.
             New("\x55IGradient", { Parent = fill, Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 120, 130)), ColorSequenceKeypoint.new(.55, C.accent),
                 ColorSequenceKeypoint.new(1, C.accent2) }) })
             for gi = 1, 15 do
-                New("\x46rame", { Parent = track, Position = UDim2.new(gi / 16, -1, 0, 0), Size = UDim2.fromOffset(2, 6), BackgroundColor3 = C.base, BorderSizePixel = 0, ZIndex = 3 })
+                New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(gi / 16, 0, .5, 0), Size = UDim2.fromOffset(1, 8), BackgroundColor3 = C.base, BorderSizePixel = 0, ZIndex = 3 })
             end
-            local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new((default - min) / (max - min), 0, .5, 0), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = C.accent })
-            corner(knob, 6); knob.ZIndex = 5; stroke(knob, C.accent2, .25, 1.4)
+            local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new((default - min) / (max - min), 0, .5, 0), Size = UDim2.fromOffset(11, 11), BackgroundColor3 = C.accent, BorderSizePixel = 0, Rotation = 45 })
+            knob.ZIndex = 5; stroke(knob, C.accent2, .12, 1.4)
             do
                 local function glow(parent)
                     New("ImageLabel", { Parent = parent, BackgroundTransparency = 1, Image = "rbxassetid://112971167999062", ImageColor3 = C.accent, ImageTransparency = .68,
@@ -2172,7 +2167,7 @@ function host.CreateTab()
             end)
             local grabSpring = NoirFX.new(0, 26, .8, function(g)
                 local c = math.clamp(g, 0, 1)
-                local size = 12 + 4 * g
+                local size = 11 + 2 * g
                 knob.Size = UDim2.fromOffset(size, size)
                 halo.Transparency = 1 - .7 * c
                 value.TextSize = 14 + 2 * c
@@ -2211,7 +2206,7 @@ function host.CreateTab()
             local idx = table.find(values, NoirPersistence.data.dropdowns[key]) or 1
             local b = New("TextButton", { Parent = r, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 24),
                 BackgroundColor3 = C.surface, Text = "", AutoButtonColor = false, ZIndex = 4 })
-            corner(b, 10)
+            corner(b, 2)
             local bStroke = stroke(b, C.border, 0)
             New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 50, 56)), ColorSequenceKeypoint.new(1, C.surface) }),
@@ -2250,7 +2245,8 @@ function host.CreateTab()
                 popup = New("ScrollingFrame", { Parent = gui, Position = UDim2.fromOffset(b.AbsolutePosition.X / scale.Scale, (b.AbsolutePosition.Y + b.AbsoluteSize.Y + 4) / scale.Scale),
                     Size = UDim2.fromOffset(w, 0), CanvasSize = UDim2.fromOffset(0, #values * rowH + 8), BackgroundColor3 = C.surface, BorderSizePixel = 0,
                     ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent, ClipsDescendants = true, ZIndex = 50 })
-                corner(popup, 10); stroke(popup, C.accent, .4)
+                corner(popup, 2); stroke(popup, C.accent, .35)
+                hudBrackets(popup, 8, 1, C.accent, .45, 52)
                 New("UIPadding", { Parent = popup, PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) })
                 New("UIListLayout", { Parent = popup, SortOrder = Enum.SortOrder.LayoutOrder })
                 for i, v in ipairs(values) do
@@ -2258,7 +2254,7 @@ function host.CreateTab()
                     local item = New("TextButton", { Parent = popup, LayoutOrder = i, Size = UDim2.new(1, 0, 0, rowH), BackgroundColor3 = C.accent,
                         BackgroundTransparency = selected and .86 or 1, Text = tostring(v), TextColor3 = selected and C.accent2 or C.text, TextSize = 14,
                         Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false, ZIndex = 51 })
-                    corner(item, 8)
+                    corner(item, 1)
                     New("UIPadding", { Parent = item, PaddingLeft = UDim.new(0, 10) })
                     item.MouseEnter:Connect(function() if not selected then TweenService:Create(item, TweenInfo.new(.12), { BackgroundTransparency = .92 }):Play() end end)
                     item.MouseLeave:Connect(function() if not selected then TweenService:Create(item, TweenInfo.new(.12), { BackgroundTransparency = 1 }):Play() end end)
@@ -2311,11 +2307,14 @@ function host.CreateTab()
                 Instance = r }
         end
         function api:AddParagraph(title, body)
-            local r = row(tostring(title or ""), 68)
+            local r = row(tostring(title or ""), 76)
             if body and tostring(body) ~= "" then
-                local detail = text(r, tostring(body), 12, UDim2.fromOffset(0, 32), true)
+                local detail = text(r, tostring(body), 12, UDim2.fromOffset(0, 30), true)
                 detail.TextWrapped = true
-                detail.Size = UDim2.new(1, 0, 0, 30)
+                detail.TextTruncate = Enum.TextTruncate.AtEnd
+                detail.TextYAlignment = Enum.TextYAlignment.Top
+                detail.ClipsDescendants = true
+                detail.Size = UDim2.new(1, 0, 0, 42)
             end
             return r
         end
