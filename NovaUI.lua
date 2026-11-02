@@ -1,6 +1,7 @@
 --[[
     Noir UI — HUD edition: интерфейс хаба Noir отдельным файлом, без игровых функций.
-    Стиль: неоновый бирюзовый HUD (угловые рамки, сегментные полосы, кольца), пружинные анимации, экран загрузки.
+    Стиль: Noir HUD — бирюзовые рамки, векторные иконки, пружинные анимации и загрузка.
+    У интерактивных элементов есть отдельный редактор формы, акцентного цвета и размера; параметры сохраняются.
 
     Свои элементы добавляются в блоке «демо-наполнение» в конце файла:
         local tab = host.CreateTab()
@@ -236,7 +237,7 @@ if existingMainGui then
 end
 
 local NoirPersistence = {
-    data = { toggles = {}, sliders = {}, dropdowns = {}, textboxes = {}, keybinds = {}, positions = {}, colors = {} },
+    data = { toggles = {}, sliders = {}, dropdowns = {}, textboxes = {}, keybinds = {}, positions = {}, colors = {}, appearance = {} },
     token = 0,
     path = CONFIGS_FOLDER .. "\x2fautosave.json",
     safeLegacy = {},
@@ -248,7 +249,7 @@ do
             if typeof(loaded) == "\x74able" then NoirPersistence.data = loaded end
         end)
     end
-    for _, key in ipairs({"\x74oggles","\x73liders","\x64ropdowns","\x74extboxes","\x6beybinds","\x70ositions","\x63olors"}) do
+    for _, key in ipairs({"\x74oggles","\x73liders","\x64ropdowns","\x74extboxes","\x6beybinds","\x70ositions","\x63olors","appearance"}) do
         if typeof(NoirPersistence.data[key]) ~= "\x74able" then NoirPersistence.data[key] = {} end
     end
 end
@@ -318,16 +319,12 @@ function New(class, props)
     props = props or {}
     local x = Instance.new(class)
     for k, v in pairs(props) do if k ~= "\x50arent" then x[k] = v end end
-    local textObject = false
-    pcall(function()
-        textObject = x:IsA("TextLabel") or x:IsA("TextButton") or x:IsA("TextBox")
-    end)
-    if textObject then
-        pcall(function()
-            if props.Font == nil then x.Font = Enum.Font.GothamMedium end
-            x.TextScaled = false
-        end)
+    local isTextObject = false
+    pcall(function() isTextObject = x:IsA("TextLabel") or x:IsA("TextButton") or x:IsA("TextBox") end)
+    if isTextObject then
+        pcall(function() x.TextScaled = false end)
         pcall(function() x.TextTruncate = Enum.TextTruncate.AtEnd end)
+        if props.Font == nil then pcall(function() x.Font = Enum.Font.GothamMedium end) end
     end
     local langState = NoirGenv().__NoirLangState
     if type(langState) == "\x74able" then
@@ -512,9 +509,13 @@ local function refreshNoirLanguage()
 end
 NoirGenv().__NoirRefreshLanguage = refreshNoirLanguage
 
--- Strict angular HUD rule: do not attach UICorner to any custom-interface element.
--- Keeping this helper as a no-op preserves existing layout calls while guaranteeing square geometry.
-function corner(x, r) return nil end
+function corner(x, r)
+    if not x then return nil end
+    local c = x:FindFirstChildOfClass("\x55ICorner")
+    if not c then c = New("\x55ICorner", { Name = "NoirCorner", Parent = x }) end
+    c.CornerRadius = UDim.new(0, math.max(0, tonumber(r) or 12))
+    return c
+end
 local gradientStrokes = { fast = {} }
 function ringStroke(x, thickness, transparency)
     local ring = New("\x55IStroke", {
@@ -1022,7 +1023,7 @@ local function makeIconParts(box)
         track(f); track(s)
         return f, s
     end
-    local function line(cx, cy, len, th, rot) return fill(cx, cy, len, math.max(th, 1.7), 0, rot) end
+    local function line(cx, cy, len, th, rot) return fill(cx, cy, len, th, 0, rot) end
     local function ring(cx, cy, d, th) return outline(cx, cy, d, d, d / 2, 0, th) end
     local function dot(cx, cy, d) return fill(cx, cy, d, d, d / 2) end
     return parts, fill, outline, line, ring, dot
@@ -1260,8 +1261,7 @@ end
 local search = New("\x54extBox", { Parent = header, Position = UDim2.fromOffset(15, 15), Size = UDim2.fromOffset(313, 30),
     BackgroundColor3 = C.base, BackgroundTransparency = .45, PlaceholderText = "\x53earch", Text = "", TextColor3 = C.text,
     PlaceholderColor3 = C.dim, TextSize = 14, Font = Enum.Font.Gotham, ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left })
-corner(search, 0); local searchStroke = stroke(search, C.border, 0)
-hudBrackets(search, 6, 1, C.accent, .66, 5)
+corner(search, 4); local searchStroke = stroke(search, C.border, 0)
 New("\x55IPadding", { Parent = search, PaddingLeft = UDim.new(0, 8) })
 local loadUserThumbnail
 do
@@ -1620,7 +1620,7 @@ end
 
 local dashboard = New("\x46rame", { Parent = win, Position = content.Position, Size = content.Size, BackgroundTransparency = 1 })
 local profile = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(400, 168), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
-corner(profile, 0); stroke(profile, C.border, .35); hudBrackets(profile, 12, 1.4, C.accent, .54, 5)
+corner(profile, 8); stroke(profile, C.border, .35); hudBrackets(profile, 12, 1.35, C.accent, .55, 5)
 New("\x55IGradient", { Parent = profile, Rotation = 20, Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 52, 58)), ColorSequenceKeypoint.new(.6, Color3.fromRGB(8, 26, 34)),
     ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({
@@ -1651,7 +1651,7 @@ New("\x55IStroke", { Parent = pillDot, Color = C.accent, Thickness = 3, Transpar
 local pillText = text(pill, "\x43onnected", 12, UDim2.fromOffset(25, 6))
 pillText.TextColor3 = C.accent2; pillText.Font = Enum.Font.GothamBold; pillText.Size = UDim2.new(1, -30, 0, 16)
 local heroCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(446, 0), Size = UDim2.new(1, -446, 0, 168), BackgroundColor3 = C.card, BackgroundTransparency = .78 })
-corner(heroCard, 0); stroke(heroCard, C.border, .35); hudBrackets(heroCard, 12, 1.4, C.accent, .54, 5)
+corner(heroCard, 8); stroke(heroCard, C.border, .35); hudBrackets(heroCard, 12, 1.35, C.accent, .55, 5)
 New("\x55IGradient", { Parent = heroCard, Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 62, 66)), ColorSequenceKeypoint.new(.55, Color3.fromRGB(10, 34, 42)),
     ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({
@@ -1689,15 +1689,14 @@ statText.Size = UDim2.new(1, -170, 0, 18)
 local function statBadge(card, kind)
     local h = New("\x46rame", { Parent = card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 16),
         Size = UDim2.fromOffset(32, 32), BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
-    corner(h, 0); stroke(h, C.accent, .5)
-    hudBrackets(h, 5, 1, C.accent2, .48, 5)
+    corner(h, 16); stroke(h, C.accent, .5)
     local parts = buildTabIcon(kind, h)
     for _, p in ipairs(parts) do
         if p:IsA("\x55IStroke") then p.Color = C.accent2 else p.BackgroundColor3 = C.accent2 end
     end
 end
 local fpsCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
-corner(fpsCard, 0); stroke(fpsCard, C.border, .35); hudBrackets(fpsCard, 10, 1.2, C.accent, .58, 5)
+corner(fpsCard, 8); stroke(fpsCard, C.border, .35); hudBrackets(fpsCard, 10, 1.2, C.accent, .6, 5)
 New("\x55IGradient", { Parent = fpsCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
 text(fpsCard, "\x46PS", 13, UDim2.fromOffset(22, 20), true)
 local fpsText = text(fpsCard, "\x360", 42, UDim2.fromOffset(22, 46)); fpsText.TextColor3 = C.text
@@ -1705,7 +1704,7 @@ fpsText.Font = Enum.Font.GothamBold
 text(fpsCard, "FRAME RATE", 9, UDim2.fromOffset(23, 100), true)
 statBadge(fpsCard, "gauge")
 local pingCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(272, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
-corner(pingCard, 0); stroke(pingCard, C.border, .35); hudBrackets(pingCard, 10, 1.2, C.accent, .58, 5)
+corner(pingCard, 8); stroke(pingCard, C.border, .35); hudBrackets(pingCard, 10, 1.2, C.accent, .6, 5)
 New("\x55IGradient", { Parent = pingCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
 text(pingCard, "\x4eETWORK LATENCY", 13, UDim2.fromOffset(22, 20), true)
 local pingText = text(pingCard, "\x2d- ms", 42, UDim2.fromOffset(22, 46)); pingText.TextColor3 = C.text
@@ -1713,7 +1712,7 @@ pingText.Font = Enum.Font.GothamBold
 text(pingCard, "ROUND TRIP", 9, UDim2.fromOffset(23, 100), true)
 statBadge(pingCard, "signal")
 local playerCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(544, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
-corner(playerCard, 0); stroke(playerCard, C.border, .35); hudBrackets(playerCard, 10, 1.2, C.accent, .58, 5)
+corner(playerCard, 8); stroke(playerCard, C.border, .35); hudBrackets(playerCard, 10, 1.2, C.accent, .6, 5)
 New("\x55IGradient", { Parent = playerCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
 text(playerCard, "\x50LAYERS", 13, UDim2.fromOffset(22, 20), true)
 local playerText = text(playerCard, "\x30", 42, UDim2.fromOffset(22, 46)); playerText.TextColor3 = C.text
@@ -1721,7 +1720,7 @@ playerText.Font = Enum.Font.GothamBold
 text(playerCard, "IN SERVER", 9, UDim2.fromOffset(23, 100), true)
 statBadge(playerCard, "users")
 local infoCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 332), Size = UDim2.new(1, 0, 1, -348), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
-corner(infoCard, 0); stroke(infoCard, C.border, .35); hudBrackets(infoCard, 14, 1.5, C.accent, .55, 5)
+corner(infoCard, 8); stroke(infoCard, C.border, .35); hudBrackets(infoCard, 14, 1.4, C.accent, .56, 5)
 New("\x55IGradient", { Parent = infoCard, Rotation = 25, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 42, 48)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 18, 24)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .62), NumberSequenceKeypoint.new(1, .88) }) })
 local wm = text(infoCard, "N", 150, UDim2.new(1, -180, 1, -170), false)
 wm.Font = Enum.Font.GothamBlack; wm.TextColor3 = C.accent; wm.TextTransparency = .94
@@ -1929,7 +1928,7 @@ local host = {}
 
 local notificationHolder = New("\x46rame", {
     Parent = gui, Name = "\x4eotificationRail", AnchorPoint = Vector2.new(1, 0),
-    Position = UDim2.new(1, -20, 0, 82), Size = UDim2.new(0, 360, 0, 276),
+    Position = UDim2.new(1, -20, 0, 82), Size = UDim2.new(0, 360, 0, 288),
     BackgroundTransparency = 1, ClipsDescendants = false, ZIndex = 1000,
 })
 local notificationLayout = New("\x55IListLayout", {
@@ -1950,30 +1949,30 @@ function host.Notify(title, duration)
     local life = math.max(1.5, tonumber(duration) or 3)
     local card = New("\x46rame", {
         Parent = notificationHolder, Name = "\x54oast_" .. tostring(notificationSerial),
-        Size = UDim2.new(1, 0, 0, 84), BackgroundColor3 = C.panel,
+        Size = UDim2.new(1, 0, 0, 88), BackgroundColor3 = C.panel,
         BackgroundTransparency = .035, BorderSizePixel = 0, LayoutOrder = notificationSerial,
         ZIndex = 1000, ClipsDescendants = true,
     })
-    stroke(card, C.accent, .16, 1.25)
+    corner(card, 6); stroke(card, C.accent, .16, 1.2)
     New("\x55IGradient", { Parent = card, Rotation = 12, Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 42, 47)),
         ColorSequenceKeypoint.new(.55, C.panel),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 15, 21)),
     }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .42), NumberSequenceKeypoint.new(1, .16) }) })
-    hudBrackets(card, 12, 1.5, C.accent2, .05, 1003)
+    hudBrackets(card, 12, 1.5, C.accent2, .06, 1003)
     local marker = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(13, 12), Size = UDim2.fromOffset(7, 7),
         BackgroundColor3 = C.accent, BorderSizePixel = 0, Rotation = 45, ZIndex = 1004 })
     New("\x55IStroke", { Parent = marker, Color = C.accent2, Thickness = 1, Transparency = .15 })
     local badge = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(28, 7), Size = UDim2.new(1, -42, 0, 17),
-        BackgroundTransparency = 1, Text = "NOIR  //  SYSTEM NOTICE", TextColor3 = C.accent2,
+        BackgroundTransparency = 1, Text = "NOIR  /  SYSTEM NOTICE", TextColor3 = C.accent2,
         TextSize = 10, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 1004 })
-    local message = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(16, 29), Size = UDim2.new(1, -32, 0, 38),
+    local message = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(16, 28), Size = UDim2.new(1, -32, 0, 42),
         BackgroundTransparency = 1, Text = tostring(title), TextColor3 = C.text,
         TextSize = 14, Font = Enum.Font.GothamMedium, TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
         ZIndex = 1004 })
-    local rail = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(14, 74), Size = UDim2.new(1, -28, 0, 2),
+    local rail = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(14, 78), Size = UDim2.new(1, -28, 0, 2),
         BackgroundColor3 = C.off, BorderSizePixel = 0, ZIndex = 1004 })
     local progress = New("\x46rame", { Parent = rail, Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 1005 })
@@ -1983,16 +1982,22 @@ function host.Notify(title, duration)
             BackgroundColor3 = C.base, BorderSizePixel = 0, ZIndex = 1006 })
     end
     table.insert(activeNotifications, card); trimNotifications()
+    local toastScale = New("\x55IScale", { Parent = card, Scale = .94 })
+    TweenService:Create(toastScale, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+    card.BackgroundTransparency = 1
+    TweenService:Create(card, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        BackgroundTransparency = .035,
+    }):Play()
     TweenService:Create(progress, TweenInfo.new(life, Enum.EasingStyle.Linear), { Size = UDim2.new(0, 0, 1, 0) }):Play()
     task.delay(life, function()
         for i = #activeNotifications, 1, -1 do
             if activeNotifications[i] == card then table.remove(activeNotifications, i) break end
         end
         if card.Parent then
-            local out = TweenService:Create(card, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, 24, 0, 0), BackgroundTransparency = 1,
-            })
-            out:Play(); out.Completed:Connect(function() if card.Parent then card:Destroy() end end)
+            local fadeOut = TweenService:Create(card, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 })
+            local scaleOut = TweenService:Create(toastScale, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = .94 })
+            fadeOut:Play(); scaleOut:Play()
+            scaleOut.Completed:Connect(function() if card.Parent then card:Destroy() end end)
         end
     end)
 end
@@ -2038,7 +2043,8 @@ function host.CreateTab()
         end
         local panel = New("\x46rame", { Parent = col, Size = UDim2.new(1, 0, 0, 90), AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundColor3 = C.panel, BackgroundTransparency = .72, ClipsDescendants = true })
-        corner(panel, 2); stroke(panel, C.border, .35)
+        corner(panel, 3); stroke(panel, C.border, .35)
+        hudBrackets(panel, 10, 1.25, C.accent, .62, 5)
         hudBrackets(panel, 10, 1.25, C.accent, .62, 5)
         New("\x55IGradient", { Parent = panel, Rotation = 20, Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(13, 44, 50)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 18, 24)) }),
@@ -2085,6 +2091,183 @@ function host.CreateTab()
             r.MouseLeave:Connect(function() hover:Set(0) end)
             return r
         end
+        local activeAppearancePopup = nil
+        local activeAppearanceGear = nil
+        local activeAppearanceInputConnection = nil
+        local appearancePalette = {
+            C.accent,
+            Color3.fromRGB(90, 173, 255),
+            Color3.fromRGB(185, 124, 255),
+            Color3.fromRGB(255, 184, 82),
+        }
+        local shapeRadii = { 0, 3, 9 }
+        local sizeFactors = { .90, 1, 1.10 }
+        local function appearanceGlyph(parent)
+            for i = 1, 3 do
+                New("\x46rame", { Parent = parent, Position = UDim2.fromOffset(5, 5 + (i - 1) * 5),
+                    Size = UDim2.fromOffset(13, 1), BackgroundColor3 = C.dim, BorderSizePixel = 0, ZIndex = 31 })
+                New("\x46rame", { Parent = parent, Position = UDim2.fromOffset(7 + (i % 2) * 5, 4 + (i - 1) * 5),
+                    Size = UDim2.fromOffset(3, 3), BackgroundColor3 = C.accent2, BorderSizePixel = 0, ZIndex = 32 })
+            end
+        end
+        local function addAppearanceEditor(rowFrame, label, key, shapeTargets, scaleTarget, applyAccent)
+            NoirPersistence.data.appearance = NoirPersistence.data.appearance or {}
+            local saved = NoirPersistence.data.appearance[key]
+            if typeof(saved) ~= "\x74able" then saved = {}; NoirPersistence.data.appearance[key] = saved end
+            local shapeIndex = math.clamp(math.floor(tonumber(saved.shape) or 2), 1, #shapeRadii)
+            local colorIndex = math.clamp(math.floor(tonumber(saved.color) or 1), 1, #appearancePalette)
+            local sizeIndex = math.clamp(math.floor(tonumber(saved.size) or 2), 1, #sizeFactors)
+            local gear = New("\x54extButton", { Parent = rowFrame, AnchorPoint = Vector2.new(1, 0),
+                Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(24, 20),
+                BackgroundColor3 = C.surface, BackgroundTransparency = .18, Text = "", AutoButtonColor = false,
+                BorderSizePixel = 0, ZIndex = 25 })
+            corner(gear, 4); stroke(gear, C.border, .28, 1)
+            appearanceGlyph(gear)
+            local scaleNode
+            if scaleTarget then
+                scaleNode = scaleTarget:FindFirstChild("NoirControlScale")
+                if not scaleNode then scaleNode = New("\x55IScale", { Name = "NoirControlScale", Parent = scaleTarget, Scale = sizeFactors[sizeIndex] }) end
+            end
+            local function applyShape(index)
+                shapeIndex = math.clamp(index, 1, #shapeRadii)
+                for _, target in ipairs(shapeTargets or {}) do if target and target.Parent then corner(target, shapeRadii[shapeIndex]) end end
+            end
+            local function applySize(index)
+                sizeIndex = math.clamp(index, 1, #sizeFactors)
+                if scaleNode and scaleNode.Parent then scaleNode.Scale = sizeFactors[sizeIndex] end
+            end
+            local function applyColor(index)
+                colorIndex = math.clamp(index, 1, #appearancePalette)
+                if applyAccent then applyAccent(appearancePalette[colorIndex]) end
+            end
+            applyShape(shapeIndex); applySize(sizeIndex); applyColor(colorIndex)
+            local function saveAppearance()
+                NoirPersistence.data.appearance[key] = { shape = shapeIndex, color = colorIndex, size = sizeIndex }
+                NoirPersistence.Save()
+            end
+            local function styleOption(button, selected, color)
+                button.BackgroundColor3 = color or (selected and Color3.fromRGB(17, 67, 71) or C.surface)
+                button.BackgroundTransparency = selected and .08 or .25
+                local border = button:FindFirstChildOfClass("\x55IStroke")
+                if border then
+                    border.Color = selected and C.accent2 or C.border
+                    border.Transparency = selected and .04 or .45
+                end
+            end
+            local function closePopup(p)
+                if not p or not p.Parent then return end
+                if activeAppearanceInputConnection then activeAppearanceInputConnection:Disconnect(); activeAppearanceInputConnection = nil end
+                if activeAppearancePopup == p then
+                    activeAppearancePopup = nil
+                    activeAppearanceGear = nil
+                end
+                local closeTween = TweenService:Create(p, TweenInfo.new(.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 138) })
+                closeTween:Play(); closeTween.Completed:Connect(function() if p.Parent then p:Destroy() end end)
+            end
+            local function openPopup()
+                if activeAppearancePopup then closePopup(activeAppearancePopup) end
+                local h = 138
+                local view = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)) / scale.Scale
+                local w = math.min(226, math.max(180, view.X - 16))
+                local px = gear.AbsolutePosition.X / scale.Scale + gear.AbsoluteSize.X / scale.Scale - w
+                local py = (gear.AbsolutePosition.Y + gear.AbsoluteSize.Y) / scale.Scale + 6
+                if px + w > view.X - 8 then px = view.X - w - 8 end
+                px = math.clamp(px, 8, math.max(8, view.X - w - 8))
+                if py + h > view.Y - 8 then py = gear.AbsolutePosition.Y / scale.Scale - h - 6 end
+                py = math.clamp(py, 8, math.max(8, view.Y - h - 8))
+                local p = New("\x46rame", { Parent = gui, Name = "NoirAppearancePopup", Position = UDim2.fromOffset(px, py),
+                    Size = UDim2.fromOffset(0, h), BackgroundColor3 = C.panel, BackgroundTransparency = .04,
+                    BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 80 })
+                activeAppearancePopup = p
+                activeAppearanceGear = gear
+                corner(p, 7); stroke(p, C.accent, .22, 1.2)
+                New("\x55IGradient", { Parent = p, Rotation = 16, Color = ColorSequence.new(C.surface, C.panel),
+                    Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .12), NumberSequenceKeypoint.new(1, .02) }) })
+                hudBrackets(p, 11, 1.3, C.accent2, .1, 84)
+                New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 7), Size = UDim2.new(1, -46, 0, 16),
+                    BackgroundTransparency = 1, Text = "CONTROL DESIGN  /  " .. tostring(label), TextColor3 = C.accent2,
+                    TextSize = 10, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 85 })
+                local closeBtn = New("\x54extButton", { Parent = p, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -7, 0, 5),
+                    Size = UDim2.fromOffset(22, 20), BackgroundColor3 = C.surface, Text = "×", TextColor3 = C.dim,
+                    TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 86 })
+                corner(closeBtn, 3); stroke(closeBtn, C.border, .5)
+                local formLabel = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 32), Size = UDim2.fromOffset(46, 18),
+                    BackgroundTransparency = 1, Text = "FORM", TextColor3 = C.dim, TextSize = 9, Font = Enum.Font.GothamBold, ZIndex = 85 })
+                local formButtons = {}
+                for i, name in ipairs({ "CUT", "SOFT", "ROUND" }) do
+                    local b = New("\x54extButton", { Parent = p, Position = UDim2.fromOffset(64 + (i - 1) * 51, 30),
+                        Size = UDim2.fromOffset(46, 21), BackgroundColor3 = C.surface, Text = name,
+                        TextColor3 = C.text, TextSize = 9, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 85 })
+                    corner(b, shapeRadii[i]); stroke(b, C.border, .4)
+                    formButtons[i] = b
+                    b.Activated:Connect(function()
+                        applyShape(i); saveAppearance()
+                        for j, option in ipairs(formButtons) do styleOption(option, j == shapeIndex) end
+                    end)
+                end
+                local colorLabel = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 60), Size = UDim2.fromOffset(46, 18),
+                    BackgroundTransparency = 1, Text = "COLOR", TextColor3 = C.dim, TextSize = 9, Font = Enum.Font.GothamBold, ZIndex = 85 })
+                local colorButtons = {}
+                for i, color in ipairs(appearancePalette) do
+                    local b = New("\x54extButton", { Parent = p, Position = UDim2.fromOffset(70 + (i - 1) * 34, 58),
+                        Size = UDim2.fromOffset(22, 18), BackgroundColor3 = color, Text = "", AutoButtonColor = false, ZIndex = 85 })
+                    corner(b, 3); stroke(b, C.border, .35)
+                    colorButtons[i] = b
+                    b.Activated:Connect(function()
+                        applyColor(i); saveAppearance()
+                        for j, option in ipairs(colorButtons) do styleOption(option, j == colorIndex, appearancePalette[j]) end
+                    end)
+                end
+                local sizeLabel = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 87), Size = UDim2.fromOffset(46, 18),
+                    BackgroundTransparency = 1, Text = "SIZE", TextColor3 = C.dim, TextSize = 9, Font = Enum.Font.GothamBold, ZIndex = 85 })
+                local sizeButtons = {}
+                for i, name in ipairs({ "S", "M", "L" }) do
+                    local b = New("\x54extButton", { Parent = p, Position = UDim2.fromOffset(64 + (i - 1) * 51, 85),
+                        Size = UDim2.fromOffset(46, 21), BackgroundColor3 = C.surface, Text = name,
+                        TextColor3 = C.text, TextSize = 10, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 85 })
+                    corner(b, 3); stroke(b, C.border, .4)
+                    sizeButtons[i] = b
+                    b.Activated:Connect(function()
+                        applySize(i); saveAppearance()
+                        for j, option in ipairs(sizeButtons) do styleOption(option, j == sizeIndex) end
+                    end)
+                end
+                local foot = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 114), Size = UDim2.new(1, -24, 0, 14),
+                    BackgroundTransparency = 1, Text = "Changes save automatically", TextColor3 = C.dim, TextSize = 9,
+                    Font = Enum.Font.Gotham, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 85 })
+                for i, b in ipairs(formButtons) do styleOption(b, i == shapeIndex) end
+                for i, b in ipairs(colorButtons) do styleOption(b, i == colorIndex, appearancePalette[i]) end
+                for i, b in ipairs(sizeButtons) do styleOption(b, i == sizeIndex) end
+                closeBtn.Activated:Connect(function() closePopup(p) end)
+                activeAppearanceInputConnection = UIS.InputBegan:Connect(function(input)
+                    if not isPrimaryPress(input) or not p.Parent then return end
+                    local point = Vector2.new(input.Position.X, input.Position.Y)
+                    local p0, ps = p.AbsolutePosition, p.AbsoluteSize
+                    local g0, gs = gear.AbsolutePosition, gear.AbsoluteSize
+                    local insidePanel = point.X >= p0.X and point.X <= p0.X + ps.X and point.Y >= p0.Y and point.Y <= p0.Y + ps.Y
+                    local insideGear = point.X >= g0.X and point.X <= g0.X + gs.X and point.Y >= g0.Y and point.Y <= g0.Y + gs.Y
+                    if not insidePanel and not insideGear then closePopup(p) end
+                end)
+                TweenService:Create(p, TweenInfo.new(.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                    { Size = UDim2.fromOffset(w, h) }):Play()
+            end
+            gear.MouseEnter:Connect(function()
+                TweenService:Create(gear, TweenInfo.new(.14), { BackgroundColor3 = Color3.fromRGB(15, 52, 57) }):Play()
+            end)
+            gear.MouseLeave:Connect(function()
+                TweenService:Create(gear, TweenInfo.new(.16), { BackgroundColor3 = C.surface }):Play()
+            end)
+            gear.Activated:Connect(function()
+                if activeAppearancePopup and activeAppearanceGear == gear then
+                    closePopup(activeAppearancePopup)
+                else
+                    openPopup()
+                end
+            end)
+            return gear
+        end
         function api:AddToggle(label, callback)
             local key = keyFor(label)
             local savedToggle = NoirPersistence.data.toggles[key]
@@ -2094,7 +2277,7 @@ function host.CreateTab()
             end
             local state = savedToggle == true
             local r = row(label, 20)
-            local pill = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 1), Size = UDim2.fromOffset(34, 18),
+            local pill = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -30, 0, 1), Size = UDim2.fromOffset(34, 18),
                 BackgroundColor3 = C.off, Text = "", AutoButtonColor = false, BorderSizePixel = 0 })
             local pillStroke = stroke(pill, C.border, 0, 1.2)
             local pillGlow = New("\x55IStroke", { Parent = pill, Color = C.accent, Thickness = 2.5, Transparency = 1,
@@ -2102,16 +2285,18 @@ function host.CreateTab()
             local dot = New("\x46rame", { Parent = pill, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(0, 8, .5, 0),
                 Size = UDim2.fromOffset(9, 9), BackgroundColor3 = C.dim, BorderSizePixel = 0, Rotation = 45 })
             local dotStroke = stroke(dot, C.accent2, .25, 1)
+            local toggleAccent = C.accent
             local togSpring = NoirFX.new(state and 1 or 0, 24, .62, function(t)
                 local c = math.clamp(t, 0, 1)
                 local size = 9 + 1.5 * math.sin(c * math.pi)
                 dot.Position = UDim2.new(0, 8 + t * 18, .5, 0)
                 dot.Size = UDim2.fromOffset(size, size)
-                pill.BackgroundColor3 = C.off:Lerp(Color3.fromRGB(11, 48, 51), c)
-                pillStroke.Color = C.border:Lerp(C.accent2, c)
+                pill.BackgroundColor3 = C.off:Lerp(toggleAccent, .22 * c)
+                pillStroke.Color = C.border:Lerp(toggleAccent, c)
+                pillGlow.Color = toggleAccent
                 pillGlow.Transparency = 1 - .62 * c
-                dot.BackgroundColor3 = C.dim:Lerp(C.accent, c)
-                dotStroke.Color = C.accent2:Lerp(Color3.fromRGB(220, 255, 251), c)
+                dot.BackgroundColor3 = C.dim:Lerp(toggleAccent, c)
+                dotStroke.Color = toggleAccent:Lerp(C.accent2, .55)
             end)
             local function set(v, persist, animate)
                 state = v == true
@@ -2127,16 +2312,25 @@ function host.CreateTab()
                 set(not state, true)
             end
             pill.Activated:Connect(toggleClick)
+            addAppearanceEditor(r, label, key, { pill, dot }, pill, function(color)
+                toggleAccent = color
+                togSpring:Snap(state and 1 or 0)
+            end)
+            pill.Position = UDim2.new(1, -30, 0, 1)
             set(state, false, false)
             return function(v) set(v == nil and not state or v, true) end
         end
         function api:AddButton(label, callback)
             yieldDuringBuild()
-            local b = New("\x54extButton", { Parent = holder, Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = C.btn,
-                BackgroundTransparency = .68, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamMedium, AutoButtonColor = false })
-            corner(b, 0); ringStroke(b, 1.2, .4)
+            local key = keyFor(label)
+            local actionRow = New("\x46rame", { Parent = holder, Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1 })
+            local b = New("\x54extButton", { Parent = actionRow, Size = UDim2.new(1, -32, 1, 0), BackgroundColor3 = C.btn,
+                BackgroundTransparency = .68, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamMedium,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, AutoButtonColor = false })
+            New("\x55IPadding", { Parent = b, PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 8) })
+            corner(b, 7); local bRing = ringStroke(b, 1.2, .4)
             hudBrackets(b, 8, 1, C.accent, .62, 5)
-            New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
+            local bGradient = New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(18, 54, 60)), ColorSequenceKeypoint.new(1, C.btn) }),
                 Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .55), NumberSequenceKeypoint.new(1, .85) }) })
             local accentBar = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(0, 5), Size = UDim2.fromOffset(3, 18),
@@ -2156,6 +2350,12 @@ function host.CreateTab()
                 callback()
             end
             b.Activated:Connect(fire)
+            addAppearanceEditor(actionRow, label, key, { b }, b, function(color)
+                bRing.Color = color
+                bGradient.Color = ColorSequence.new(color:Lerp(C.surface, .65), color:Lerp(C.btn, .82))
+                accentBar.BackgroundColor3 = color
+                chev.TextColor3 = color
+            end)
             return b
         end
         function api:AddSlider(label, min, max, default, callback)
@@ -2167,13 +2367,13 @@ function host.CreateTab()
             end
             default = tonumber(savedSlider) or default
             local r = row(label, 30)
-            local value = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -56, 0, 0), Size = UDim2.fromOffset(56, 18), BackgroundColor3 = C.surface,
+            local value = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -82, 0, 0), Size = UDim2.fromOffset(48, 18), BackgroundColor3 = C.surface,
                 BackgroundTransparency = 1, Text = tostring(default), TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham,
                 TextXAlignment = Enum.TextXAlignment.Right, ClearTextOnFocus = false })
-            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -8), Size = UDim2.new(1, 0, 0, 4), BackgroundColor3 = C.off, BorderSizePixel = 0 })
+            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -8), Size = UDim2.new(1, -34, 0, 4), BackgroundColor3 = C.off, BorderSizePixel = 0 })
             local fill = New("\x46rame", { Parent = track, Size = UDim2.fromScale((default - min) / (max - min), 1), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
             -- Flat rail end keeps the HUD slider crisp and technical.
-            New("\x55IGradient", { Parent = fill, Color = ColorSequence.new({
+            local fillGradient = New("\x55IGradient", { Parent = fill, Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 120, 130)), ColorSequenceKeypoint.new(.55, C.accent),
                 ColorSequenceKeypoint.new(1, C.accent2) }) })
             for gi = 1, 15 do
@@ -2181,7 +2381,14 @@ function host.CreateTab()
             end
             local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new((default - min) / (max - min), 0, .5, 0), Size = UDim2.fromOffset(11, 11), BackgroundColor3 = C.accent, BorderSizePixel = 0, Rotation = 45 })
             knob.ZIndex = 5; stroke(knob, C.accent2, .12, 1.4)
-            -- No circular bloom assets: only the angular rail, ticks and diamond thumb remain.
+            do
+                local function glow(parent)
+                    New("ImageLabel", { Parent = parent, BackgroundTransparency = 1, Image = "rbxassetid://112971167999062", ImageColor3 = C.accent, ImageTransparency = .68,
+                        AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.new(1, 15, 1, 15), ScaleType = Enum.ScaleType.Slice,
+                        SliceCenter = Rect.new(Vector2.new(112, 112), Vector2.new(147, 147)), SliceScale = .6, ZIndex = 2 })
+                end
+                glow(fill); glow(knob)
+            end
             local current = default
             local halo = New("UIStroke", { Parent = knob, Color = C.accent2, Thickness = 4, Transparency = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
             local alphaSpring = NoirFX.new((default - min) / (max - min), 24, .78, function(a)
@@ -2203,6 +2410,20 @@ function host.CreateTab()
                 callback(current)
                 if persist ~= false then NoirPersistence.data.sliders[key] = current; NoirPersistence.Save() end
             end
+            addAppearanceEditor(r, label, key, { track, knob }, track, function(color)
+                fill.BackgroundColor3 = color
+                fillGradient.Color = ColorSequence.new(Color3.fromRGB(12, 120, 130), color:Lerp(C.accent2, .38))
+                for _, root in ipairs({ fill, knob }) do
+                    for _, child in ipairs(root:GetChildren()) do
+                        if child:IsA("ImageLabel") then child.ImageColor3 = color end
+                    end
+                end
+                knob.BackgroundColor3 = color
+                local knobStroke = knob:FindFirstChildOfClass("\x55IStroke")
+                if knobStroke then knobStroke.Color = color:Lerp(C.accent2, .5) end
+                halo.Color = color:Lerp(C.accent2, .4)
+            end)
+            value.Position = UDim2.new(1, -82, 0, 0)
             set(default, false)
             alphaSpring:Snap((current - min) / (max - min))
             value.FocusLost:Connect(function() set(value.Text) end)
@@ -2226,14 +2447,14 @@ function host.CreateTab()
             local key = keyFor(label)
             local r = row(label, 46)
             local rowText = r:FindFirstChildWhichIsA("TextLabel")
-            if rowText then rowText.Size = UDim2.new(1, 0, 0, 18); rowText.TextYAlignment = Enum.TextYAlignment.Top end
+            if rowText then rowText.Size = UDim2.new(1, -30, 0, 18); rowText.TextYAlignment = Enum.TextYAlignment.Top end
             local idx = table.find(values, NoirPersistence.data.dropdowns[key]) or 1
             local b = New("TextButton", { Parent = r, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 24),
                 BackgroundColor3 = C.surface, Text = "", AutoButtonColor = false, ZIndex = 4 })
-            corner(b, 0)
+            corner(b, 2)
             local bStroke = stroke(b, C.border, 0)
-            hudBrackets(b, 7, 1, C.accent, .68, 6)
-            New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
+            local dropdownAccent = C.accent
+            local dropdownGradient = New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 50, 56)), ColorSequenceKeypoint.new(1, C.surface) }),
                 Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .88) }) })
             local valueLabel = New("TextLabel", { Parent = b, Position = UDim2.fromOffset(9, 0), Size = UDim2.new(1, -32, 1, 0), BackgroundTransparency = 1,
@@ -2242,13 +2463,13 @@ function host.CreateTab()
             local arrow = New("TextLabel", { Parent = b, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0), Size = UDim2.fromOffset(12, 12),
                 BackgroundTransparency = 1, Text = "⌄", TextColor3 = C.dim, TextSize = 14, Font = Enum.Font.GothamBold, ZIndex = 5 })
             local quart = TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-            b.MouseEnter:Connect(function() TweenService:Create(b, quart, { BackgroundColor3 = Color3.fromRGB(13, 31, 34) }):Play() end)
+            b.MouseEnter:Connect(function() TweenService:Create(b, quart, { BackgroundColor3 = C.surface:Lerp(dropdownAccent, .12) }):Play() end)
             b.MouseLeave:Connect(function() TweenService:Create(b, quart, { BackgroundColor3 = C.surface }):Play() end)
             local popup
             local function close()
                 if popup then popup:Destroy(); popup = nil end
                 TweenService:Create(arrow, quart, { Rotation = 0 }):Play()
-                TweenService:Create(bStroke, quart, { Color = C.border }):Play()
+                TweenService:Create(bStroke, quart, { Color = dropdownAccent }):Play()
             end
             local function set(v, silent)
                 local found = table.find(values, v)
@@ -2277,7 +2498,7 @@ function host.CreateTab()
                 for i, v in ipairs(values) do
                     local selected = i == idx
                     local item = New("TextButton", { Parent = popup, LayoutOrder = i, Size = UDim2.new(1, 0, 0, rowH), BackgroundColor3 = C.accent,
-                        BackgroundTransparency = selected and .86 or 1, Text = tostring(v), TextColor3 = selected and C.accent2 or C.text, TextSize = 14,
+                        BackgroundTransparency = selected and .86 or 1, Text = tostring(v), TextColor3 = selected and dropdownAccent:Lerp(C.accent2, .45) or C.text, TextSize = 14,
                         Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false, ZIndex = 51 })
                     corner(item, 1)
                     New("UIPadding", { Parent = item, PaddingLeft = UDim.new(0, 10) })
@@ -2287,7 +2508,7 @@ function host.CreateTab()
                 end
                 TweenService:Create(popup, quart, { Size = UDim2.fromOffset(w, fullH) }):Play()
                 TweenService:Create(arrow, quart, { Rotation = 180 }):Play()
-                TweenService:Create(bStroke, quart, { Color = C.accent }):Play()
+                TweenService:Create(bStroke, quart, { Color = dropdownAccent }):Play()
             end
             local lastOpen = 0
             local function togglePopup()
@@ -2297,6 +2518,16 @@ function host.CreateTab()
                 if popup then close() else open() end
             end
             b.Activated:Connect(togglePopup)
+            addAppearanceEditor(r, label, key, { b }, b, function(color)
+                dropdownAccent = color
+                bStroke.Color = color
+                dropdownGradient.Color = ColorSequence.new(color:Lerp(C.surface, .6), C.surface)
+                arrow.TextColor3 = color
+                if popup then
+                    local popupStroke = popup:FindFirstChildOfClass("\x55IStroke")
+                    if popupStroke then popupStroke.Color = color end
+                end
+            end)
             if NoirPersistence.data.dropdowns[key] ~= nil and values[idx] ~= nil then
                 pcall(callback, values[idx])
             end
@@ -2311,9 +2542,10 @@ function host.CreateTab()
             local key = keyFor(label)
             local r = row(label, 24)
             local savedText = NoirPersistence.data.textboxes[key]
-            local box = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -180, 0, 2), Size = UDim2.fromOffset(180, 20), BackgroundColor3 = C.surface,
+            local box = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -200, 0, 2), Size = UDim2.fromOffset(170, 20), BackgroundColor3 = C.surface,
                 Text = type(savedText) == "\x73tring" and savedText or "", PlaceholderText = NoirTr(label), TextColor3 = C.text, PlaceholderColor3 = C.dim, TextSize = 14, Font = Enum.Font.Gotham, ClearTextOnFocus = false })
-            corner(box, 4); stroke(box, C.border, 0)
+            corner(box, 4); local boxStroke = stroke(box, C.border, 0)
+            addAppearanceEditor(r, label, key, { box }, box, function(color) boxStroke.Color = color end)
             if type(savedText) == "\x73tring" and savedText ~= "" then
                 pcall(callback, savedText)
             end
@@ -2340,7 +2572,6 @@ function host.CreateTab()
                 detail.TextYAlignment = Enum.TextYAlignment.Top
                 detail.ClipsDescendants = true
                 detail.Size = UDim2.new(1, 0, 0, 42)
-                detail.Font = Enum.Font.GothamMedium
             end
             return r
         end
@@ -2356,7 +2587,9 @@ function host.CreateTab()
             end
             local swatch = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 2), Size = UDim2.fromOffset(24, 14),
                 BackgroundColor3 = colour, Text = "", TextColor3 = C.text, TextSize = 11, Font = Enum.Font.GothamBold, AutoButtonColor = false })
-            corner(swatch, 4); stroke(swatch, C.border, 0)
+            corner(swatch, 4); local swatchStroke = stroke(swatch, C.border, 0)
+            swatch.Position = UDim2.new(1, -30, 0, 2)
+            addAppearanceEditor(r, label, key, { swatch }, swatch, function(color) swatchStroke.Color = color end)
             local popup, inputChanged, inputEnded, colorDirty = nil, nil, nil, false
             local function storeColor()
                 NoirPersistence.data.colors[colorKey] = { colour.R, colour.G, colour.B }
@@ -2388,8 +2621,7 @@ function host.CreateTab()
                     BackgroundTransparency = .42, BorderSizePixel = 0, Active = true, ZIndex = 70 })
                 local dialog = New("\x46rame", { Parent = popup, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(640, 450),
                     BackgroundColor3 = C.panel, BorderSizePixel = 0, Active = true, ZIndex = 71 })
-                corner(dialog, 0); stroke(dialog, C.border, .18)
-                hudBrackets(dialog, 18, 1.5, C.accent, .22, 72)
+                corner(dialog, 18); stroke(dialog, C.border, .18)
                 New("\x54extLabel", { Parent = dialog, Position = UDim2.fromOffset(22, 17), Size = UDim2.fromOffset(250, 27), BackgroundTransparency = 1,
                     Text = label, TextColor3 = C.text, TextSize = 20, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 72 })
                 New("\x54extLabel", { Parent = dialog, Position = UDim2.fromOffset(22, 43), Size = UDim2.fromOffset(370, 17), BackgroundTransparency = 1,
@@ -2521,9 +2753,10 @@ function host.CreateTab()
             local key = keyFor(label)
             local savedKey = NoirPersistence.data.keybinds[key] or default
             local r = row(label, 20)
-            local btn = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 1), Size = UDim2.fromOffset(44, 18),
+            local btn = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -30, 0, 1), Size = UDim2.fromOffset(44, 18),
                 BackgroundColor3 = C.surface, Text = tostring(savedKey), TextColor3 = C.text, TextSize = 12, Font = Enum.Font.Gotham, AutoButtonColor = false })
-            corner(btn, 4); stroke(btn, C.border, 0)
+            corner(btn, 4); local bindStroke = stroke(btn, C.border, 0)
+            addAppearanceEditor(r, label, key, { btn }, btn, function(color) bindStroke.Color = color end)
             local listening, currentKey, conn = false, savedKey, nil
             if NoirPersistence.data.keybinds[key] ~= nil and currentKey ~= nil then
                 pcall(callback, currentKey)
@@ -2604,17 +2837,21 @@ local function runLoader(onDone)
     corner(overlay, 4)
     stroke(overlay, C.border, .1)
     hudBrackets(overlay, 16, 2, C.accent2, 0, 102)
-    local ringHolder = New("Frame", { Parent = overlay, Position = UDim2.fromOffset(24, 30), Size = UDim2.fromOffset(60, 60), BackgroundTransparency = 1, ZIndex = 101 })
-    corner(ringHolder, 30)
-    local ringStrokeObj = New("UIStroke", { Parent = ringHolder, Color = C.accent2, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local ringHolder = New("Frame", { Parent = overlay, Position = UDim2.fromOffset(24, 30), Size = UDim2.fromOffset(60, 60),
+        BackgroundColor3 = C.surface, BackgroundTransparency = .22, BorderSizePixel = 0, ZIndex = 101 })
+    corner(ringHolder, 7); stroke(ringHolder, C.accent, .18, 1.5)
+    hudBrackets(ringHolder, 12, 1.4, C.accent2, .04, 103)
+    local ringStrokeObj = New("UIStroke", { Parent = ringHolder, Color = C.accent2, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
     local ringGradient = New("UIGradient", { Parent = ringStrokeObj, Transparency = NumberSequence.new({
         NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(.22, 0), NumberSequenceKeypoint.new(.23, 1), NumberSequenceKeypoint.new(.5, 1),
         NumberSequenceKeypoint.new(.51, 0), NumberSequenceKeypoint.new(.72, 0), NumberSequenceKeypoint.new(.73, 1), NumberSequenceKeypoint.new(1, 1) }) })
     NoirFX.spin(ringGradient)
     local innerRing = New("Frame", { Parent = ringHolder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(34, 34),
-        BackgroundTransparency = 1, ZIndex = 101 })
-    corner(innerRing, 17)
-    New("UIStroke", { Parent = innerRing, Color = C.accent, Thickness = 1.5, Transparency = .45, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        BackgroundColor3 = C.base, BackgroundTransparency = .08, BorderSizePixel = 0, ZIndex = 101 })
+    corner(innerRing, 4)
+    New("UIStroke", { Parent = innerRing, Color = C.accent, Thickness = 1.3, Transparency = .35, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local loaderMark = New("TextLabel", { Parent = innerRing, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+        Text = "N", TextColor3 = C.accent2, TextSize = 22, Font = Enum.Font.GothamBlack, ZIndex = 102 })
     local title = text(overlay, "NOIR HUB", 22, UDim2.fromOffset(104, 28)); title.ZIndex = 101; title.Size = UDim2.new(1, -120, 0, 30)
     local subtitle = text(overlay, "initializing Noir Hub", 13, UDim2.fromOffset(105, 60), true); subtitle.ZIndex = 101; subtitle.Size = UDim2.new(1, -120, 0, 20)
     local segments = {}
