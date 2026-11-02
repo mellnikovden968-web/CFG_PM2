@@ -308,10 +308,10 @@ function NoirPersistence.SetPosition(key, p)
 end
 
 local C = {
-    base = Color3.fromRGB(4,13,18), surface = Color3.fromRGB(8,24,32), panel = Color3.fromRGB(6,20,27),
-    card = Color3.fromRGB(8,26,34), border = Color3.fromRGB(20,92,100), accent = Color3.fromRGB(34,238,226),
-    accent2 = Color3.fromRGB(150,255,248), text = Color3.fromRGB(214,246,244), dim = Color3.fromRGB(96,150,156),
-    off = Color3.fromRGB(14,36,44), btn = Color3.fromRGB(8,30,38),
+    base = Color3.fromRGB(3,10,15), surface = Color3.fromRGB(7,21,29), panel = Color3.fromRGB(6,18,25),
+    card = Color3.fromRGB(9,28,36), border = Color3.fromRGB(24,104,112), accent = Color3.fromRGB(38,240,228),
+    accent2 = Color3.fromRGB(160,255,250), text = Color3.fromRGB(220,248,246), dim = Color3.fromRGB(104,156,162),
+    off = Color3.fromRGB(13,34,42), btn = Color3.fromRGB(8,30,38),
 }
 local gui
 function New(class, props)
@@ -546,15 +546,20 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 function kitiTitle(parent, value)
-    local l = text(parent, value, 14, UDim2.fromOffset(8, 6))
+    local accent = New("\x46rame", { Parent = parent, Position = UDim2.fromOffset(10, 8), Size = UDim2.fromOffset(3, 14),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+    corner(accent, 1.5)
+    New("\x55IStroke", { Parent = accent, Color = C.accent, Thickness = 3, Transparency = .6, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local l = text(parent, value, 14, UDim2.fromOffset(20, 6))
     l.Font = Enum.Font.GothamBold
-    l.Size = UDim2.new(1, -16, 0, 15)
+    l.Size = UDim2.new(1, -30, 0, 15)
+    l.TextColor3 = C.text
     l.TextTransparency = 0
     return l
 end
 function kitiDesc(parent, value)
-    local l = text(parent, value, 11, UDim2.fromOffset(8, 27), true)
-    l.Size = UDim2.new(1, -16, 0, 14)
+    local l = text(parent, value, 11, UDim2.fromOffset(20, 27), true)
+    l.Size = UDim2.new(1, -30, 0, 14)
     return l
 end
 function text(parent, value, size, pos, dim)
@@ -956,7 +961,7 @@ winShadow.Position = win.Position
 winShadow.Size = UDim2.new(0, win.Size.X.Offset + 44, 0, win.Size.Y.Offset + 44)
 winShadow.AnchorPoint = win.AnchorPoint
 local winScale = New("\x55IScale", { Parent = win, Scale = .82 })
-corner(win, 6)
+corner(win, 14)
 local winStroke = ringStroke(win, 2, 0)
 do
     local g = winStroke:FindFirstChildOfClass("UIGradient")
@@ -980,140 +985,217 @@ win.Changed:Connect(function(prop)
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NOIR VECTOR ICON KIT — все иконки рисуются примитивами, идеально по центру
+-- ═══════════════════════════════════════════════════════════════════════════
+local function makeIconParts(box)
+    local parts = {}
+    local function track(o) parts[#parts + 1] = o; return o end
+    local function fill(cx, cy, w, h, r, rot)
+        local f = New("\x46rame", { Parent = box, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(cx, cy),
+            Size = UDim2.fromOffset(w, h), BackgroundColor3 = C.dim, BorderSizePixel = 0, Rotation = rot or 0 })
+        if r and r > 0 then corner(f, r) end
+        return track(f)
+    end
+    local function outline(cx, cy, w, h, r, rot, th)
+        local f = New("\x46rame", { Parent = box, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(cx, cy),
+            Size = UDim2.fromOffset(w, h), BackgroundTransparency = 1, BorderSizePixel = 0, Rotation = rot or 0 })
+        if r and r > 0 then corner(f, r) end
+        local s = New("\x55IStroke", { Parent = f, Color = C.dim, Thickness = th or 1.8, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        track(f); track(s)
+        return f, s
+    end
+    local function line(cx, cy, len, th, rot) return fill(cx, cy, len, th, th / 2, rot) end
+    local function ring(cx, cy, d, th) return outline(cx, cy, d, d, d / 2, 0, th) end
+    local function dot(cx, cy, d) return fill(cx, cy, d, d, d / 2) end
+    return parts, fill, outline, line, ring, dot
+end
+
+local function buildTabIcon(kind, parent)
+    local box = New("\x46rame", { Parent = parent, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1 })
+    local parts, fill, outline, line, ring, dot = makeIconParts(box)
+    if kind == "home" then
+        line(8.5, 7.6, 9.8, 2.1, -43)
+        line(15.5, 7.6, 9.8, 2.1, 43)
+        outline(12, 15.4, 14, 9, 2, 0, 1.7)
+        fill(12, 17.4, 3, 5, 1)
+    elseif kind == "main" then
+        fill(8.4, 8.4, 6.2, 6.2, 2)
+        fill(15.6, 8.4, 6.2, 6.2, 2)
+        fill(8.4, 15.6, 6.2, 6.2, 2)
+        outline(15.6, 15.6, 6.2, 6.2, 2, 0, 1.5)
+    elseif kind == "aim" then
+        ring(12, 12, 14, 1.7)
+        dot(12, 12, 3.2)
+        line(12, 3.4, 3.6, 1.7, 90)
+        line(12, 20.6, 3.6, 1.7, 90)
+        line(3.4, 12, 3.6, 1.7, 0)
+        line(20.6, 12, 3.6, 1.7, 0)
+    elseif kind == "world" then
+        ring(12, 12, 15, 1.7)
+        line(12, 12, 15, 1.3, 0)
+        line(12, 12, 15, 1.3, 90)
+        line(8.2, 12, 11.5, 1.1, 90)
+        line(15.8, 12, 11.5, 1.1, 90)
+    elseif kind == "map" then
+        ring(12, 9, 10, 1.7)
+        dot(12, 9, 3)
+        line(10.4, 16, 6.6, 1.7, 117)
+        line(13.6, 16, 6.6, 1.7, 63)
+    elseif kind == "farm" then
+        line(12, 17, 8, 1.8, 90)
+        fill(8.4, 10.6, 7.2, 4.2, 2.1, -32)
+        fill(15.6, 10.6, 7.2, 4.2, 2.1, 32)
+        dot(12, 20, 2.4)
+    elseif kind == "visual" then
+        outline(12, 12, 17, 11, 5.5, 0, 1.7)
+        dot(12, 12, 4.6)
+        dot(10.8, 10.8, 1.5)
+    elseif kind == "skins" then
+        fill(12, 15.4, 9, 8.6, 2)
+        fill(6.6, 10.8, 4.2, 6.6, 1.6, 32)
+        fill(17.4, 10.8, 4.2, 6.6, 1.6, -32)
+        fill(12, 8.4, 5, 2, 1)
+    elseif kind == "emotes" then
+        ring(12, 12, 15, 1.7)
+        dot(9.2, 10, 2.1)
+        dot(14.8, 10, 2.1)
+        line(9.2, 15.1, 3.2, 1.5, 38)
+        line(12, 16.5, 4, 1.5, 0)
+        line(14.8, 15.1, 3.2, 1.5, -38)
+    elseif kind == "misc" then
+        for ix = 0, 2 do for iy = 0, 2 do dot(7 + ix * 5, 7 + iy * 5, 3.2) end end
+    elseif kind == "troll" then
+        outline(12, 12, 16, 11, 5.5, 0, 1.7)
+        fill(9, 10.4, 3.4, 1.8, .9)
+        fill(15, 10.4, 3.4, 1.8, .9)
+        line(12, 15.4, 5, 1.4, 0)
+    elseif kind == "settings" then
+        ring(12, 12, 12.5, 1.7)
+        dot(12, 12, 4.6)
+        for i = 0, 7 do
+            local a = math.rad(i * 45)
+            line(12 + math.cos(a) * 8.2, 12 + math.sin(a) * 8.2, 3.6, 2.2, i * 45)
+        end
+    elseif kind == "gauge" then
+        ring(12, 14, 13, 1.7)
+        line(12, 14, 6.4, 1.8, -45)
+        dot(12, 14, 2.4)
+    elseif kind == "signal" then
+        fill(7, 16, 2.6, 5, 1.3)
+        fill(12, 14, 2.6, 9, 1.3)
+        fill(17, 11.5, 2.6, 14, 1.3)
+    elseif kind == "users" then
+        dot(9, 9, 3.6)
+        dot(15.4, 9.4, 3.2)
+        fill(9, 16.6, 7.4, 6.2, 3.1)
+        fill(15.6, 16.8, 6.4, 5.4, 2.7)
+    end
+    return parts
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NOIR EMBLEM — фирменный знак (N в неоновой плитке + орбита)
+-- ═══════════════════════════════════════════════════════════════════════════
+local function makeLogoMark(parent, size, position, withRing, z)
+    local holder = New("\x46rame", { Parent = parent, AnchorPoint = Vector2.new(.5, 0),
+        Position = position or UDim2.new(.5, 0, 0, 18), Size = UDim2.fromOffset(size, size),
+        BackgroundTransparency = 1, ZIndex = z or 2 })
+    local glow = New("\x46rame", { Parent = holder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(size + 14, size + 14), BackgroundTransparency = 1, ZIndex = 0 })
+    corner(glow, (size + 14) / 2)
+    New("\x55IStroke", { Parent = glow, Color = C.accent, Thickness = 7, Transparency = .86, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    if withRing then
+        local orbit = New("\x46rame", { Parent = holder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+            Size = UDim2.fromOffset(size + 12, size + 12), BackgroundTransparency = 1, ZIndex = 0 })
+        corner(orbit, (size + 12) / 2)
+        local os = New("\x55IStroke", { Parent = orbit, Color = C.accent2, Thickness = 1.5, Transparency = .2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local og = New("\x55IGradient", { Parent = os, Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(.16, 0), NumberSequenceKeypoint.new(.30, 1),
+            NumberSequenceKeypoint.new(.54, 1), NumberSequenceKeypoint.new(.68, 0), NumberSequenceKeypoint.new(.82, 1),
+            NumberSequenceKeypoint.new(1, 1) }) })
+        NoirFX.spin(og)
+        local od = New("\x46rame", { Parent = orbit, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(1, -2, .16, 0),
+            Size = UDim2.fromOffset(4, 4), BackgroundColor3 = C.accent2, BorderSizePixel = 0, ZIndex = 3 })
+        corner(od, 2)
+    end
+    local tile = New("\x46rame", { Parent = holder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(size, size), BackgroundColor3 = C.accent, ZIndex = 1 })
+    corner(tile, math.floor(size * .28))
+    New("\x55IGradient", { Parent = tile, Rotation = 135, Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 255, 250)),
+        ColorSequenceKeypoint.new(.45, Color3.fromRGB(38, 240, 228)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 110, 122)) }) })
+    New("\x55IStroke", { Parent = tile, Color = C.accent2, Thickness = 1.5, Transparency = .25, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local inset = math.floor(size * .14)
+    local inner = New("\x46rame", { Parent = tile, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(size - inset, size - inset), BackgroundColor3 = Color3.fromRGB(5, 17, 23),
+        BackgroundTransparency = .04, ZIndex = 2 })
+    corner(inner, math.floor(size * .22))
+    New("\x55IStroke", { Parent = inner, Color = Color3.fromRGB(30, 120, 128), Thickness = 1, Transparency = .45, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local u = size - inset
+    local barColor = Color3.fromRGB(140, 255, 250)
+    local function nbar(cx, cy, w, h, rot)
+        local f = New("\x46rame", { Parent = inner, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(cx, 0, cy, 0),
+            Size = UDim2.fromOffset(w, h), BackgroundColor3 = barColor, BorderSizePixel = 0, Rotation = rot or 0, ZIndex = 3 })
+        corner(f, math.min(w, h) / 2)
+        return f
+    end
+    nbar(.31, .50, math.max(2, u * .11), u * .50, 0)
+    nbar(.69, .50, math.max(2, u * .11), u * .50, 0)
+    nbar(.50, .50, math.max(2, u * .105), u * .60, 33)
+    return holder
+end
+
 local navButtons, navIcons, navBrackets = {}, {}, {}
 local sidebar = New("\x46rame", { Parent = win, Size = UDim2.new(0, 78, 1, 0), BackgroundTransparency = 1 })
-local logo = New("\x54extLabel", { Parent = sidebar, AnchorPoint = Vector2.new(.5, 0), Position = UDim2.new(.5, 0, 0, 23), Size = UDim2.fromOffset(60, 60),
-    BackgroundColor3 = C.accent, Text = "\x4e", TextColor3 = Color3.fromRGB(8, 20, 23), TextSize = 30, Font = Enum.Font.GothamBold })
-corner(logo, 14); local logoStroke = stroke(logo, C.accent2, .4)
-NoirFX.spin(New("UIGradient", { Parent = logoStroke, Color = NoirFX.RING }))
-pcall(function()
-    TweenService:Create(logoStroke, TweenInfo.new(2.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = .78 }):Play()
-end)
-logo.TextStrokeTransparency = 1
+do
+    local sideBg = New("\x46rame", { Parent = sidebar, Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.surface,
+        BackgroundTransparency = .55, BorderSizePixel = 0, ZIndex = 0 })
+    New("\x55IGradient", { Parent = sideBg, Rotation = 90, Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, .35), NumberSequenceKeypoint.new(.55, .62), NumberSequenceKeypoint.new(1, .82) }) })
+    New("\x46rame", { Parent = sidebar, Position = UDim2.new(1, -1, 0, 0), Size = UDim2.new(0, 1, 1, 0),
+        BackgroundColor3 = C.border, BackgroundTransparency = .55, BorderSizePixel = 0, ZIndex = 0 })
+end
+local logoHolder = makeLogoMark(sidebar, 54, UDim2.new(.5, 0, 0, 18), true, 2)
+local wordmark = text(sidebar, "NOIR", 10, UDim2.new(0, 0, 0, 76), false)
+wordmark.Size = UDim2.new(1, 0, 0, 12); wordmark.TextXAlignment = Enum.TextXAlignment.Center
+wordmark.Font = Enum.Font.GothamBold; wordmark.TextColor3 = C.accent2; wordmark.TextTransparency = .15
 do
     local navDefs = {
-        { "\x68ome",   16898613509, Vector2.new(820, 147), "\x48ome" },
-        { "\x6dain",   16898613509, Vector2.new(820, 147), "Main" },
-        { "\x61im",    16898613777, Vector2.new(967, 759), "Page A" },
-        { "\x77orld",  16898613509, Vector2.new(771, 563), "Page B" },
-        { "\x6dap",    16898613509, Vector2.new(771, 563), "Page C" },
-        { "\x66arm",   16898613509, Vector2.new(771, 563), "Page D" },
-        { "\x76isual", 16898613353, Vector2.new(771, 563), "\x56isuals" },
-        { "\x73kins",  16898613353, Vector2.new(771, 563), "Page E" },
-        { "\x65motes", 16898613777, Vector2.new(967, 759), "Page F" },
-        { "\x6disc",   16898613509, Vector2.new(820, 147), "\x4disc" },
-        { "\x74roll",  16898613777, Vector2.new(869, 563), "Page G" },
-        { "\x73ettings", 16898613509, Vector2.new(121, 906), "\x53ettings" },
+        { "home", "Home" },
+        { "main", "Main" },
+        { "aim", "Aim" },
+        { "world", "World" },
+        { "map", "Map" },
+        { "farm", "Farm" },
+        { "visual", "Visuals" },
+        { "skins", "Skins" },
+        { "emotes", "Emotes" },
+        { "misc", "Misc" },
+        { "troll", "Troll" },
+        { "settings", "Settings" },
     }
     for i, d in ipairs(navDefs) do
-        local b = New("\x54extButton", { Parent = sidebar, Position = UDim2.fromOffset(19, 104 + (i - 1) * 42), Size = UDim2.fromOffset(40, 40),
-            BackgroundColor3 = C.accent, BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Name = d[4] })
-        corner(b, 6)
-        navBrackets[d[1]] = hudBrackets(b, 8, 1.5, C.accent2, 1, 25)
-        local ic = New("\x49mageLabel", { Parent = b, Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(24, 24),
-            BackgroundTransparency = 1, Image = "\x72bxassetid://" .. d[2], ImageRectSize = Vector2.new(48, 48), ImageRectOffset = d[3],
-            ImageColor3 = C.dim })
-        local lbl = New("\x54extLabel", { Parent = b, Position = UDim2.fromOffset(50, 0), Size = UDim2.new(1, -60, 1, 0), Visible = false,
-            BackgroundTransparency = 1, Text = NoirTr(d[4]), TextColor3 = C.dim, TextSize = 15, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left })
-        local bar = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(0, 8), Size = UDim2.fromOffset(3, 22), BackgroundColor3 = C.accent, Visible = false, BackgroundTransparency = 1 })
-        corner(bar, 2)
-        local glyphs = nil
-        local rings = nil
-        if d[1] == "\x65motes" then
-             
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(20, 8), UDim2.fromOffset(10, 10), 5)
-            glyphPart(UDim2.fromOffset(21, 18), UDim2.fromOffset(8, 10), 3)
-            glyphPart(UDim2.fromOffset(15, 20), UDim2.fromOffset(20, 4), 2)
-            glyphPart(UDim2.fromOffset(19, 27), UDim2.fromOffset(4, 8), 2)
-            glyphPart(UDim2.fromOffset(27, 27), UDim2.fromOffset(4, 8), 2)
-        elseif d[1] == "\x73kins" then
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(22, 10), UDim2.fromOffset(8, 24), 3)
-            glyphPart(UDim2.fromOffset(20, 8), UDim2.fromOffset(12, 6), 2)
-        elseif d[1] == "\x6dap" then
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(20, 9), UDim2.fromOffset(12, 12), 6)
-            glyphPart(UDim2.fromOffset(23, 20), UDim2.fromOffset(6, 10), 2)
-        elseif d[1] == "\x66arm" then
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(18, 14), UDim2.fromOffset(16, 16), 8)
-            glyphPart(UDim2.fromOffset(22, 18), UDim2.fromOffset(8, 8), 4)
-        elseif d[1] == "\x6disc" then
-             
-            ic.Visible = false
-            glyphs, rings = {}, {}
-            local ring = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(14, 10), Size = UDim2.fromOffset(26, 26), BackgroundTransparency = 1, BorderSizePixel = 0 })
-            corner(ring, 13)
-            local ringStroke = New("\x55IStroke", { Parent = ring, Color = C.dim, Thickness = 1.5, Transparency = .08 })
-            rings[#rings + 1] = ringStroke
-            for index = 0, 2 do
-                local dot = New("\x46rame", { Parent = ring, Position = UDim2.fromOffset(5 + index * 6, 11), Size = UDim2.fromOffset(4, 4), BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                corner(dot, 2); glyphs[#glyphs + 1] = dot
-            end
-        elseif d[1] == "\x73ettings" then
-            ic.Visible = false
-            glyphs, rings = {}, {}
-            local ring = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(14, 6), Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1, BorderSizePixel = 0 })
-            corner(ring, 12)
-            local ringStroke = New("\x55IStroke", { Parent = ring, Color = C.dim, Thickness = 1.5, Transparency = .08 })
-            rings[#rings + 1] = ringStroke
-            local centerDot = New("\x46rame", { Parent = ring, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(.5, 0, .5, 0), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-            corner(centerDot, 4); glyphs[#glyphs + 1] = centerDot
-            local tickPos = { UDim2.fromOffset(10, -2), UDim2.fromOffset(10, 22), UDim2.fromOffset(-2, 10), UDim2.fromOffset(22, 10) }
-            for index = 1, 4 do
-                local tick = New("\x46rame", { Parent = ring, Position = tickPos[index], Size = UDim2.fromOffset(4, 4), BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                corner(tick, 2); glyphs[#glyphs + 1] = tick
-            end
-        end
-        -- центрируем кастомную иконку внутри круглой кнопки 40x40
-        do
-            local items = {}
-            for _, child in ipairs(b:GetChildren()) do
-                if child:IsA("\x46rame") and child ~= bar then items[#items + 1] = child end
-            end
-            if #items > 0 then
-                local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
-                for _, item in ipairs(items) do
-                    local px, py = item.Position.X.Offset, item.Position.Y.Offset
-                    local sx, sy = item.Size.X.Offset, item.Size.Y.Offset
-                    minX = math.min(minX, px); minY = math.min(minY, py)
-                    maxX = math.max(maxX, px + sx); maxY = math.max(maxY, py + sy)
-                end
-                local dx = math.floor((40 - (maxX - minX)) / 2 - minX + .5)
-                local dy = math.floor((40 - (maxY - minY)) / 2 - minY + .5)
-                for _, item in ipairs(items) do
-                    pcall(function()
-                        item.Position = UDim2.fromOffset(item.Position.X.Offset + dx, item.Position.Y.Offset + dy)
-                    end)
-                end
-            end
-        end
-        navButtons[d[1]] = b; navIcons[d[1]] = { icon = ic, label = lbl, bar = bar, glyphs = glyphs, rings = rings }
+        local key, labelText = d[1], d[2]
+        local b = New("\x54extButton", { Parent = sidebar, Position = UDim2.fromOffset(19, 104 + (i - 1) * 42),
+            Size = UDim2.fromOffset(40, 40), BackgroundColor3 = C.accent, BackgroundTransparency = 1,
+            Text = "", AutoButtonColor = false, Name = labelText, ClipsDescendants = false })
+        corner(b, 12)
+        local bStroke = New("\x55IStroke", { Parent = b, Color = C.border, Thickness = 1, Transparency = .8,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local bar = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(-14, 10), Size = UDim2.fromOffset(3, 20),
+            BackgroundColor3 = C.accent2, BorderSizePixel = 0, Visible = false, BackgroundTransparency = 1 })
+        corner(bar, 1.5)
+        New("\x55IStroke", { Parent = bar, Color = C.accent, Thickness = 3, Transparency = .55,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local parts = buildTabIcon(key, b)
+        local lbl = New("\x54extLabel", { Parent = b, Position = UDim2.fromOffset(48, 0), Size = UDim2.fromOffset(120, 40),
+            Visible = false, BackgroundTransparency = 1, Text = NoirTr(labelText), TextColor3 = C.dim, TextSize = 14,
+            Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
+        navButtons[key] = b
+        navIcons[key] = { parts = parts, label = lbl, bar = bar, stroke = bStroke }
     end
 end
 local status = New("\x46rame", { Parent = sidebar, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(1, 1), BackgroundTransparency = 1, Visible = false, BackgroundColor3 = C.panel, BackgroundTransparency = .18 })
@@ -1121,11 +1203,25 @@ corner(status, 16); stroke(status, C.border, .6)
 local statusDot = New("\x46rame", { Parent = status, Position = UDim2.fromOffset(16, 21), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.accent })
 corner(statusDot, 4)
 text(status, "\x43onnected", 13, UDim2.fromOffset(30, 15))
-text(status, "\x4eoir Client • v4", 15, UDim2.fromOffset(16, 45))
+text(status, "\x4eoir Hub • v4", 15, UDim2.fromOffset(16, 45))
 
 local header = New("\x46rame", { Parent = win, Position = UDim2.fromOffset(79, 0), Size = UDim2.new(1, -79, 0, 60), BackgroundTransparency = 1 })
 local headerTitle = text(header, "NOIR UI", 24, UDim2.fromOffset(28, 24)); headerTitle.Visible = false
 local headerSub = text(header, "Interface template", 13, UDim2.fromOffset(29, 56), true); headerSub.Visible = false
+do
+    local headStatus = New("\x46rame", { Parent = header, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 17),
+        Size = UDim2.fromOffset(128, 26), BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
+    corner(headStatus, 13); stroke(headStatus, C.accent, .5)
+    local hsDot = New("\x46rame", { Parent = headStatus, Position = UDim2.fromOffset(11, 10), Size = UDim2.fromOffset(6, 6),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+    corner(hsDot, 3)
+    New("\x55IStroke", { Parent = hsDot, Color = C.accent, Thickness = 3, Transparency = .55, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local hsText = text(headStatus, "SECURE LINK", 9, UDim2.fromOffset(23, 5))
+    hsText.Font = Enum.Font.GothamBold; hsText.TextColor3 = C.accent2
+    hsText.Size = UDim2.new(1, -28, 1, 0); hsText.TextYAlignment = Enum.TextYAlignment.Center
+    New("\x46rame", { Parent = header, Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1),
+        BackgroundColor3 = C.border, BackgroundTransparency = .72, BorderSizePixel = 0 })
+end
 local creatorImage = ""
 do
     local customAsset = (type(getcustomasset) == "\x66unction" and getcustomasset) or (type(getsynasset) == "\x66unction" and getsynasset)
@@ -1516,42 +1612,138 @@ end
 end
 
 local dashboard = New("\x46rame", { Parent = win, Position = content.Position, Size = content.Size, BackgroundTransparency = 1 })
-local profile = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(400, 168), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(profile, 18); stroke(profile, C.border, .5)
+local profile = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(400, 168), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(profile, 18); stroke(profile, C.border, .35)
+New("\x55IGradient", { Parent = profile, Rotation = 20, Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 52, 58)), ColorSequenceKeypoint.new(.6, Color3.fromRGB(8, 26, 34)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, .55), NumberSequenceKeypoint.new(1, .85) }) })
+New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(0, 26), Size = UDim2.fromOffset(3, 116),
+    BackgroundColor3 = C.accent, BackgroundTransparency = .15, BorderSizePixel = 0 })
 local avatar = New("\x49mageLabel", { Parent = profile, Position = UDim2.fromOffset(22, 24), Size = UDim2.fromOffset(120, 120), BackgroundColor3 = C.surface })
-corner(avatar, 20); stroke(avatar, C.border, .45)
+corner(avatar, 22); stroke(avatar, C.accent, .45, 1.4)
+local avatarRing = New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(16, 18), Size = UDim2.fromOffset(132, 132), BackgroundTransparency = 1 })
+corner(avatarRing, 26)
+New("\x55IStroke", { Parent = avatarRing, Color = C.accent2, Thickness = 1, Transparency = .65, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
 local avatarLetter = New("\x54extLabel", { Parent = avatar, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
     Text = string.upper(string.sub(LocalPlayer.Name, 1, 1)), TextColor3 = C.accent, TextSize = 46, Font = Enum.Font.GothamBold })
 loadUserThumbnail(avatar, avatarLetter)
-text(profile, LocalPlayer.DisplayName, 24, UDim2.fromOffset(162, 32))
-text(profile, "\x40" .. LocalPlayer.Name, 15, UDim2.fromOffset(163, 70), true)
-local pill = New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(162, 104), Size = UDim2.fromOffset(158, 30), BackgroundColor3 = C.accent, BackgroundTransparency = .8 })
-corner(pill, 15); stroke(pill, C.accent, .35)
-local pillDot = New("\x46rame", { Parent = pill, Position = UDim2.fromOffset(12, 11), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.accent }); corner(pillDot, 4)
-text(pill, "\x43onnected", 13, UDim2.fromOffset(26, 7))
-local heroCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(446, 0), Size = UDim2.new(1, -446, 0, 168), BackgroundColor3 = C.card, BackgroundTransparency = .84 })
-corner(heroCard, 18); stroke(heroCard, C.border, .45)
-New("\x55IGradient", { Parent = heroCard, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 54, 56)), ColorSequenceKeypoint.new(1, Color3.fromRGB(9, 22, 25)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .72), NumberSequenceKeypoint.new(1, .86) }), Rotation = 25 })
-text(heroCard, "\x4eOIR SILENT AIM", 26, UDim2.fromOffset(26, 24))
-text(heroCard, "Noir UI • interface template", 14, UDim2.fromOffset(27, 62), true)
-local statText = text(heroCard, "", 14, UDim2.fromOffset(27, 96), true)
-local fpsCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(fpsCard, 18); stroke(fpsCard, C.border, .5)
-text(fpsCard, "\x46PS", 14, UDim2.fromOffset(22, 20), true)
-local fpsText = text(fpsCard, "\x360", 42, UDim2.fromOffset(22, 50)); fpsText.TextColor3 = C.text
-local pingCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(272, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(pingCard, 18); stroke(pingCard, C.border, .5)
-text(pingCard, "\x4eETWORK LATENCY", 14, UDim2.fromOffset(22, 20), true)
-local pingText = text(pingCard, "\x2d- ms", 42, UDim2.fromOffset(22, 50)); pingText.TextColor3 = C.text
-local playerCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(544, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(playerCard, 18); stroke(playerCard, C.border, .5)
-text(playerCard, "\x50LAYERS", 14, UDim2.fromOffset(22, 20), true)
-local playerText = text(playerCard, "\x30", 42, UDim2.fromOffset(22, 50)); playerText.TextColor3 = C.text
-local infoCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 332), Size = UDim2.new(1, 0, 1, -348), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(infoCard, 18); stroke(infoCard, C.border, .5)
-text(infoCard, "\x51UICK START", 18, UDim2.fromOffset(24, 22))
-text(infoCard, "Pick a page on the left. Each page shows sections with controls.", 14, UDim2.fromOffset(25, 54), true)
-text(infoCard, "\x53ettings are saved automatically to Noir Hub/configs.", 14, UDim2.fromOffset(25, 78), true)
+local displayName = text(profile, LocalPlayer.DisplayName, 24, UDim2.fromOffset(166, 32))
+displayName.Font = Enum.Font.GothamBold
+displayName.TextColor3 = C.text
+displayName.Size = UDim2.new(1, -180, 0, 30)
+local userTag = text(profile, "\x40" .. LocalPlayer.Name, 14, UDim2.fromOffset(167, 68), true)
+userTag.Size = UDim2.new(1, -180, 0, 18)
+local memberTag = text(profile, "\x4eOIR MEMBER", 9, UDim2.fromOffset(167, 94), false)
+memberTag.Font = Enum.Font.GothamBold; memberTag.TextColor3 = C.accent2; memberTag.TextTransparency = .25
+memberTag.Size = UDim2.new(1, -180, 0, 12)
+local pill = New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(166, 116), Size = UDim2.fromOffset(150, 28), BackgroundColor3 = C.accent, BackgroundTransparency = .86 })
+corner(pill, 14); stroke(pill, C.accent, .35)
+local pillDot = New("\x46rame", { Parent = pill, Position = UDim2.fromOffset(11, 10), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.accent, BorderSizePixel = 0 }); corner(pillDot, 4)
+New("\x55IStroke", { Parent = pillDot, Color = C.accent, Thickness = 3, Transparency = .6, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+local pillText = text(pill, "\x43onnected", 12, UDim2.fromOffset(25, 6))
+pillText.TextColor3 = C.accent2; pillText.Font = Enum.Font.GothamBold; pillText.Size = UDim2.new(1, -30, 0, 16)
+local heroCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(446, 0), Size = UDim2.new(1, -446, 0, 168), BackgroundColor3 = C.card, BackgroundTransparency = .78 })
+corner(heroCard, 18); stroke(heroCard, C.border, .35)
+New("\x55IGradient", { Parent = heroCard, Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 62, 66)), ColorSequenceKeypoint.new(.55, Color3.fromRGB(10, 34, 42)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, .52), NumberSequenceKeypoint.new(1, .82) }), Rotation = 20 })
+for i = 1, 5 do
+    New("\x46rame", { Parent = heroCard, Position = UDim2.new(1, -212 + i * 34, 0, 18), Size = UDim2.fromOffset(1, 132),
+        BackgroundColor3 = C.accent, BackgroundTransparency = .92, BorderSizePixel = 0 })
+end
+makeLogoMark(heroCard, 74, UDim2.new(1, -62, 0, 44), true, 3)
+local heroTitle = text(heroCard, "\x4eOIR HUB", 30, UDim2.fromOffset(26, 26))
+heroTitle.Font = Enum.Font.GothamBlack
+heroTitle.TextColor3 = C.text
+heroTitle.Size = UDim2.new(1, -170, 0, 34)
+New("\x55IStroke", { Parent = heroTitle, Color = C.accent, Thickness = 1.2, Transparency = .55,
+    ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual })
+local heroSub = text(heroCard, "Next-generation interface  •  v4.0", 13, UDim2.fromOffset(27, 64), true)
+heroSub.Size = UDim2.new(1, -170, 0, 18)
+local chipDefs = { { "UNDETECTED", C.accent }, { "AUTO-SAVE", C.accent2 }, { "12 MODULES", C.dim } }
+local chipX = 27
+for _, cd in ipairs(chipDefs) do
+    local chip = New("\x46rame", { Parent = heroCard, Position = UDim2.fromOffset(chipX, 92), Size = UDim2.fromOffset(#cd[1] * 6 + 18, 20),
+        BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
+    corner(chip, 10); stroke(chip, cd[2], .55)
+    local cdot = New("\x46rame", { Parent = chip, Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(6, 6),
+        BackgroundColor3 = cd[2], BorderSizePixel = 0 })
+    corner(cdot, 3)
+    local cl = text(chip, cd[1], 10, UDim2.fromOffset(18, 3))
+    cl.Font = Enum.Font.GothamBold; cl.TextColor3 = cd[2]; cl.Size = UDim2.new(1, -20, 1, 0)
+    cl.TextYAlignment = Enum.TextYAlignment.Center
+    chipX += chip.Size.X.Offset + 8
+end
+local statText = text(heroCard, "", 13, UDim2.fromOffset(27, 124), true)
+statText.Size = UDim2.new(1, -170, 0, 18)
+
+local function statBadge(card, kind)
+    local h = New("\x46rame", { Parent = card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 16),
+        Size = UDim2.fromOffset(32, 32), BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
+    corner(h, 16); stroke(h, C.accent, .5)
+    local parts = buildTabIcon(kind, h)
+    for _, p in ipairs(parts) do
+        if p:IsA("\x55IStroke") then p.Color = C.accent2 else p.BackgroundColor3 = C.accent2 end
+    end
+end
+local fpsCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(fpsCard, 18); stroke(fpsCard, C.border, .35)
+New("\x55IGradient", { Parent = fpsCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
+text(fpsCard, "\x46PS", 13, UDim2.fromOffset(22, 20), true)
+local fpsText = text(fpsCard, "\x360", 42, UDim2.fromOffset(22, 46)); fpsText.TextColor3 = C.text
+fpsText.Font = Enum.Font.GothamBold
+text(fpsCard, "FRAME RATE", 9, UDim2.fromOffset(23, 100), true)
+statBadge(fpsCard, "gauge")
+local pingCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(272, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(pingCard, 18); stroke(pingCard, C.border, .35)
+New("\x55IGradient", { Parent = pingCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
+text(pingCard, "\x4eETWORK LATENCY", 13, UDim2.fromOffset(22, 20), true)
+local pingText = text(pingCard, "\x2d- ms", 42, UDim2.fromOffset(22, 46)); pingText.TextColor3 = C.text
+pingText.Font = Enum.Font.GothamBold
+text(pingCard, "ROUND TRIP", 9, UDim2.fromOffset(23, 100), true)
+statBadge(pingCard, "signal")
+local playerCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(544, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(playerCard, 18); stroke(playerCard, C.border, .35)
+New("\x55IGradient", { Parent = playerCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
+text(playerCard, "\x50LAYERS", 13, UDim2.fromOffset(22, 20), true)
+local playerText = text(playerCard, "\x30", 42, UDim2.fromOffset(22, 46)); playerText.TextColor3 = C.text
+playerText.Font = Enum.Font.GothamBold
+text(playerCard, "IN SERVER", 9, UDim2.fromOffset(23, 100), true)
+statBadge(playerCard, "users")
+local infoCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 332), Size = UDim2.new(1, 0, 1, -348), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(infoCard, 18); stroke(infoCard, C.border, .35)
+New("\x55IGradient", { Parent = infoCard, Rotation = 25, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 42, 48)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 18, 24)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .62), NumberSequenceKeypoint.new(1, .88) }) })
+local wm = text(infoCard, "N", 150, UDim2.new(1, -180, 1, -170), false)
+wm.Font = Enum.Font.GothamBlack; wm.TextColor3 = C.accent; wm.TextTransparency = .94
+wm.Size = UDim2.fromOffset(170, 170); wm.TextXAlignment = Enum.TextXAlignment.Right
+local qsTitle = text(infoCard, "\x51UICK START", 18, UDim2.fromOffset(24, 22))
+qsTitle.Font = Enum.Font.GothamBold
+text(infoCard, "Three steps to a cleaner session.", 12, UDim2.fromOffset(25, 48), true)
+local ready = New("\x46rame", { Parent = infoCard, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -22, 0, 22),
+    Size = UDim2.fromOffset(112, 24), BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
+corner(ready, 12); stroke(ready, C.accent, .5)
+local rd = New("\x46rame", { Parent = ready, Position = UDim2.fromOffset(10, 9), Size = UDim2.fromOffset(6, 6), BackgroundColor3 = C.accent, BorderSizePixel = 0 }); corner(rd, 3)
+local rt = text(ready, "SYSTEM READY", 9, UDim2.fromOffset(22, 4)); rt.Font = Enum.Font.GothamBold; rt.TextColor3 = C.accent2
+rt.Size = UDim2.new(1, -26, 1, 0); rt.TextYAlignment = Enum.TextYAlignment.Center
+local tips = {
+    { "Choose a page", "Pick a module page from the left navigation rail." },
+    { "Tune the controls", "Toggles, sliders and dropdowns save instantly." },
+    { "Stay in the flow", "Your layout and settings persist between sessions." },
+}
+for i, tip in ipairs(tips) do
+    local y = 72 + (i - 1) * 62
+    local num = New("\x46rame", { Parent = infoCard, Position = UDim2.fromOffset(24, y), Size = UDim2.fromOffset(28, 28),
+        BackgroundColor3 = C.accent, BackgroundTransparency = .86 })
+    corner(num, 8); stroke(num, C.accent, .45)
+    local nt = text(num, tostring(i), 13, UDim2.fromOffset(0, 5)); nt.Font = Enum.Font.GothamBold
+    nt.TextColor3 = C.accent2; nt.Size = UDim2.fromScale(1, 1); nt.TextXAlignment = Enum.TextXAlignment.Center
+    local tt = text(infoCard, tip[1], 14, UDim2.fromOffset(64, y - 2)); tt.Font = Enum.Font.GothamBold
+    tt.Size = UDim2.new(1, -90, 0, 18)
+    local td = text(infoCard, tip[2], 12, UDim2.fromOffset(64, y + 17), true)
+    td.Size = UDim2.new(1, -90, 0, 16)
+end
 local frameCounter, lastFps = 0, os.clock()
 RunService.RenderStepped:Connect(function()
     frameCounter += 1
@@ -1642,12 +1834,19 @@ do
             TweenService:Create(b, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = C.accent, BackgroundTransparency = active and 0 or 1 }):Play()
             local data = navIcons[name]
             if data then
-                TweenService:Create(data.icon, TweenInfo.new(.2), { ImageColor3 = active and Color3.fromRGB(8, 20, 23) or C.dim }):Play()
-                if data.glyphs then
-                    for _, glyph in ipairs(data.glyphs) do TweenService:Create(glyph, TweenInfo.new(.2), { BackgroundColor3 = active and C.accent or C.dim }):Play() end
+                local iconColor = active and Color3.fromRGB(6, 20, 24) or C.dim
+                for _, p in ipairs(data.parts) do
+                    if p:IsA("\x55IStroke") then
+                        TweenService:Create(p, TweenInfo.new(.2), { Color = iconColor }):Play()
+                    else
+                        TweenService:Create(p, TweenInfo.new(.2), { BackgroundColor3 = iconColor }):Play()
+                    end
                 end
-                if data.rings then
-                    for _, ring in ipairs(data.rings) do TweenService:Create(ring, TweenInfo.new(.2), { Color = active and C.accent or C.dim }):Play() end
+                if data.stroke then
+                    TweenService:Create(data.stroke, TweenInfo.new(.2), {
+                        Transparency = active and .08 or .8,
+                        Color = active and C.accent2 or C.border,
+                    }):Play()
                 end
                 TweenService:Create(data.label, TweenInfo.new(.2), { TextColor3 = active and C.text or C.dim }):Play()
                 TweenService:Create(data.bar, TweenInfo.new(.2), { BackgroundTransparency = active and 0 or 1 }):Play()
@@ -1751,7 +1950,7 @@ function host.Notify(title, duration)
     New("\x46rame", { Parent = card, Position = UDim2.fromOffset(0, 13), Size = UDim2.fromOffset(3, 50),
         BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 1001 })
     local badge = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(18, 9), Size = UDim2.new(1, -30, 0, 17),
-        BackgroundTransparency = 1, Text = "\x4eOIR  •  NOTIFICATION", TextColor3 = C.accent2,
+        BackgroundTransparency = 1, Text = "\x4eOIR HUB  •  NOTIFICATION", TextColor3 = C.accent2,
         TextSize = 10, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex = 1001 })
     local message = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(18, 29), Size = UDim2.new(1, -30, 0, 30),
@@ -1808,23 +2007,28 @@ function host.CreateTab()
         elseif isTroll then trollSectionCount += 1; col = trollCols[(trollSectionCount - 1) % 2 + 1]; page = "\x74roll"
         elseif isMap then mapSectionCount += 1; col = mapCols[(mapSectionCount - 1) % 2 + 1]; page = "\x6dap"
         elseif isFarm then farmSectionCount += 1; col = farmCols[(farmSectionCount - 1) % 2 + 1]; page = "\x66arm"
+        end
         if not col then
             sectionCount += 1
             col = cols[(sectionCount - 1) % 2 + 1]
             page = "\x61im"
             warn("[Noir] section panel fallback: " .. tostring(name))
         end
-        else sectionCount += 1; col = cols[(sectionCount - 1) % 2 + 1] end
         local panel = New("\x46rame", { Parent = col, Size = UDim2.new(1, 0, 0, 90), AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundColor3 = C.panel, BackgroundTransparency = .86, ClipsDescendants = true })
-        corner(panel, 4); stroke(panel, C.border, .15)
-        hudBrackets(panel, 10, 1.5, C.accent, .35, 5)
-        local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(0, 27), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = C.accent, BackgroundTransparency = .65, BorderSizePixel = 0 })
+            BackgroundColor3 = C.panel, BackgroundTransparency = .72, ClipsDescendants = true })
+        corner(panel, 12); stroke(panel, C.border, .35)
+        New("\x55IGradient", { Parent = panel, Rotation = 20, Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(13, 44, 50)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 18, 24)) }),
+            Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .68), NumberSequenceKeypoint.new(1, .9) }) })
+        hudBrackets(panel, 12, 1.5, C.accent, .55, 5)
+        local sepY = (description and description ~= "") and 44 or 30
+        local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(14, sepY), Size = UDim2.new(1, -28, 0, 1),
+            BackgroundColor3 = C.accent, BackgroundTransparency = .62, BorderSizePixel = 0 })
         table.insert(sectionPanels, { panel = panel, page = page, name = string.lower(name .. "\x20" .. (description or "")) })
         local shownName = name:gsub("\x5eMAIN • ", ""):gsub("\x5eWORLD • ", ""):gsub("\x5eVISUAL • ", ""):gsub("\x5eEMOTES • ", ""):gsub("\x5eMISC • ", ""):gsub("\x5eTROLL • ", ""):gsub("\x5eMAP • ", ""):gsub("\x5eFARM • ", "")
         kitiTitle(panel, shownName)
         if description and description ~= "" then kitiDesc(panel, description) end
-        local holder = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(10, description ~= "" and 48 or 38), Size = UDim2.new(1, -20, 0, 0),
+        local holder = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(12, description ~= "" and 52 or 38), Size = UDim2.new(1, -24, 0, 0),
             AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 })
         New("\x55IListLayout", { Parent = holder, Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder })
         New("\x55IPadding", { Parent = holder, PaddingBottom = UDim.new(0, 12) })
@@ -1865,19 +2069,23 @@ function host.CreateTab()
             end
             local state = savedToggle == true
             local r = row(label, 20)
-            local pill = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 2), Size = UDim2.fromOffset(30, 16),
+            local pill = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 1), Size = UDim2.fromOffset(34, 18),
                 BackgroundColor3 = C.off, Text = "", AutoButtonColor = false })
-            corner(pill, 3); local pillStroke = stroke(pill, C.border, 0)
-            local dot = New("\x46rame", { Parent = pill, AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 2, .5, 0), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = C.text })
-            corner(dot, 2)
+            corner(pill, 9); local pillStroke = stroke(pill, C.border, 0)
+            local pillGlow = New("\x55IStroke", { Parent = pill, Color = C.accent, Thickness = 3, Transparency = 1,
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+            local dot = New("\x46rame", { Parent = pill, AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 2, .5, 0),
+                Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.dim })
+            corner(dot, 7)
             local togSpring = NoirFX.new(state and 1 or 0, 24, .62, function(t)
                 local c = math.clamp(t, 0, 1)
                 local stretch = math.sin(c * math.pi) * 6
-                dot.Position = UDim2.new(0, 2 + t * 14 - stretch * c, .5, 0)
-                dot.Size = UDim2.fromOffset(12 + stretch, 12)
+                dot.Position = UDim2.new(0, 2 + t * 16 - stretch * c, .5, 0)
+                dot.Size = UDim2.fromOffset(14 + stretch, 14)
                 pill.BackgroundColor3 = C.off:Lerp(C.accent, c)
                 pillStroke.Color = C.border:Lerp(C.accent2, c)
-                dot.BackgroundColor3 = C.text:Lerp(Color3.new(0, 0, 0), c)
+                pillGlow.Transparency = 1 - .6 * c
+                dot.BackgroundColor3 = C.dim:Lerp(Color3.fromRGB(6, 20, 24), c)
             end)
             local function set(v, persist, animate)
                 state = v == true
@@ -1898,10 +2106,15 @@ function host.CreateTab()
         end
         function api:AddButton(label, callback)
             yieldDuringBuild()
-            local b = New("\x54extButton", { Parent = holder, Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = C.btn,
-                BackgroundTransparency = .72, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.Gotham, AutoButtonColor = false })
-            corner(b, 3); ringStroke(b, 1.2, .35)
-            New("Frame", { Parent = b, Size = UDim2.fromOffset(3, 26), BackgroundColor3 = C.accent2, BorderSizePixel = 0 })
+            local b = New("\x54extButton", { Parent = holder, Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = C.btn,
+                BackgroundTransparency = .68, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamMedium, AutoButtonColor = false })
+            corner(b, 10); ringStroke(b, 1.2, .4)
+            New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(18, 54, 60)), ColorSequenceKeypoint.new(1, C.btn) }),
+                Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .55), NumberSequenceKeypoint.new(1, .85) }) })
+            local accentBar = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(0, 5), Size = UDim2.fromOffset(3, 18),
+                BackgroundColor3 = C.accent2, BorderSizePixel = 0 })
+            corner(accentBar, 1.5)
             local chev = New("TextLabel", { Parent = b, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0), Size = UDim2.fromOffset(14, 14),
                 BackgroundTransparency = 1, Text = "›", TextColor3 = C.accent, TextSize = 20, Font = Enum.Font.GothamBold })
             b.MouseEnter:Connect(function() TweenService:Create(chev, TweenInfo.new(.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = UDim2.new(1, -4, .5, 0) }):Play() end)
@@ -1930,15 +2143,18 @@ function host.CreateTab()
             local value = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -56, 0, 0), Size = UDim2.fromOffset(56, 18), BackgroundColor3 = C.surface,
                 BackgroundTransparency = 1, Text = tostring(default), TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham,
                 TextXAlignment = Enum.TextXAlignment.Right, ClearTextOnFocus = false })
-            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -10), Size = UDim2.new(1, 0, 0, 8), BackgroundColor3 = C.off })
-            corner(track, 1)
+            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -9), Size = UDim2.new(1, 0, 0, 6), BackgroundColor3 = C.off })
+            corner(track, 3)
             local fill = New("\x46rame", { Parent = track, Size = UDim2.fromScale((default - min) / (max - min), 1), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
-            corner(fill, 1)
-            for gi = 1, 15 do -- сегменты: тонкие разрывы поверх линии
-                New("Frame", { Parent = track, Position = UDim2.new(gi / 16, -1, 0, 0), Size = UDim2.fromOffset(2, 8), BackgroundColor3 = C.base, BorderSizePixel = 0, ZIndex = 3 })
+            corner(fill, 3)
+            New("\x55IGradient", { Parent = fill, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 120, 130)), ColorSequenceKeypoint.new(.55, C.accent),
+                ColorSequenceKeypoint.new(1, C.accent2) }) })
+            for gi = 1, 15 do
+                New("\x46rame", { Parent = track, Position = UDim2.new(gi / 16, -1, 0, 0), Size = UDim2.fromOffset(2, 6), BackgroundColor3 = C.base, BorderSizePixel = 0, ZIndex = 3 })
             end
-            local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new((default - min) / (max - min), 0, .5, 0), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.accent })
-            knob.Size = UDim2.fromOffset(11, 11); corner(knob, 2); knob.Rotation = 45; knob.ZIndex = 5; stroke(knob, C.border, .3)
+            local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new((default - min) / (max - min), 0, .5, 0), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = C.accent })
+            corner(knob, 6); knob.ZIndex = 5; stroke(knob, C.accent2, .25, 1.4)
             do
                 local function glow(parent)
                     New("ImageLabel", { Parent = parent, BackgroundTransparency = 1, Image = "rbxassetid://112971167999062", ImageColor3 = C.accent, ImageTransparency = .68,
@@ -1956,7 +2172,7 @@ function host.CreateTab()
             end)
             local grabSpring = NoirFX.new(0, 26, .8, function(g)
                 local c = math.clamp(g, 0, 1)
-                local size = 11 + 4 * g
+                local size = 12 + 4 * g
                 knob.Size = UDim2.fromOffset(size, size)
                 halo.Transparency = 1 - .7 * c
                 value.TextSize = 14 + 2 * c
@@ -1995,8 +2211,11 @@ function host.CreateTab()
             local idx = table.find(values, NoirPersistence.data.dropdowns[key]) or 1
             local b = New("TextButton", { Parent = r, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 24),
                 BackgroundColor3 = C.surface, Text = "", AutoButtonColor = false, ZIndex = 4 })
-            corner(b, 4)
+            corner(b, 10)
             local bStroke = stroke(b, C.border, 0)
+            New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 50, 56)), ColorSequenceKeypoint.new(1, C.surface) }),
+                Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .88) }) })
             local valueLabel = New("TextLabel", { Parent = b, Position = UDim2.fromOffset(9, 0), Size = UDim2.new(1, -32, 1, 0), BackgroundTransparency = 1,
                 Text = tostring(values[idx] or "None"), TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
                 TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 5 })
@@ -2031,7 +2250,7 @@ function host.CreateTab()
                 popup = New("ScrollingFrame", { Parent = gui, Position = UDim2.fromOffset(b.AbsolutePosition.X / scale.Scale, (b.AbsolutePosition.Y + b.AbsoluteSize.Y + 4) / scale.Scale),
                     Size = UDim2.fromOffset(w, 0), CanvasSize = UDim2.fromOffset(0, #values * rowH + 8), BackgroundColor3 = C.surface, BorderSizePixel = 0,
                     ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent, ClipsDescendants = true, ZIndex = 50 })
-                corner(popup, 4); stroke(popup, C.accent, .35)
+                corner(popup, 10); stroke(popup, C.accent, .4)
                 New("UIPadding", { Parent = popup, PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) })
                 New("UIListLayout", { Parent = popup, SortOrder = Enum.SortOrder.LayoutOrder })
                 for i, v in ipairs(values) do
@@ -2039,8 +2258,8 @@ function host.CreateTab()
                     local item = New("TextButton", { Parent = popup, LayoutOrder = i, Size = UDim2.new(1, 0, 0, rowH), BackgroundColor3 = C.accent,
                         BackgroundTransparency = selected and .86 or 1, Text = tostring(v), TextColor3 = selected and C.accent2 or C.text, TextSize = 14,
                         Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false, ZIndex = 51 })
-                    corner(item, 3)
-                    New("UIPadding", { Parent = item, PaddingLeft = UDim.new(0, 8) })
+                    corner(item, 8)
+                    New("UIPadding", { Parent = item, PaddingLeft = UDim.new(0, 10) })
                     item.MouseEnter:Connect(function() if not selected then TweenService:Create(item, TweenInfo.new(.12), { BackgroundTransparency = .92 }):Play() end end)
                     item.MouseLeave:Connect(function() if not selected then TweenService:Create(item, TweenInfo.new(.12), { BackgroundTransparency = 1 }):Play() end end)
                     item.Activated:Connect(function() set(v); close() end)
@@ -2370,8 +2589,8 @@ local function runLoader(onDone)
         BackgroundTransparency = 1, ZIndex = 101 })
     corner(innerRing, 17)
     New("UIStroke", { Parent = innerRing, Color = C.accent, Thickness = 1.5, Transparency = .45, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    local title = text(overlay, "NOIR UI", 22, UDim2.fromOffset(104, 28)); title.ZIndex = 101; title.Size = UDim2.new(1, -120, 0, 30)
-    local subtitle = text(overlay, "initializing interface", 13, UDim2.fromOffset(105, 60), true); subtitle.ZIndex = 101; subtitle.Size = UDim2.new(1, -120, 0, 20)
+    local title = text(overlay, "NOIR HUB", 22, UDim2.fromOffset(104, 28)); title.ZIndex = 101; title.Size = UDim2.new(1, -120, 0, 30)
+    local subtitle = text(overlay, "initializing Noir Hub", 13, UDim2.fromOffset(105, 60), true); subtitle.ZIndex = 101; subtitle.Size = UDim2.new(1, -120, 0, 20)
     local segments = {}
     for i = 1, 24 do
         segments[i] = New("Frame", { Parent = overlay, Position = UDim2.fromOffset(24 + (i - 1) * 12, 114), Size = UDim2.fromOffset(9, 10),
