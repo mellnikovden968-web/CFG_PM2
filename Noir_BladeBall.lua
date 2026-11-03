@@ -73,6 +73,21 @@ local function stopOldNotificationWatch()
 end
 _G.HOTHXOldNotificationWatchStop = stopOldNotificationWatch
 
+local function noirHudCorners(parent, length, color, transparency, zIndex)
+    local z = zIndex or ((parent.ZIndex or 1) + 1)
+    for _, point in ipairs({ {0,0}, {1,0}, {0,1}, {1,1} }) do
+        local ax, ay = point[1], point[2]
+        local h = Instance.new("Frame")
+        h.AnchorPoint = Vector2.new(ax, ay); h.Position = UDim2.fromScale(ax, ay)
+        h.Size = UDim2.fromOffset(length, 1.4); h.BackgroundColor3 = color
+        h.BackgroundTransparency = transparency or 0; h.BorderSizePixel = 0; h.ZIndex = z; h.Parent = parent
+        local v = Instance.new("Frame")
+        v.AnchorPoint = Vector2.new(ax, ay); v.Position = UDim2.fromScale(ax, ay)
+        v.Size = UDim2.fromOffset(1.4, length); v.BackgroundColor3 = color
+        v.BackgroundTransparency = transparency or 0; v.BorderSizePixel = 0; v.ZIndex = z; v.Parent = parent
+    end
+end
+
 local function Notify(title, content, duration)  
     duration = duration or 2  
     task.spawn(function()  
@@ -112,7 +127,7 @@ local function Notify(title, content, duration)
             local frame = Instance.new("Frame")  
             frame.Name = "Notification"  
             frame.Size = UDim2.fromOffset(286, 62)  
-            frame.BackgroundColor3 = Color3.fromRGB(231, 236, 241)  
+            frame.BackgroundColor3 = Color3.fromRGB(6, 18, 25)  
             frame.BackgroundTransparency = 0.26  
             frame.BorderSizePixel = 0  
             frame.ClipsDescendants = true  
@@ -120,19 +135,20 @@ local function Notify(title, content, duration)
   
             local corner = Instance.new("UICorner")  
             corner.CornerRadius = UDim.new(0, 12)  
-            corner.Parent = frame  
+            corner.Parent = frame
+    noirHudCorners(frame, 14, Color3.fromRGB(38,240,228), .04, (frame.ZIndex or 1) + 1)  
   
             local gradient = Instance.new("UIGradient")  
             gradient.Color = ColorSequence.new({  
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(251, 252, 253)),  
-                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(225, 231, 237)),  
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(185, 196, 206))  
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 28, 36)),  
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(7, 21, 29)),  
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 17, 23))  
             })  
             gradient.Rotation = 0  
             gradient.Parent = frame  
   
             local stroke = Instance.new("UIStroke")  
-            stroke.Color = Color3.fromRGB(254, 254, 255)  
+            stroke.Color = Color3.fromRGB(38, 240, 228)  
             stroke.Transparency = 0.13  
             stroke.Thickness = 1  
             stroke.Parent = frame  
@@ -143,7 +159,7 @@ local function Notify(title, content, duration)
             titleLabel.Size = UDim2.new(1, -28, 0, 20)  
             titleLabel.Font = Enum.Font.GothamBold  
             titleLabel.Text = tostring(title)  
-            titleLabel.TextColor3 = Color3.fromRGB(34, 45, 57)  
+            titleLabel.TextColor3 = Color3.fromRGB(220, 248, 246)  
             titleLabel.TextSize = 14  
             titleLabel.TextXAlignment = Enum.TextXAlignment.Left  
             titleLabel.Parent = frame  
@@ -154,7 +170,7 @@ local function Notify(title, content, duration)
             contentLabel.Size = UDim2.new(1, -28, 0, 30)  
             contentLabel.Font = Enum.Font.Gotham  
             contentLabel.Text = tostring(content)  
-            contentLabel.TextColor3 = Color3.fromRGB(72, 84, 97)  
+            contentLabel.TextColor3 = Color3.fromRGB(149, 191, 194)  
             contentLabel.TextSize = 12  
             contentLabel.TextWrapped = true  
             contentLabel.TextXAlignment = Enum.TextXAlignment.Left  
@@ -1194,7 +1210,7 @@ local function CreateKeyboardUI()
     Main.Name = "Keyboard"  
     Main.Size = UDim2.fromOffset(260, 126)  
     Main.Position = UDim2.new(0.5, -130, 0.5, -63)  
-    Main.BackgroundColor3 = Color3.fromRGB(228,234,239)
+    Main.BackgroundColor3 = Color3.fromRGB(6,18,25)
     Main.BackgroundTransparency = 0.28  
     Main.BorderSizePixel = 0  
     Main.Active = true  
@@ -1203,11 +1219,12 @@ local function CreateKeyboardUI()
   
     local Corner = Instance.new("UICorner")  
     Corner.CornerRadius = UDim.new(0, 13)  
-    Corner.Parent = Main  
+    Corner.Parent = Main
+    noirHudCorners(Main, 13, Color3.fromRGB(160,255,250), .04, Main.ZIndex + 1)  
   
     local Stroke = Instance.new("UIStroke")  
     Stroke.Thickness = 1.5  
-    Stroke.Color = Color3.fromRGB(255,255,255)  
+    Stroke.Color = Color3.fromRGB(38,240,228)  
     Stroke.Transparency = 0.25  
     Stroke.Parent = Main  
   
@@ -1216,7 +1233,7 @@ local function CreateKeyboardUI()
     Title.Position = UDim2.fromOffset(10, 5)  
     Title.BackgroundTransparency = 1  
     Title.Text = "Keyboard"  
-    Title.TextColor3 = Color3.fromRGB(37,49,61)  
+    Title.TextColor3 = Color3.fromRGB(220,248,246)  
     Title.TextSize = 15  
     Title.Font = Enum.Font.GothamBold  
     Title.TextXAlignment = Enum.TextXAlignment.Center  
@@ -1226,7 +1243,7 @@ local function CreateKeyboardUI()
     local Divider = Instance.new("Frame")  
     Divider.Size = UDim2.new(1, 0, 0, 1)  
     Divider.Position = UDim2.fromOffset(0, 40)  
-    Divider.BackgroundColor3 = Color3.fromRGB(169,181,192)  
+    Divider.BackgroundColor3 = Color3.fromRGB(24,104,112)  
     Divider.BorderSizePixel = 0  
     Divider.ZIndex = 2501  
     Divider.Parent = Main  
@@ -1247,7 +1264,7 @@ local function CreateKeyboardUI()
     local modePanel = Instance.new("Frame")  
     modePanel.Size = UDim2.new(1, -20, 0, 46)  
     modePanel.Position = UDim2.fromOffset(10, 123)  
-    modePanel.BackgroundColor3 = Color3.fromRGB(225,231,237)  
+    modePanel.BackgroundColor3 = Color3.fromRGB(9,28,36)  
     modePanel.BorderSizePixel = 0  
     modePanel.Visible = false  
     modePanel.ZIndex = 2510  
@@ -1255,21 +1272,22 @@ local function CreateKeyboardUI()
   
     local modeCorner = Instance.new("UICorner")  
     modeCorner.CornerRadius = UDim.new(0, 9)  
-    modeCorner.Parent = modePanel  
+    modeCorner.Parent = modePanel
+    noirHudCorners(modePanel, 10, Color3.fromRGB(38,240,228), .18, modePanel.ZIndex + 1)  
   
     local modeStroke = Instance.new("UIStroke")  
     modeStroke.Thickness = 1  
-    modeStroke.Color = Color3.fromRGB(240,244,247)  
+    modeStroke.Color = Color3.fromRGB(24,104,112)  
     modeStroke.Parent = modePanel  
   
     local function makeButton(parent, textValue, widthScale, xScale)  
         local button = Instance.new("TextButton")  
         button.Size = UDim2.new(widthScale, -4, 1, 0)  
         button.Position = UDim2.new(xScale, 2, 0, 0)  
-        button.BackgroundColor3 = Color3.fromRGB(205,215,224)  
+        button.BackgroundColor3 = Color3.fromRGB(8,30,38)  
         button.BorderSizePixel = 0  
         button.Text = textValue  
-        button.TextColor3 = Color3.fromRGB(37,49,61)  
+        button.TextColor3 = Color3.fromRGB(220,248,246)  
         button.TextSize = 12  
         button.Font = Enum.Font.GothamSemibold  
         button.AutoButtonColor = false  
@@ -1280,7 +1298,7 @@ local function CreateKeyboardUI()
         c.Parent = button  
         local st = Instance.new("UIStroke")  
         st.Thickness = 1  
-        st.Color = Color3.fromRGB(240,244,247)  
+        st.Color = Color3.fromRGB(24,104,112)  
         st.Parent = button  
         return button  
     end  
@@ -1296,7 +1314,7 @@ local function CreateKeyboardUI()
         text.Size = UDim2.new(0.58, 0, 1, 0)  
         text.BackgroundTransparency = 1  
         text.Text = label  
-        text.TextColor3 = Color3.fromRGB(40,51,62)  
+        text.TextColor3 = Color3.fromRGB(149,191,194)  
         text.TextSize = 13  
         text.Font = Enum.Font.GothamMedium  
         text.TextXAlignment = Enum.TextXAlignment.Left  
@@ -1320,7 +1338,7 @@ local function CreateKeyboardUI()
     manualText.Size = UDim2.new(0.34, 0, 1, 0)  
     manualText.BackgroundTransparency = 1  
     manualText.Text = "Manual Spam"  
-    manualText.TextColor3 = Color3.fromRGB(40,51,62)  
+    manualText.TextColor3 = Color3.fromRGB(149,191,194)  
     manualText.TextSize = 13  
     manualText.Font = Enum.Font.GothamMedium  
     manualText.TextXAlignment = Enum.TextXAlignment.Left  
@@ -1517,7 +1535,7 @@ local function CreateSmallActionUI(kind)
     local Main = Instance.new("Frame")  
     Main.Size = UDim2.fromOffset(180, 60)  
     Main.Position = UDim2.new(0.5, -90, 0.5, -30)  
-    Main.BackgroundColor3 = Color3.fromRGB(225, 232, 237)  
+    Main.BackgroundColor3 = Color3.fromRGB(6, 18, 25)  
     Main.BorderSizePixel = 0  
     Main.Active = true  
     Main.ZIndex = 999  
@@ -1525,21 +1543,22 @@ local function CreateSmallActionUI(kind)
   
     local UICorner = Instance.new("UICorner")  
     UICorner.CornerRadius = UDim.new(0, 13)  
-    UICorner.Parent = Main  
+    UICorner.Parent = Main
+    noirHudCorners(Main, 12, Color3.fromRGB(160,255,250), .04, Main.ZIndex + 1)  
   
     local Stroke = Instance.new("UIStroke")  
     Stroke.Thickness = 2  
-    Stroke.Color = Color3.fromRGB(255, 255, 255)  
+    Stroke.Color = Color3.fromRGB(38, 240, 228)  
     Stroke.Transparency = 0.35  
     Stroke.Parent = Main  
   
     local Gradient = Instance.new("UIGradient")  
     Gradient.Rotation = 90  
     Gradient.Color = ColorSequence.new({  
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(202, 211, 219)),  
-        ColorSequenceKeypoint.new(0.3, Color3.fromRGB(230, 236, 242)),  
-        ColorSequenceKeypoint.new(0.7, Color3.fromRGB(210, 219, 227)),  
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(247, 250, 252))  
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(8, 30, 38)),  
+        ColorSequenceKeypoint.new(0.3, Color3.fromRGB(9, 28, 36)),  
+        ColorSequenceKeypoint.new(0.7, Color3.fromRGB(7, 21, 29)),  
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 17, 23))  
     })  
     Gradient.Parent = Main  
   
@@ -1547,7 +1566,7 @@ local function CreateSmallActionUI(kind)
     Button.Size = UDim2.new(1, 0, 1, 0)  
     Button.BackgroundTransparency = 1  
     Button.Text = isTrigger and "TRIGGER" or "SPAM"  
-    Button.TextColor3 = Color3.fromRGB(255, 255, 255)  
+    Button.TextColor3 = Color3.fromRGB(38, 240, 228)  
     Button.TextSize = 18  
     Button.Font = Enum.Font.GothamBold  
     Button.AutoButtonColor = false  
@@ -1659,7 +1678,7 @@ local function CreateCurveUI()
     Main.AnchorPoint = Vector2.new(0.5, 0)  
     Main.Size = UDim2.fromOffset(118, 42)  
     Main.Position = UDim2.new(0.5, 0, 0, 16)  
-    Main.BackgroundColor3 = Color3.fromRGB(217, 226, 232)  
+    Main.BackgroundColor3 = Color3.fromRGB(6, 18, 25)  
     Main.BackgroundTransparency = 0.04  
     Main.BorderSizePixel = 0  
     Main.ClipsDescendants = true  
@@ -1669,20 +1688,21 @@ local function CreateCurveUI()
   
     local Corner = Instance.new("UICorner")  
     Corner.CornerRadius = UDim.new(0, 14)  
-    Corner.Parent = Main  
+    Corner.Parent = Main
+    noirHudCorners(Main, 13, Color3.fromRGB(160,255,250), .04, Main.ZIndex + 1)  
   
     local Gradient = Instance.new("UIGradient")  
     Gradient.Rotation = 0  
     Gradient.Color = ColorSequence.new({  
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(203, 212, 220)),  
-        ColorSequenceKeypoint.new(0.48, Color3.fromRGB(225, 233, 240)),  
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(250, 252, 254))  
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 28, 36)),  
+        ColorSequenceKeypoint.new(0.48, Color3.fromRGB(7, 21, 29)),  
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 17, 23))  
     })  
     Gradient.Parent = Main  
   
     local Stroke = Instance.new("UIStroke")  
     Stroke.Thickness = 1.5  
-    Stroke.Color = Color3.fromRGB(255, 255, 255)  
+    Stroke.Color = Color3.fromRGB(220, 248, 246)  
     Stroke.Transparency = 0.3  
     Stroke.Parent = Main  
   
@@ -1692,7 +1712,7 @@ local function CreateCurveUI()
     Header.Position = UDim2.fromOffset(5, 0)  
     Header.BackgroundTransparency = 1  
     Header.Text = tostring(Selected_Parry_Type or "Camera")  
-    Header.TextColor3 = Color3.fromRGB(255, 255, 255)  
+    Header.TextColor3 = Color3.fromRGB(220, 248, 246)  
     Header.TextSize = 14  
     Header.Font = Enum.Font.GothamBold  
     Header.AutoButtonColor = false  
@@ -1750,11 +1770,11 @@ local function CreateCurveUI()
         local Option = Instance.new("TextButton")  
         Option.Name = name  
         Option.Size = UDim2.fromOffset(136, 29)  
-        Option.BackgroundColor3 = Color3.fromRGB(207, 217, 225)  
+        Option.BackgroundColor3 = Color3.fromRGB(8, 30, 38)  
         Option.BackgroundTransparency = 0.18  
         Option.BorderSizePixel = 0  
         Option.Text = name  
-        Option.TextColor3 = Color3.fromRGB(255, 255, 255)  
+        Option.TextColor3 = Color3.fromRGB(220, 248, 246)  
         Option.TextSize = 12  
         Option.Font = Enum.Font.GothamSemibold  
         Option.AutoButtonColor = false  
@@ -1767,9 +1787,9 @@ local function CreateCurveUI()
   
         local OptionGradient = Instance.new("UIGradient")  
         OptionGradient.Color = ColorSequence.new({  
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(245, 248, 251)),  
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(224, 232, 239)),  
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(195, 207, 219))  
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 28, 36)),  
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(7, 21, 29)),  
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 17, 23))  
         })  
         OptionGradient.Parent = Option  
   
@@ -9603,7 +9623,7 @@ do
         ["NATIVE KNIFE UTILITIES • equipped Knife only"] = "Нативные утилиты ножа • только экипированный нож",
         ["NETWORK LATENCY"] = "ЗАДЕРЖКА СЕТИ",
         ["NOIR HUB"] = "NOIR HUB",
-        ["NOIR HUB"] = "NOIR HUB",
+        ["NOIR SILENT AIM"] = "NOIR SILENT AIM",
         ["Nearest player or Sheriff-only targeting"] = "Прицеливание по ближайшему или только по шерифу",
         ["No Shadows"] = "Без теней",
         ["Noir Client • v4"] = "Noir Client • v4",
@@ -9730,6 +9750,8 @@ do
         ["Keep"] = "Держать",
         ["Backshots"] = "Backshots (сзади)",
         ["TROLL • BACKSHOTS"] = "ТРОЛЛИНГ • BACKSHOTS",
+        ["Stream Mode: ON"] = "Режим записи: ВКЛ",
+        ["Stream Mode: OFF"] = "Режим записи: ВЫКЛ",
         ["Hides button visuals only; buttons remain clickable."] = "Скрывает только вид кнопок; нажимать на них по-прежнему можно.",
         ["Restore buttons: Right Shift or hold three fingers for 1.3 seconds."] = "Вернуть вид кнопок: Right Shift или удерживайте три пальца 1,3 секунды.",
     }
@@ -9930,7 +9952,7 @@ do
         ["NATIVE KNIFE UTILITIES • equipped Knife only"] = "أدوات السكين الأصلية • السكين المجهز فقط",
         ["NETWORK LATENCY"] = "زمن استجابة الشبكة",
         ["NOIR HUB"] = "NOIR HUB",
-        ["NOIR HUB"] = "التصويب الصامت Noir",
+        ["NOIR SILENT AIM"] = "التصويب الصامت Noir",
         ["Nearest player or Sheriff-only targeting"] = "استهداف أقرب لاعب أو الشرطي فقط",
         ["No Shadows"] = "بدون ظلال",
         ["Noir Client • v4"] = "Noir Client • v4",
@@ -10057,6 +10079,8 @@ do
         ["Keep"] = "إبقاء",
         ["Backshots"] = "Backshots",
         ["TROLL • BACKSHOTS"] = "المقالب • Backshots",
+        ["Stream Mode: ON"] = "وضع البث: تشغيل",
+        ["Stream Mode: OFF"] = "وضع البث: إيقاف",
         ["Hides button visuals only; buttons remain clickable."] = "يخفي مظهر الأزرار فقط؛ وتبقى قابلة للنقر.",
         ["Restore buttons: Right Shift or hold three fingers for 1.3 seconds."] = "إظهار الأزرار مجددًا: اضغط Right Shift أو اضغط بثلاثة أصابع لمدة 1.3 ثانية.",
         ["Language updated."] = "تم تغيير اللغة.",
@@ -10142,10 +10166,10 @@ function NoirPersistence.SetPosition(key, p)
 end
 
 local C = {
-    base = Color3.fromRGB(10,9,8), surface = Color3.fromRGB(15,13,11), panel = Color3.fromRGB(10,9,8),
-    card = Color3.fromRGB(15,13,11), border = Color3.fromRGB(50,34,23), accent = Color3.fromRGB(224,116,24),
-    accent2 = Color3.fromRGB(255,170,54), text = Color3.fromRGB(245,242,238), dim = Color3.fromRGB(130,124,118),
-    off = Color3.fromRGB(30,26,22), btn = Color3.fromRGB(20,17,14),
+    base = Color3.fromRGB(3,10,15), surface = Color3.fromRGB(7,21,29), panel = Color3.fromRGB(6,18,25),
+    card = Color3.fromRGB(9,28,36), border = Color3.fromRGB(24,104,112), accent = Color3.fromRGB(38,240,228),
+    accent2 = Color3.fromRGB(160,255,250), text = Color3.fromRGB(220,248,246), dim = Color3.fromRGB(104,156,162),
+    off = Color3.fromRGB(13,34,42), btn = Color3.fromRGB(8,30,38),
 }
 
 
@@ -10178,7 +10202,7 @@ do
         T("crimson", "Crimson Samurai", { {16,9,9},{22,12,12},{16,9,9},{24,13,13},{88,24,24},{212,46,44},{230,134,133},{250,243,240},{182,174,172},{43,14,14},{36,13,12} }, { {228,52,52},{255,178,80},{250,243,238},{62,24,24} }),
         T("alabaster", "White Alabaster Mirror", { {236,233,228},{228,224,218},{236,233,228},{246,243,238},{195,190,183},{96,88,76},{74,68,59},{32,30,26},{91,88,84},{216,213,207},{222,218,213} }, { {58,56,52},{150,146,138},{255,254,252},{236,233,229} }),
         T("void", "Void Eclipse", { {16,9,19},{21,13,25},{16,9,19},{23,14,28},{91,35,96},{224,76,228},{237,151,239},{250,240,252},{181,172,184},{45,18,48},{37,16,40} }, { {235,90,235},{255,140,245},{245,235,248},{70,26,70} }),
-        T("neon_osaka", "Neon Osaka", { {7,14,19},{10,19,26},{7,14,19},{11,21,29},{15,90,96},{24,224,226},{121,237,238},{236,248,252},{168,179,184},{9,43,48},{9,35,40} }, { {24,224,226},{120,245,255},{236,248,252},{16,70,78} }),
+        T("neon_osaka", "Noir HUD • Turquoise", { {3,10,15},{7,21,29},{6,18,25},{9,28,36},{24,104,112},{38,240,228},{160,255,250},{220,248,246},{104,156,162},{13,34,42},{8,30,38} }, { {38,240,228},{160,255,250},{220,248,246},{13,83,88} }),
         T("acid", "Acid Verdant", { {11,15,6},{15,20,8},{11,15,6},{16,22,9},{69,93,21},{172,232,44},{207,242,133},{244,250,236},{175,181,168},{34,45,11},{27,37,10} }, { {172,232,44},{216,255,110},{244,250,236},{44,54,18} }),
         T("rose_gold", "Rose Gold Mirror", { {244,236,230},{236,226,219},{244,236,230},{252,244,237},{239,212,197},{214,150,120},{159,112,90},{40,32,28},{99,90,85},{240,224,215},{241,227,219} }, { {214,150,120},{166,104,84},{255,254,252},{236,222,212} }),
     }
@@ -10677,6 +10701,358 @@ gui = New("\x53creenGui", { Name = "\x4eoirSilentAimUI", ResetOnSpawn = false, I
 __NOIR_GUARD.gui = gui
 
 
+local streamModeButton = nil
+local function createStreamModeController()
+local STREAM_MODE_GLOBAL = "__NoirStreamModeController"
+local streamEnvironment = NoirGenv()
+local previousStreamMode = rawget(streamEnvironment, STREAM_MODE_GLOBAL)
+if type(previousStreamMode) == "table" and type(previousStreamMode.Destroy) == "function" then
+    pcall(previousStreamMode.Destroy, previousStreamMode)
+end
+
+local StreamMode = {
+    active = false,
+    saved = setmetatable({}, { __mode = "k" }),
+    watched = setmetatable({}, { __mode = "k" }),
+    roots = setmetatable({}, { __mode = "k" }),
+    markedRoots = setmetatable({}, { __mode = "k" }),
+    rootConnections = {},
+    propertyConnections = {},
+    inputConnections = {},
+    playerGuiConnection = nil,
+}
+local STREAM_MODE_MAIN_GUI = "NoirSilentAimUI"
+local STREAM_MODE_NAMED_SCREENS = {
+    ["@fling"] = true,
+    ["@odh_bjp_bigstorage"] = true,
+    ["@odh_bjp_bindstorage"] = true,
+    ["@wallhopstorage"] = true,
+    ["@bindstorage_v6"] = true,
+    ["@bindstorage_v5"] = true,
+    ["@flingstorage_v1"] = true,
+    ["MM2ShootMurdererButton"] = true,
+}
+local STREAM_MODE_MARKER_PREFIX = "@fling_"
+
+local function streamSetVisual(self, instance, property, hiddenValue)
+    local properties = self.saved[instance]
+    if not properties then
+        properties = {}
+        self.saved[instance] = properties
+    end
+    local state = properties[property]
+    if not state then
+        local ok, original = pcall(function() return instance[property] end)
+        if not ok then return false end
+        state = { original = original, hidden = hiddenValue }
+        properties[property] = state
+    else
+        state.hidden = hiddenValue
+    end
+    local watched = self.watched[instance]
+    if not watched then
+        watched = {}
+        self.watched[instance] = watched
+    end
+    if not watched[property] then
+        watched[property] = true
+        local ok, connection = pcall(function()
+            return instance:GetPropertyChangedSignal(property):Connect(function()
+                if not self.active then return end
+                local savedProperties = self.saved[instance]
+                local currentState = savedProperties and savedProperties[property]
+                if not currentState then return end
+                local readOk, current = pcall(function() return instance[property] end)
+                if readOk and current ~= currentState.hidden then
+
+                    pcall(function() instance[property] = currentState.hidden end)
+                end
+            end)
+        end)
+        if ok and connection then table.insert(self.propertyConnections, connection) end
+    end
+    pcall(function() instance[property] = hiddenValue end)
+    return true
+end
+local function streamHideVisual(self, instance)
+    local ok, className, isGuiObject = pcall(function()
+        return instance.ClassName, instance:IsA("GuiObject")
+    end)
+    if not ok then return false end
+    local changed = false
+    if isGuiObject then
+        changed = streamSetVisual(self, instance, "BackgroundTransparency", 1) or changed
+    end
+    if className == "TextButton" or className == "TextLabel" or className == "TextBox" then
+        changed = streamSetVisual(self, instance, "TextTransparency", 1) or changed
+        changed = streamSetVisual(self, instance, "TextStrokeTransparency", 1) or changed
+    end
+    if className == "ImageButton" or className == "ImageLabel" or className == "ViewportFrame" then
+        changed = streamSetVisual(self, instance, "ImageTransparency", 1) or changed
+    end
+    if className == "ScrollingFrame" then
+        changed = streamSetVisual(self, instance, "ScrollBarImageTransparency", 1) or changed
+    end
+    if className == "UIStroke" then
+        changed = streamSetVisual(self, instance, "Transparency", 1) or changed
+    end
+    return changed
+end
+
+local function streamIsButtonDecoration(instance)
+    local ok, className = pcall(function() return instance.ClassName end)
+    return ok and (className == "TextLabel" or className == "ImageLabel" or className == "ViewportFrame" or className == "UIStroke")
+end
+
+local function streamHideButtonVisuals(self, button)
+    local changed = streamHideVisual(self, button)
+
+    local ok, children = pcall(function() return button:GetChildren() end)
+    if ok then
+        for _, child in ipairs(children) do
+            if streamIsButtonDecoration(child) then
+                changed = streamHideVisual(self, child) or changed
+            end
+        end
+    end
+    return changed
+end
+
+local function streamFindMarkedRoot(self, instance)
+    local cursor = instance
+    while cursor do
+        if self.markedRoots[cursor] then return cursor end
+        local ok, parent = pcall(function() return cursor.Parent end)
+        if not ok then break end
+        cursor = parent
+    end
+    return nil
+end
+
+local function streamIsManagedGui(self, instance)
+    if streamFindMarkedRoot(self, instance) then return true end
+    local cursor = instance
+    while cursor do
+        local ok, isScreenGui, name = pcall(function()
+            return cursor:IsA("ScreenGui"), cursor.Name
+        end)
+        if ok and isScreenGui then
+            
+            if name == STREAM_MODE_MAIN_GUI then return false end
+            return name:sub(1, 4) == "Noir" or STREAM_MODE_NAMED_SCREENS[name] == true
+        end
+        local parentOk, parent = pcall(function() return cursor.Parent end)
+        if not parentOk then break end
+        cursor = parent
+    end
+    return false
+end
+function StreamMode:IsActive()
+    return self.active == true
+end
+
+function StreamMode:ApplyInstance(instance)
+    if not self.active or typeof(instance) ~= "Instance" then return false end
+    local ok, name, className, isButton = pcall(function()
+        return instance.Name, instance.ClassName, instance:IsA("GuiButton")
+    end)
+    if not ok then return false end
+
+    if className == "StringValue" and name:sub(1, #STREAM_MODE_MARKER_PREFIX) == STREAM_MODE_MARKER_PREFIX then
+        local parentOk, parent = pcall(function() return instance.Parent end)
+        if parentOk and parent then
+            local guiOk, parentIsGuiObject = pcall(function() return parent:IsA("GuiObject") end)
+            if guiOk and parentIsGuiObject then
+                self.markedRoots[parent] = true
+                return streamHideButtonVisuals(self, parent)
+            end
+        end
+    end
+
+    
+    if className == "TextButton" and name == "NoirRestoreButton" then
+        return streamHideButtonVisuals(self, instance)
+    end
+    if not streamIsManagedGui(self, instance) then return false end
+    if isButton then
+        return streamHideButtonVisuals(self, instance)
+    end
+
+    local parentOk, parent = pcall(function() return instance.Parent end)
+    if parentOk and parent and streamIsButtonDecoration(instance) then
+        local parentButtonOk, parentIsButton = pcall(function() return parent:IsA("GuiButton") end)
+        if parentButtonOk and parentIsButton then
+            return streamHideVisual(self, instance)
+        end
+    end
+
+    local markedRoot = streamFindMarkedRoot(self, instance)
+    if markedRoot and parentOk and parent == markedRoot and streamIsButtonDecoration(instance) then
+        return streamHideVisual(self, instance)
+    end
+    
+    return false
+end
+function StreamMode:ApplyGui(instance)
+    return self:ApplyInstance(instance)
+end
+
+function StreamMode:AttachRoot(root)
+    if not self.active or typeof(root) ~= "Instance" or self.roots[root] then return end
+    self.roots[root] = true
+    local ok, connection = pcall(function()
+        return root.DescendantAdded:Connect(function(descendant)
+            local function applyNewControl()
+                if self.active then self:ApplyInstance(descendant) end
+            end
+            local deferred = false
+            if type(task) == "table" and type(task.defer) == "function" then
+                deferred = pcall(function() task.defer(applyNewControl) end)
+            end
+            if not deferred then applyNewControl() end
+        end)
+    end)
+    if ok and connection then table.insert(self.rootConnections, connection) end
+    self:ApplyInstance(root)
+    local descendantsOk, descendants = pcall(function() return root:GetDescendants() end)
+    if descendantsOk then
+        for _, descendant in ipairs(descendants) do self:ApplyInstance(descendant) end
+    end
+end
+
+function StreamMode:AttachRoots()
+    if not self.active then return end
+    local roots, seen = {}, {}
+    local function add(root)
+        if typeof(root) == "Instance" and not seen[root] then
+            seen[root] = true
+            roots[#roots + 1] = root
+        end
+    end
+    if type(gethui) == "function" then local ok, root = pcall(gethui); if ok then add(root) end end
+    if type(getcore) == "function" then local ok, root = pcall(getcore); if ok then add(root) end end
+    add(CoreGui)
+    local playerGuiOk, playerGui = pcall(function() return LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
+    if playerGuiOk then add(playerGui) end
+    for _, root in ipairs(roots) do self:AttachRoot(root) end
+    if not self.playerGuiConnection then
+        local ok, connection = pcall(function()
+            return LocalPlayer.ChildAdded:Connect(function(child)
+                local childOk, isPlayerGui = pcall(function() return child:IsA("PlayerGui") end)
+                if self.active and childOk and isPlayerGui then self:AttachRoot(child) end
+            end)
+        end)
+        if ok then self.playerGuiConnection = connection end
+    end
+end
+
+function StreamMode:DisconnectRoots()
+    for _, connection in ipairs(self.rootConnections) do pcall(function() connection:Disconnect() end) end
+    table.clear(self.rootConnections)
+    if self.playerGuiConnection then pcall(function() self.playerGuiConnection:Disconnect() end) end
+    self.playerGuiConnection = nil
+    table.clear(self.roots)
+end
+
+function StreamMode:DisconnectPropertyWatchers()
+    for _, connection in ipairs(self.propertyConnections) do pcall(function() connection:Disconnect() end) end
+    table.clear(self.propertyConnections)
+end
+
+function StreamMode:SetActive(value, silent)
+    value = value == true
+    if value == self.active then
+        if value then self:AttachRoots() end
+        return false
+    end
+    self.active = value
+    if value then
+        self:AttachRoots()
+    else
+        self:DisconnectRoots()
+        self:DisconnectPropertyWatchers()
+        for instance, properties in pairs(self.saved) do
+            for property, state in pairs(properties) do
+                pcall(function() instance[property] = state.original end)
+            end
+        end
+        table.clear(self.saved)
+        table.clear(self.watched)
+        table.clear(self.markedRoots)
+    end
+    if not silent and type(self.onChanged) == "function" then pcall(self.onChanged, value) end
+    return true
+end
+
+function StreamMode:Toggle()
+    return self:SetActive(not self.active)
+end
+
+function StreamMode:Destroy()
+    self:SetActive(false, true)
+    for _, connection in ipairs(self.inputConnections) do pcall(function() connection:Disconnect() end) end
+    table.clear(self.inputConnections)
+    self.onChanged = nil
+end
+
+local function updateStreamModeButton()
+    if streamModeButton and streamModeButton.Parent then
+        streamModeButton.Text = NoirTr(StreamMode.active and "Stream Mode: ON" or "Stream Mode: OFF")
+    end
+end
+StreamMode.onChanged = function(enabled)
+    NoirPersistence.data.toggles["Noir::StreamMode"] = enabled
+    NoirPersistence.Save()
+    updateStreamModeButton()
+end
+rawset(streamEnvironment, STREAM_MODE_GLOBAL, StreamMode)
+
+local activeStreamTouches = {}
+local streamTouchHolding, streamTouchFired, streamTouchToken = false, false, nil
+local function streamTouchCount()
+    local count = 0
+    for _ in pairs(activeStreamTouches) do count = count + 1 end
+    return count
+end
+local inputBeganOk, streamInputBegan = pcall(function()
+    return UIS.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.RightShift then
+            local textFocused = false
+            pcall(function() textFocused = UIS:GetFocusedTextBox() ~= nil end)
+            if not textFocused then StreamMode:Toggle() end
+            return
+        end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            activeStreamTouches[input] = true
+            if streamTouchCount() >= 3 and not streamTouchHolding then
+                streamTouchHolding, streamTouchFired = true, false
+                local token = {}
+                streamTouchToken = token
+                task.delay(1.3, function()
+                    if streamTouchToken ~= token or not streamTouchHolding or streamTouchFired or streamTouchCount() < 3 then return end
+                    streamTouchFired = true
+                    StreamMode:Toggle()
+                end)
+            end
+        end
+    end)
+end)
+if inputBeganOk and streamInputBegan then table.insert(StreamMode.inputConnections, streamInputBegan) end
+local inputEndedOk, streamInputEnded = pcall(function()
+    return UIS.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Touch then return end
+        activeStreamTouches[input] = nil
+        if streamTouchCount() < 3 then
+            streamTouchHolding, streamTouchFired, streamTouchToken = false, false, nil
+        end
+    end)
+end)
+if inputEndedOk and streamInputEnded then table.insert(StreamMode.inputConnections, streamInputEnded) end
+
+StreamMode:SetActive(NoirPersistence.data.toggles["Noir::StreamMode"] == true, true)
+return StreamMode, updateStreamModeButton
+end
+local StreamMode, updateStreamModeButton = createStreamModeController()
 
 local scale = New("\x55IScale", { Parent = gui, Scale = 1 })
 function rescale()
@@ -10698,6 +11074,7 @@ winShadow.Size = UDim2.new(0, win.Size.X.Offset + 44, 0, win.Size.Y.Offset + 44)
 winShadow.AnchorPoint = win.AnchorPoint
 local winScale = New("\x55IScale", { Parent = win, Scale = .82 })
 corner(win, 10)
+noirHudCorners(win, 18, C.accent2, .04, (win.ZIndex or 2) + 2)
 local winStroke = ringStroke(win, 1.6, .12)
 local winGlow = New("\x55IStroke", { Parent = win, Color = C.accent, Thickness = 4, Transparency = .88, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
 win.Changed:Connect(function(prop)
@@ -11252,7 +11629,7 @@ text(pill, "\x43onnected", 13, UDim2.fromOffset(26, 7))
 local heroCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(446, 0), Size = UDim2.new(1, -446, 0, 168), BackgroundColor3 = C.card, BackgroundTransparency = .84 })
 corner(heroCard, 18); stroke(heroCard, C.border, .45)
 New("\x55IGradient", { Parent = heroCard, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(60,48,32)), ColorSequenceKeypoint.new(1, Color3.fromRGB(24,18,14)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .72), NumberSequenceKeypoint.new(1, .86) }), Rotation = 25 })
-text(heroCard, "\x4eOIR HUB", 26, UDim2.fromOffset(26, 24))
+text(heroCard, "\x4eOIR SILENT AIM", 26, UDim2.fromOffset(26, 24))
 text(heroCard, "\x764 • gun & knife prediction, player and object ESP, presets", 14, UDim2.fromOffset(27, 62), true)
 local statText = text(heroCard, "", 14, UDim2.fromOffset(27, 96), true)
 local fpsCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
@@ -11393,8 +11770,8 @@ do
             CellSize = UDim2.new(1 / 3, -9, 0, 64), SortOrder = Enum.SortOrder.LayoutOrder })
 
         local strokesById, checksById = {}, {}
-        local currentId = (NoirPersistence.data.colors and NoirPersistence.data.colors.theme) or "carbon_gold"
-        if not __NoirFindTheme(currentId) then currentId = "carbon_gold" end
+        local currentId = (NoirPersistence.data.colors and NoirPersistence.data.colors.theme) or "neon_osaka"
+        if not __NoirFindTheme(currentId) then currentId = "neon_osaka" end
         local function refreshSelection()
             for tid, s in pairs(strokesById) do
                 local on = tid == currentId
