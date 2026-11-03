@@ -36,6 +36,50 @@ local ReplicatedStorage = game:GetService("\x52eplicatedStorage")
 local HttpService       = game:GetService("\x48ttpService")
 local Lighting          = game:GetService("\x4cighting")
 local LocalPlayer       = Players.LocalPlayer
+local NoirFX = (function()
+    local fx, springs, spinners = { gui = nil }, {}, {}
+    fx.RING = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(3, 10, 14)), ColorSequenceKeypoint.new(.25, Color3.fromRGB(120, 255, 248)),
+        ColorSequenceKeypoint.new(.5, Color3.fromRGB(3, 10, 14)), ColorSequenceKeypoint.new(.75, Color3.fromRGB(53, 116, 115)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(3, 10, 14)),
+    })
+    function fx.new(initial, speed, damp, apply)
+        local sp = { pos = initial, vel = 0, target = initial, speed = speed, damp = math.min(damp, 1), apply = apply }
+        function sp:Set(v) self.target = v; springs[self] = true end
+        function sp:Snap(v) self.pos, self.target, self.vel = v, v, 0; springs[self] = nil; apply(v) end
+        apply(initial)
+        return sp
+    end
+    function fx.spin(gradient) spinners[#spinners + 1] = gradient; return gradient end
+    local conn
+    conn = RunService.RenderStepped:Connect(function(dt)
+        if fx.gui and not fx.gui.Parent then conn:Disconnect() return end
+        dt = math.min(dt, 1 / 20)
+        for _, g in ipairs(spinners) do g.Rotation = (g.Rotation + 60 * dt) % 360 end
+        local list = {}
+        for sp in pairs(springs) do list[#list + 1] = sp end
+        for _, sp in ipairs(list) do
+            local w, d = sp.speed, sp.damp
+            local x0, v0 = sp.pos - sp.target, sp.vel
+            local x, v
+            if d >= 1 then
+                local e = math.exp(-w * dt)
+                x = (x0 + (v0 + w * x0) * dt) * e
+                v = (v0 - (v0 + w * x0) * w * dt) * e
+            else
+                local c = math.sqrt(1 - d * d)
+                local i, j = math.cos(c * w * dt), math.sin(c * w * dt)
+                local e = math.exp(-d * w * dt)
+                x = (x0 * (i + d / c * j) + v0 * j / (c * w)) * e
+                v = (v0 * (i - d / c * j) - x0 * w / c * j) * e
+            end
+            sp.pos, sp.vel = x + sp.target, v
+            if math.abs(x) < .001 and math.abs(v) < .001 then sp.pos, sp.vel = sp.target, 0; springs[sp] = nil end
+            sp.apply(sp.pos)
+        end
+    end)
+    return fx
+end)()
 
  
 local function __noirSharedEnvironment()
@@ -46,7 +90,7 @@ local function __noirSharedEnvironment()
     return _G
 end
 local __NOIR_SHARED = __noirSharedEnvironment()
-local __NOIR_GUARD_KEY = "\x5f_NoirHubRuntimeLock"
+local __NOIR_GUARD_KEY = "__NoirUIRuntimeLock"
 local __NOIR_OLD_GUARD = __NOIR_SHARED[__NOIR_GUARD_KEY]
 local function __noirGuardGuiAlive(record)
     if type(record) ~= "\x74able" or not record.gui then return false end
@@ -86,7 +130,7 @@ local function isPrimaryPress(input)
         or input.UserInputType == Enum.UserInputType.Touch
 end
 
-local STORAGE_ROOT = "\x4eoir Hub"
+local STORAGE_ROOT = "Noir UI"
 local ASSETS_FOLDER = STORAGE_ROOT .. "\x2fassets"
 local CONFIGS_FOLDER = STORAGE_ROOT .. "\x2fconfigs"
 local PRESETS_FOLDER = STORAGE_ROOT .. "\x2fpresets"
@@ -168,9 +212,9 @@ if existingMainGui then
     -- оставался старый интерфейс. Теперь чистим прежние окна и строим заново.
     if __NOIR_SHARED[__NOIR_GUARD_KEY] == __NOIR_GUARD then __NOIR_SHARED[__NOIR_GUARD_KEY] = nil end
     local staleNames = {
-        "\x4eoirSilentAimUI", "\x4dM2ShootMurdererButton", "\x4eoirKnifeSheriffBind",
-        "\x4eoirGrabGunBindButton", "\x4eoirAimlockOverlay", "\x4eoirInvisibleBindButton",
-        "\x4eoirDesyncBindButton", "\x4eoirEmotesButtons", "\x4eoirEmotesQuick",
+        "\x4eoirSilentAimUI",
+        
+
     }
     for _, root in ipairs({ guiParent, CoreGui, LocalPlayer:FindFirstChildOfClass("\x50layerGui") }) do
         if root then
@@ -184,17 +228,10 @@ if existingMainGui then
 end
 
 local NoirPersistence = {
-    data = { toggles = {}, sliders = {}, dropdowns = {}, textboxes = {}, keybinds = {}, positions = {}, colors = {} },
+    data = { toggles = {}, sliders = {}, dropdowns = {}, textboxes = {}, keybinds = {}, positions = {}, colors = {}, appearance = {} },
     token = 0,
     path = CONFIGS_FOLDER .. "\x2fautosave.json",
-    safeLegacy = {
-        Enabled=true, ["\x57all Check"]=true, ["\x53how Shoot Murder Button"]=true,
-        ["\x4cock Shoot Murder Button"]=true, ["\x4bnife Silent Aim"]=true, ["\x4bnife Wall Check"]=true,
-        ["\x50rioritize Sheriff"]=true, ["\x45nable WalkSpeed"]=true, ["\x45nable JumpPower"]=true,
-        ["\x53how Round Timer"]=true, ["\x49nstant Role Detection"]=true, ["\x41uto Notify Roles"]=true,
-        ["\x41uto Fire"]=true, ["\x53how FOV"]=true, ["\x49gnore Dead"]=true,
-        ["\x49gnore Friends"]=true, ["\x41nti AFK"]=true,
-    },
+    safeLegacy = {},
 }
 do
     if type(readfile) == "\x66unction" then
@@ -203,697 +240,19 @@ do
             if typeof(loaded) == "\x74able" then NoirPersistence.data = loaded end
         end)
     end
-    for _, key in ipairs({"\x74oggles","\x73liders","\x64ropdowns","\x74extboxes","\x6beybinds","\x70ositions","\x63olors"}) do
+    for _, key in ipairs({"\x74oggles","\x73liders","\x64ropdowns","\x74extboxes","\x6beybinds","\x70ositions","\x63olors","appearance"}) do
         if typeof(NoirPersistence.data[key]) ~= "\x74able" then NoirPersistence.data[key] = {} end
     end
 end
 do
     local st = NoirGenv().__NoirLangState
-    local savedLang = NoirPersistence.data.dropdowns["\x4eoir::Lang"]
-    if savedLang == "\x72u" or savedLang == "\x65n" or savedLang == "\x61r" then st.lang = savedLang end
-    if st.lang ~= "\x72u" and st.lang ~= "\x61r" and st.lang ~= "\x65n" then st.lang = "\x65n" end
-    st.dict = {
-        ["Home"] = "Главная",
-        ["Main"] = "Основное",
-        ["Combat"] = "Бой",
-        ["World"] = "Мир",
-        ["Map"] = "Карта",
-        ["Autofarm"] = "Автофарм",
-        ["Visuals"] = "Визуалы",
-        ["Skins"] = "Скины",
-        ["Emotes"] = "Эмоции",
-        ["Misc"] = "Разное",
-        ["Trolling"] = "Троллинг",
-        ["Settings"] = "Настройки",
-        ["Round-aware · tween · dead-skip"] = "Учитывает раунд · твин · пропуск мёртвых",
-        ["Auto Farm"] = "Автофарм",
-        ["Farm Speed"] = "Скорость фарма",
-        ["Farm Delay"] = "Задержка (сек)",
-        ["Aura Radius"] = "Радиус ауры",
-        ["Mode: Smooth"] = "Режим: Smooth",
-        ["Mode: Lay"] = "Режим: Lay",
-        ["Return To: Start"] = "Возврат: Старт",
-        ["Return To: Map"] = "Возврат: Карта",
-        ["Return To: Lobby"] = "Возврат: Лобби",
-        ["TP To Lobby"] = "ТП в лобби",
-        ["Reset Character"] = "Ресет персонажа",
-        ["Auto Reset (Full Bag)"] = "Авто-ресет (полная сумка)",
-        ["Avoid Murderer"] = "Избегать убийцу",
-        ["Anti-AFK"] = "Анти-AFK",
-        ["No Render While Farming"] = "Без рендера во время фарма",
-        ["Coin Aura"] = "Аура монет",
-        ["Reset As Murderer"] = "Ресет за убийцу",
-        ["Reset As Sheriff"] = "Ресет за шерифа",
-        ["Kill All On Full Bag"] = "Убить всех (полная сумка)",
-        ["Shoot Murderer On Full"] = "Выстрел в убийцу (полная)",
-        ["Idle"] = "Ожидание",
-        ["Wait round..."] = "Ждём раунд...",
-        ["No coins · waiting"] = "Нет монет · ждём",
-        ["Wait respawn..."] = "Ждём респаун...",
-        ["AIM • ANTI-AIM"] = "БОЙ • ANTI-AIM",
-        ["Velocity desync against aimbots and silent aim"] = "Десинхрон скорости против аимботов и silent aim",
-        ["Enable Anti-Aim"] = "Включить Anti-Aim",
-        ["Mode"] = "Режим",
-        ["Rotate"] = "Вращение",
-        ["Only As Murderer"] = "Только за убийцу",
-        ["Pause Near Players"] = "Пауза рядом с игроками",
-        ["Pause Radius"] = "Радиус паузы",
-        ["Enable Ignore List"] = "Список игнора",
-        ["Ignore Player 1"] = "Игнор: игрок 1",
-        ["Ignore Player 2"] = "Игнор: игрок 2",
-        ["Ignore Player 3"] = "Игнор: игрок 3",
-        ["SETTINGS • HUB"] = "НАСТРОЙКИ • ХАБ",
-        ["Language and hub preferences"] = "Язык и параметры хаба",
-        ["Language"] = "Язык",
-        ["Language: English"] = "Язык: English",
-        ["Language: Russian"] = "Язык: Русский",
-        ["Executor"] = "Исполнитель",
-        ["Anti-Aim"] = "Anti-Aim (защита от прицела)",
-        ["-- ms"] = "-- мс",
-        ["Aimlock Bind Button Size"] = "Размер кнопки Aimlock",
-        ["Aimlock FOV Check"] = "Aimlock: проверка FOV",
-        ["Aimlock FOV Radius"] = "Aimlock: радиус FOV",
-        ["Aimlock Horizontal Prediction"] = "Aimlock: гориз. предикшн",
-        ["Aimlock Prediction"] = "Aimlock: предикшн",
-        ["Aimlock Smoothness"] = "Aimlock: плавность",
-        ["Aimlock Target Body Part"] = "Aimlock: часть тела цели",
-        ["Aimlock Target Player"] = "Aimlock: цель-игрок",
-        ["Aimlock Wall Check"] = "Aimlock: проверка стен",
-        ["Anti AFK"] = "Анти-AFK",
-        ["AntiFling"] = "Анти-флинг",
-        ["Apply Prediction On Gun Trigger Bot"] = "Предикшн в Gun Trigger Bot",
-        ["Aura"] = "Аура",
-        ["Aura Interval"] = "Интервал ауры",
-        ["Auto GG picks up GunDrop while you do not have a Gun."] = "Auto GG подбирает GunDrop, пока у тебя нет пушки.",
-        ["Auto GG, pickup, aura, notifications and bind button"] = "Auto GG, подбор, аура, уведомления и кнопка-бинд",
-        ["Auto Kill Everyone"] = "Авто-убийство всех",
-        ["Auto Kill Sheriff"] = "Авто-убийство шерифа",
-        ["Auto Murderer"] = "Авто-убийца",
-        ["Auto Murderer Delay"] = "Задержка авто-убийцы",
-        ["Auto Notify Dropped Gun"] = "Уведомлять о выброшенной пушке",
-        ["Auto Notify Roles"] = "Авто-уведомление ролей",
-        ["Auto Remove Chroma Effects"] = "Убирать Chroma-эффекты",
-        ["Auto Remove Coins"] = "Убирать монеты",
-        ["Auto Remove Corpses"] = "Убирать трупы",
-        ["Auto Remove Pets Display"] = "Убирать отображение питомцев",
-        ["Auto Return"] = "Авто-возврат",
-        ["Auto Sheriff"] = "Авто-шериф",
-        ["Auto Sheriff Delay"] = "Задержка авто-шерифа",
-        ["Auto-Get "] = "Авто-подбор ",
-        ["Bind "] = "Бинд ",
-        ["Bind Size (%)"] = "Размер бинда (%)",
-        ["Bind Touch Fling"] = "Бинд Touch Fling",
-        ["Bomb Jump+"] = "Bomb Jump+",
-        ["Camera lock for Murderer or a selected player • all controls are local"] = "Захват камеры на убийцу или выбранного игрока • всё локально",
-        ["Clear Aimlock Player Selection"] = "Сбросить цель Aimlock",
-        ["Click"] = "Клик",
-        ["Client-side limit • Saved preferences"] = "Клиентский лимит • сохранённые настройки",
-        ["Connected"] = "Подключено",
-        ["Cursor Artwork Scale"] = "Масштаб курсора",
-        ["Cursor Design"] = "Дизайн курсора",
-        ["Custom Cursor ID"] = "Свой ID курсора",
-        ["Desync"] = "Desync",
-        ["Desync Bind Button Size"] = "Размер кнопки Desync",
-        ["Desync invisibility and floating bind button"] = "Desync-невидимость и плавающая кнопка-бинд",
-        ["Enable "] = "Включить ",
-        ["Enable Aimlock"] = "Включить Aimlock",
-        ["Enable Aimlock Bind Button"] = "Кнопка-бинд Aimlock",
-        ["Enable Auto "] = "Включить авто-",
-        ["Enable Auto GG"] = "Включить Auto GG",
-        ["Enable Cursor Color"] = "Включить цвет курсора",
-        ["Enable Custom Cursor"] = "Включить свой курсор",
-        ["Enable Desync Bind Button"] = "Кнопка-бинд Desync",
-        ["Enable Desync to save the current position; you can then move locally while its saved position is sent on desync frames."] = "Включи Desync, чтобы сохранить позицию; сможешь двигаться локально, пока сохранённая позиция отправляется на десинк-кадрах.",
-        ["Enable FE Anims"] = "Включить FE-анимации",
-        ["Enable Frame Enhancement"] = "Улучшение кадров",
-        ["Enable Grab Gun Bind Button"] = "Кнопка-бинд Grab Gun",
-        ["Enable Invisible Bind Button"] = "Кнопка-бинд невидимости",
-        ["Enable JumpPower"] = "Включить JumpPower",
-        ["Enable Kill Sheriff Bindable Button"] = "Кнопка убийства шерифа",
-        ["Enable WalkSpeed"] = "Включить WalkSpeed",
-        ["Enabled"] = "Включено",
-        ["Executor: "] = "Исполнитель: ",
-        ["FE Animations"] = "FE-анимации",
-        ["FPS"] = "FPS",
-        ["FPS Boost"] = "Ускорение FPS",
-        ["FPS Boost is shared with the hub's MISC • FPS control."] = "Ускорение FPS синхронизировано с разделом MISC • FPS.",
-        ["Fast Throw"] = "Быстрый бросок",
-        ["Fling Duration"] = "Длительность флинга",
-        ["Fling Power"] = "Сила флинга",
-        ["Fps Boost"] = "FPS буст",
-        ["Full animation reset"] = "Полный сброс анимаций",
-        ["GUN"] = "ПУШКА",
-        ["GUN TRIGGER BOT"] = "GUN TRIGGER BOT",
-        ["GUN UTILITIES • native Noir implementation"] = "Утилиты пушки • нативная реализация Noir",
-        ["Grab Gun"] = "Grab Gun (забрать пушку)",
-        ["Grab Gun Bind Button Size"] = "Размер кнопки Grab Gun",
-        ["Gun Aura"] = "Аура пушки",
-        ["Gun Aura Range"] = "Радиус ауры пушки",
-        ["Gun Pickup Notify"] = "Уведомление подбора пушки",
-        ["Gun Trigger Bot"] = "Gun Trigger Bot",
-        ["Gun Trigger Bot Wall Check"] = "Gun Trigger Bot: проверка стен",
-        ["Gun targeting controls"] = "Управление прицеливанием пушки",
-        ["If a wall is between you and the target, the shot starts on their side of the wall. Turn this on with Silent Aim."] = "Если между тобой и целью стена, выстрел начинается с её стороны стены. Включай вместе с Silent Aim.",
-        ["Independent KnifeThrown prediction"] = "Независимый предикшн KnifeThrown",
-        ["Independent server-shot prediction"] = "Независимый предикшн серверного выстрела",
-        ["Infinite Jump"] = "Бесконечный прыжок",
-        ["Initializing..."] = "Инициализация...",
-        ["Instant Role Detection"] = "Мгновенное определение ролей",
-        ["Instant Throw"] = "Мгновенный бросок",
-        ["Inventory Unlimiter V5"] = "Inventory Unlimiter V5",
-        ["Invisible"] = "Невидимость",
-        ["Invisible Bind Button Size"] = "Размер кнопки невидимости",
-        ["JumpPower"] = "JumpPower",
-        ["KNIFE PREDICTION"] = "ПРЕДИКШН НОЖА",
-        ["KNIFE SILENT AIM"] = "KNIFE SILENT AIM",
-        ["Keeps the server-facing character position at the activation point"] = "Держит серверную позицию персонажа в точке активации",
-        ["Key "] = "Клавиша ",
-        ["Kill Everyone"] = "Убить всех",
-        ["Kill Player"] = "Убить игрока",
-        ["Kill Sheriff"] = "Убить шерифа",
-        ["Knife Silent Aim"] = "Knife Silent Aim",
-        ["Knife Throw Aura"] = "Аура броска ножа",
-        ["Knife Wall Check"] = "Нож: проверка стен",
-        ["KnifeThrown Aura"] = "Аура KnifeThrown",
-        ["Less Lag"] = "Меньше лагов",
-        ["Load "] = "Загрузить ",
-        ["Loading settings..."] = "Загрузка настроек...",
-        ["Local visual-performance controls; server-side objects and round rules are not changed"] = "Локальные настройки производительности; серверные объекты и правила раунда не меняются",
-        ["Lock Shoot Murder Button"] = "Закрепить кнопку выстрела в убийцу",
-        ["Loop"] = "Цикл",
-        ["Loop Interval"] = "Интервал цикла",
-        ["MAIN • INVISIBLE"] = "ОСНОВНОЕ • НЕВИДИМОСТЬ",
-        ["MAIN • SELF MODS"] = "ОСНОВНОЕ • СЕБЯ-МОДЫ",
-        ["MAIN • SERVER"] = "ОСНОВНОЕ • СЕРВЕР",
-        ["MAIN • UNIVERSAL"] = "ОСНОВНОЕ • УНИВЕРСАЛ",
-        ["MISC • AIMLOCK"] = "РАЗНОЕ • AIMLOCK",
-        ["MISC • CUSTOMIZE CURSOR"] = "РАЗНОЕ • СВОЙ КУРСОР",
-        ["MISC • DESYNC"] = "РАЗНОЕ • DESYNC",
-        ["MISC • FPS"] = "РАЗНОЕ • FPS",
-        ["MM2 round information"] = "Информация о раунде MM2",
-        ["Max Items"] = "Максимум предметов",
-        ["Mode: "] = "Режим: ",
-        ["Movement and survival utilities"] = "Утилиты движения и выживания",
-        ["Mute Button SFX"] = "Без звука кнопок",
-        ["NATIVE KNIFE UTILITIES • equipped Knife only"] = "Нативные утилиты ножа • только экипированный нож",
-        ["NETWORK LATENCY"] = "ЗАДЕРЖКА СЕТИ",
-        ["NOIR HUB"] = "NOIR HUB",
-        ["NOIR SILENT AIM"] = "NOIR SILENT AIM",
-        ["Nearest player or Sheriff-only targeting"] = "Прицеливание по ближайшему или только по шерифу",
-        ["No Shadows"] = "Без теней",
-        ["Noir Client • v4"] = "Noir Client • v4",
-        ["Notifications"] = "Уведомления",
-        ["Adaptive"] = "Адаптивный",
-        ["Adaptive Engine"] = "Адаптивный движок",
-        ["Auto Prediction"] = "Автопредикшн",
-        ["Classic"] = "Классический",
-        ["Config"] = "Конфиг",
-        ["Data Ping"] = "Data Ping",
-        ["Dynamic"] = "Динамический",
-        ["Fallback"] = "Запасное значение",
-        ["Jitter"] = "Джиттер",
-        ["Last known"] = "Последнее значение",
-        ["LOCKED"] = "ЗАФИКСИРОВАНО",
-        ["Lock Config"] = "Фиксировать конфиг",
-        ["ms"] = "мс",
-        ["Network"] = "Сеть",
-        ["Noir Auto"] = "Noir Auto",
-        ["Noir Auto prediction profile"] = "Noir Auto: профиль предикшна",
-        ["Noir Auto updates gun prediction using ping. Turning it off stops updates and keeps the last values."] = "Noir Auto обновляет предикшн пистолета по пингу. При выключении обновления остановятся, последние значения сохранятся.",
-        ["NOIR AUTO PREDICTION"] = "NOIR AUTO PREDICTION",
-        ["OFF"] = "ВЫКЛ",
-        ["ON"] = "ВКЛ",
-        ["Ping"] = "Пинг",
-        ["Ping-adaptive Silent Aim prediction"] = "Предикшн Silent Aim с адаптацией под пинг",
-        ["Print Telemetry"] = "Печать телеметрии",
-        ["Profile"] = "Профиль",
-        ["Raw"] = "Сырой",
-        ["Source"] = "Источник",
-        ["Performance"] = "Производительность",
-        ["+Upgrade"] = "+Усиление",
-        ["UPGRADE"] = "УСИЛЕНИЕ",
-        ["UNLOCKED"] = "НЕ ЗАФИКСИРОВАНО",
-        ["Upgrade Mode"] = "Режим усиления",
-        ["Open Main for player tools, World for gun & fling tools, Visuals for ESP."] = "Открой Main для инструментов игрока, World для пушки и флингов, Visuals для ESP.",
-        ["Optimize Coins"] = "Оптимизировать монеты",
-        ["PISTOL PREDICTION"] = "ПРЕДИКШН ПИСТОЛЕТА",
-        ["PLAYERS"] = "ИГРОКИ",
-        ["Persistence"] = "Сохранения",
-        ["Piercer Bullet"] = "Piercer Bullet (сквозь стены)",
-        ["Pm-WallHop"] = "Pm-WallHop",
-        ["Pm-WallHop Script by @Phemtom (Improved)"] = "Скрипт Pm-WallHop от @Phemtom (улучшенный)",
-        ["Prediction"] = "Предикшн",
-        ["Preset Name"] = "Имя пресета",
-        ["Prioritize Sheriff"] = "Приоритет шерифа",
-        ["QUICK START"] = "БЫСТРЫЙ СТАРТ",
-        ["R O B L O X   H U B"] = "R O B L O X   Х А Б",
-        ["Reapply / Retry"] = "Повторить / применить",
-        ["Refresh Aimlock Player List"] = "Обновить список целей Aimlock",
-        ["Refresh Kill Player List"] = "Обновить список убийства",
-        ["Refresh Roles"] = "Обновить роли",
-        ["Replaces the existing Shift Lock/crosshair image; no second cursor is added"] = "Заменяет изображение Shift Lock/прицела; второй курсор не добавляется",
-        ["Return To: "] = "Возврат: ",
-        ["Role Cache TTL"] = "TTL кэша ролей",
-        ["Roles are sampled during the 10 second countdown."] = "Роли считываются во время 10-секундного отсчёта.",
-        ["Round Grab Gun button: drag it to move; its size and position are saved."] = "Кнопка Grab Gun в раунде: перетащи, чтобы переместить; размер и позиция сохраняются.",
-        ["Round Invisible button: tap to toggle; drag it to move. Its size and position are saved."] = "Кнопка невидимости в раунде: тап — переключить; перетащи, чтобы переместить. Размер и позиция сохраняются.",
-        ["SFX 🔇"] = "SFX 🔇",
-        ["SILENT AIM"] = "SILENT AIM",
-        ["Save "] = "Сохранить ",
-        ["Saved settings"] = "Сохранённые настройки",
-        ["Server FireServer redirect"] = "Серверный редирект FireServer",
-        ["Settings are saved automatically to Noir Hub/configs."] = "Настройки сохраняются автоматически в Noir Hub/configs.",
-        ["Show Murderer Chance"] = "Показывать шанс убийцы",
-        ["Show Round Timer"] = "Показывать таймер раунда",
-        ["Show Shoot Murder Button"] = "Показывать кнопку выстрела в убийцу",
-        ["Silent Aim • ESP • Prediction"] = "Silent Aim • ESP • Предикшн",
-        ["Start Height"] = "Стартовая высота",
-        ["Target Cooldown"] = "Кулдаун цели",
-        ["Tip: select Auto Murderer for automatic role targeting. Drag the round AIM button to move it."] = "Совет: выбери Auto Murderer для авто-прицеливания по роли. Кнопку AIM в раунде можно перетаскивать.",
-        ["Touch Fling"] = "Touch Fling",
-        ["Universal player controls"] = "Универсальные контроли игроков",
-        ["Unlimit Inventory"] = "Без лимита инвентаря",
-        ["WORLD • GUN"] = "МИР • ПУШКА",
-        ["WalkSpeed"] = "WalkSpeed",
-        ["Wall Check"] = "Проверка стен",
-        ["Windows: Xeno, Solara, Madium, Real, SirHurt, Potassium, Volt • Android: Delta, Codex, Arceus X • iOS: Delta • Mac: Opiumware, Macsploit"] = "Windows: Xeno, Solara, Madium, Real, SirHurt, Potassium, Volt • Android: Delta, Codex, Arceus X • iOS: Delta • Mac: Opiumware, Macsploit",
-        ["Your Presets"] = "Твои пресеты",
-        ["aux0on presets • R15 • full track reset • auto-save"] = "Пресеты aux0on • R15 • полный сброс треков • автосохранение",
-        ["v4 • gun & knife prediction, player and object ESP, presets"] = "v4 • предикшн пушки и ножа, ESP игроков и объектов, пресеты",
-        ["⏹ Cancel"] = " Отмена",
-        ["▶ Start (list)"] = "▶ Старт (список)",
-        ["▸ Player"] = " Игрок",
-        ["🎯 Selected"] = "🎯 Выбрано",
-        ["👋 Touch Fling"] = "👋 Touch Fling",
-        ["👥 Everyone"] = "👥 Все",
-        ["📍 Nearest"] = "📍 Ближайший",
-        ["🔪 Murderer"] = "🔪 Убийца",
-        ["🔫 Sheriff"] = "🔫 Шериф",
-        ["🛑 Panic"] = "🛑 Паника",
-        ["🧩 Reset bind layout"] = "🧩 Сбросить раскладку биндов",
-        ["🧹 Clear WL"] = "🧹 Очистить WL",
-        ["🧹 Clear keys"] = "🧹 Очистить клавиши",
-        ["🧹 Clear loop"] = "🧹 Очистить цикл",
-        ["Enable Speed Glitch UI"] = "Включить Speed Glitch UI",
-        ["Only Work Sideways"] = "Только в стороны",
-        ["Side Speed"] = "Скорость в стороны",
-        ["Toggle Size"] = "Размер кнопки",
-        ["Select Emote"] = "Выбор эмоции",
-        ["Custom Emote ID"] = "Свой ID эмоции",
-        ["Everyone"] = "Все",
-        ["Murderer Only"] = "Только убийца",
-        ["Sheriff Only"] = "Только шериф",
-        ["Hero Only"] = "Только герой",
-        ["Dead Only"] = "Только мёртвые",
-        ["Dropped Gun"] = "Выброшенная пушка",
-        ["Throwing Knives"] = "Летящие ножи",
-        ["Object ESP"] = "ESP объектов",
-        ["BY PLAYER"] = "ПО ИГРОКАМ",
-        ["VISUAL • CHAM"] = "ВИЗУАЛ • CHAM",
-        ["VISUAL • ESP"] = "ВИЗУАЛ • ESP",
-        ["VISUAL • OUTLINE"] = "ВИЗУАЛ • КОНТУР",
-        ["VISUAL • HIGHLIGHT"] = "ВИЗУАЛ • ПОДСВЕТКА",
-        ["VISUAL • TRACER"] = "ВИЗУАЛ • ТРАССЕР",
-        ["VISUAL • ESP BOX"] = "ВИЗУАЛ • БОКС",
-        ["VISUAL • ESP AVATAR"] = "ВИЗУАЛ • АВАТАР",
-        ["VISUAL • ESP FIRE"] = "ВИЗУАЛ • ОГОНЬ",
-        ["VISUAL • BY OBJECT"] = "ВИЗУАЛ • ПО ОБЪЕКТАМ",
-        ["Knives"] = "Ножи",
-        ["Guns"] = "Пушки",
-        ["Search skins by name..."] = "Поиск скинов по имени...",
-        ["Enable"] = "Включить",
-        ["Keep"] = "Держать",
-        ["Backshots"] = "Backshots (сзади)",
-        ["TROLL • BACKSHOTS"] = "ТРОЛЛИНГ • BACKSHOTS",
-        ["Stream Mode: ON"] = "Режим записи: ВКЛ",
-        ["Stream Mode: OFF"] = "Режим записи: ВЫКЛ",
-        ["Hides button visuals only; buttons remain clickable."] = "Скрывает только вид кнопок; нажимать на них по-прежнему можно.",
-        ["Restore buttons: Right Shift or hold three fingers for 1.3 seconds."] = "Вернуть вид кнопок: Right Shift или удерживайте три пальца 1,3 секунды.",
-    }
-    st.dict["Language: Arabic"] = "Язык: арабский"
-    st.dict["Language updated."] = "Язык изменён"
-    st.dict["type: Basic"] = "Тип: Basic"
-    st.dict["type: Down"] = "Тип: Down"
-    st.dict["Silent Aim Mode"] = "Режим Silent Aim"
-    st.dict["Noir"] = "Noir"
-    st.dict["Tering"] = "Tering"
-    st.dict["BULLET TRACER"] = "Трейсер пуль"
-    st.dict["Shoot Murder on full bag"] = "Стрелять в маньяка при полном мешке"
-    st.dict["Auto Fling Sheriff on full bag"] = "Авто-флинг шерифа при полном мешке"
-    st.dict["Flings sheriff on full bag to steal gun"] = "Флингает шерифа при полном мешке чтобы забрать пушку"
-    local AR_DICT = {
-        ["Home"] = "الرئيسية",
-        ["Main"] = "الرئيسي",
-        ["Combat"] = "القتال",
-        ["World"] = "العالم",
-        ["Map"] = "الخريطة",
-        ["Autofarm"] = "الجمع التلقائي",
-        ["Visuals"] = "المرئيات",
-        ["Skins"] = "المظاهر",
-        ["Emotes"] = "الحركات",
-        ["Misc"] = "متفرقات",
-        ["Trolling"] = "المقالب",
-        ["Settings"] = "الإعدادات",
-        ["Round-aware · tween · dead-skip"] = "مراعاة الجولة · حركة انتقالية · تخطي اللاعبين الموتى",
-        ["Auto Farm"] = "الجمع التلقائي",
-        ["Farm Speed"] = "سرعة الجمع",
-        ["Farm Delay"] = "تأخير الجمع",
-        ["Aura Radius"] = "نصف قطر الهالة",
-        ["Mode: Smooth"] = "الوضع: سلس",
-        ["Mode: Lay"] = "الوضع: استلقاء",
-        ["Return To: Start"] = "العودة إلى: البداية",
-        ["Return To: Map"] = "العودة إلى: الخريطة",
-        ["Return To: Lobby"] = "العودة إلى: الردهة",
-        ["TP To Lobby"] = "انتقال إلى الردهة",
-        ["Reset Character"] = "إعادة تعيين الشخصية",
-        ["Auto Reset (Full Bag)"] = "إعادة تعيين تلقائية (الحقيبة ممتلئة)",
-        ["Avoid Murderer"] = "تجنب القاتل",
-        ["Anti-AFK"] = "منع الخمول",
-        ["No Render While Farming"] = "إيقاف العرض أثناء الجمع",
-        ["Coin Aura"] = "هالة العملات",
-        ["Reset As Murderer"] = "إعادة التعيين كقاتل",
-        ["Reset As Sheriff"] = "إعادة التعيين كشرطي",
-        ["Kill All On Full Bag"] = "القضاء على الجميع عند امتلاء الحقيبة",
-        ["Shoot Murderer On Full"] = "إطلاق النار على القاتل عند الامتلاء",
-        ["Idle"] = "خامل",
-        ["Wait round..."] = "بانتظار الجولة...",
-        ["No coins · waiting"] = "لا توجد عملات · بانتظارها",
-        ["Wait respawn..."] = "بانتظار إعادة الظهور...",
-        ["AIM • ANTI-AIM"] = "التصويب • مضاد التصويب",
-        ["Velocity desync against aimbots and silent aim"] = "إلغاء تزامن السرعة ضد التصويب الآلي والتصويب الصامت",
-        ["Enable Anti-Aim"] = "تفعيل مضاد التصويب",
-        ["Mode"] = "الوضع",
-        ["Rotate"] = "تدوير",
-        ["Only As Murderer"] = "كقاتل فقط",
-        ["Pause Near Players"] = "إيقاف مؤقت قرب اللاعبين",
-        ["Pause Radius"] = "نصف قطر الإيقاف",
-        ["Enable Ignore List"] = "تفعيل قائمة التجاهل",
-        ["Ignore Player 1"] = "تجاهل اللاعب 1",
-        ["Ignore Player 2"] = "تجاهل اللاعب 2",
-        ["Ignore Player 3"] = "تجاهل اللاعب 3",
-        ["SETTINGS • HUB"] = "الإعدادات • Noir Hub",
-        ["Language and hub preferences"] = "اللغة وتفضيلات الواجهة",
-        ["Language"] = "اللغة",
-        ["Language: English"] = "اللغة: الإنجليزية",
-        ["Language: Russian"] = "اللغة: الروسية",
-        ["Executor"] = "المنفذ",
-        ["Anti-Aim"] = "مضاد التصويب",
-        ["-- ms"] = "-- مللي ثانية",
-        ["Aimlock Bind Button Size"] = "حجم زر ربط Aimlock",
-        ["Aimlock FOV Check"] = "Aimlock: فحص مجال الرؤية",
-        ["Aimlock FOV Radius"] = "Aimlock: نصف قطر مجال الرؤية",
-        ["Aimlock Horizontal Prediction"] = "Aimlock: التنبؤ الأفقي",
-        ["Aimlock Prediction"] = "Aimlock: التنبؤ",
-        ["Aimlock Smoothness"] = "Aimlock: السلاسة",
-        ["Aimlock Target Body Part"] = "Aimlock: جزء جسم الهدف",
-        ["Aimlock Target Player"] = "Aimlock: اللاعب المستهدف",
-        ["Aimlock Wall Check"] = "Aimlock: فحص الجدران",
-        ["Anti AFK"] = "منع الخمول",
-        ["AntiFling"] = "مضاد الإقصاء",
-        ["Apply Prediction On Gun Trigger Bot"] = "تطبيق التنبؤ على Gun Trigger Bot",
-        ["Aura"] = "الهالة",
-        ["Aura Interval"] = "فترة الهالة",
-        ["Auto GG picks up GunDrop while you do not have a Gun."] = "يلتقط Auto GG عنصر GunDrop عندما لا تملك سلاحًا.",
-        ["Auto GG, pickup, aura, notifications and bind button"] = "Auto GG، الالتقاط، الهالة، الإشعارات وزر الربط",
-        ["Auto Kill Everyone"] = "القضاء التلقائي على الجميع",
-        ["Auto Kill Sheriff"] = "القضاء التلقائي على الشرطي",
-        ["Auto Murderer"] = "القاتل التلقائي",
-        ["Auto Murderer Delay"] = "تأخير القاتل التلقائي",
-        ["Auto Notify Dropped Gun"] = "إشعار تلقائي عند إسقاط السلاح",
-        ["Auto Notify Roles"] = "إشعار تلقائي بالأدوار",
-        ["Auto Remove Chroma Effects"] = "إزالة تأثيرات Chroma تلقائيًا",
-        ["Auto Remove Coins"] = "إزالة العملات تلقائيًا",
-        ["Auto Remove Corpses"] = "إزالة الجثث تلقائيًا",
-        ["Auto Remove Pets Display"] = "إزالة عرض الحيوانات الأليفة تلقائيًا",
-        ["Auto Return"] = "العودة تلقائيًا",
-        ["Auto Sheriff"] = "الشرطي التلقائي",
-        ["Auto Sheriff Delay"] = "تأخير الشرطي التلقائي",
-        ["Auto-Get "] = "تحديد تلقائي ",
-        ["Bind "] = "ربط ",
-        ["Bind Size (%)"] = "حجم زر الربط (%)",
-        ["Bind Touch Fling"] = "ربط Touch Fling",
-        ["Bomb Jump+"] = "قفزة القنبلة+",
-        ["Camera lock for Murderer or a selected player • all controls are local"] = "قفل الكاميرا للقاتل أو للاعب محدد • جميع عناصر التحكم محلية",
-        ["Clear Aimlock Player Selection"] = "مسح اختيار لاعب Aimlock",
-        ["Click"] = "نقرة",
-        ["Client-side limit • Saved preferences"] = "حد العميل • التفضيلات محفوظة",
-        ["Connected"] = "متصل",
-        ["Cursor Artwork Scale"] = "مقياس رسمة المؤشر",
-        ["Cursor Design"] = "تصميم المؤشر",
-        ["Custom Cursor ID"] = "معرّف مؤشر مخصص",
-        ["Desync"] = "إلغاء التزامن",
-        ["Desync Bind Button Size"] = "حجم زر ربط Desync",
-        ["Desync invisibility and floating bind button"] = "اختفاء Desync وزر ربط عائم",
-        ["Enable "] = "تفعيل ",
-        ["Enable Aimlock"] = "تفعيل Aimlock",
-        ["Enable Aimlock Bind Button"] = "تفعيل زر ربط Aimlock",
-        ["Enable Auto "] = "تفعيل تلقائي ",
-        ["Enable Auto GG"] = "تفعيل Auto GG",
-        ["Enable Cursor Color"] = "تفعيل لون المؤشر",
-        ["Enable Custom Cursor"] = "تفعيل مؤشر مخصص",
-        ["Enable Desync Bind Button"] = "تفعيل زر ربط Desync",
-        ["Enable Desync to save the current position; you can then move locally while its saved position is sent on desync frames."] = "فعّل Desync لحفظ الموضع الحالي؛ بعدها يمكنك التحرك محليًا بينما يُرسل الموضع المحفوظ أثناء إطارات إلغاء التزامن.",
-        ["Enable FE Anims"] = "تفعيل حركات FE",
-        ["Enable Frame Enhancement"] = "تفعيل تحسين الإطارات",
-        ["Enable Grab Gun Bind Button"] = "تفعيل زر ربط Grab Gun",
-        ["Enable Invisible Bind Button"] = "تفعيل زر الربط للاختفاء",
-        ["Enable JumpPower"] = "تفعيل قوة القفز",
-        ["Enable Kill Sheriff Bindable Button"] = "تفعيل زر قتل الشرطي",
-        ["Enable WalkSpeed"] = "تفعيل سرعة المشي",
-        ["Enabled"] = "مفعّل",
-        ["Executor: "] = "المنفّذ: ",
-        ["FE Animations"] = "حركات FE",
-        ["FPS"] = "FPS",
-        ["FPS Boost"] = "تعزيز FPS",
-        ["FPS Boost is shared with the hub's MISC • FPS control."] = "تعزيز FPS مشترك مع تحكم MISC • FPS في الواجهة.",
-        ["Fast Throw"] = "رمي سريع",
-        ["Fling Duration"] = "مدة Fling",
-        ["Fling Power"] = "قوة Fling",
-        ["Fps Boost"] = "تعزيز FPS",
-        ["Full animation reset"] = "إعادة ضبط الحركة بالكامل",
-        ["GUN"] = "السلاح",
-        ["GUN TRIGGER BOT"] = "إطلاق تلقائي للسلاح",
-        ["GUN UTILITIES • native Noir implementation"] = "أدوات السلاح • تنفيذ Noir أصلي",
-        ["Grab Gun"] = "التقاط السلاح",
-        ["Grab Gun Bind Button Size"] = "حجم زر ربط Grab Gun",
-        ["Gun Aura"] = "هالة السلاح",
-        ["Gun Aura Range"] = "مدى هالة السلاح",
-        ["Gun Pickup Notify"] = "إشعار التقاط السلاح",
-        ["Gun Trigger Bot"] = "الإطلاق التلقائي للسلاح",
-        ["Gun Trigger Bot Wall Check"] = "فحص الجدران لإطلاق السلاح التلقائي",
-        ["Gun targeting controls"] = "إعدادات استهداف السلاح",
-        ["If a wall is between you and the target, the shot starts on their side of the wall. Turn this on with Silent Aim."] = "إذا وُجد جدار بينك وبين الهدف، يبدأ الإطلاق من جهته الأخرى. فعّل هذا الخيار مع Silent Aim.",
-        ["Independent KnifeThrown prediction"] = "تنبؤ مستقل برمية السكين",
-        ["Independent server-shot prediction"] = "تنبؤ مستقل لطلقة الخادم",
-        ["Infinite Jump"] = "قفز لا نهائي",
-        ["Initializing..."] = "جارٍ التهيئة...",
-        ["Instant Role Detection"] = "كشف فوري للدور",
-        ["Instant Throw"] = "رمي فوري",
-        ["Inventory Unlimiter V5"] = "إزالة حد المخزون V5",
-        ["Invisible"] = "غير مرئي",
-        ["Invisible Bind Button Size"] = "حجم زر ربط الاختفاء",
-        ["JumpPower"] = "قوة القفز",
-        ["KNIFE PREDICTION"] = "تنبؤ السكين",
-        ["KNIFE SILENT AIM"] = "التصويب الصامت بالسكين",
-        ["Keeps the server-facing character position at the activation point"] = "يحافظ على موضع الشخصية لدى الخادم عند نقطة التفعيل",
-        ["Key "] = "المفتاح ",
-        ["Kill Everyone"] = "القضاء على الجميع",
-        ["Kill Player"] = "القضاء على اللاعب",
-        ["Kill Sheriff"] = "القضاء على الشرطي",
-        ["Knife Silent Aim"] = "التصويب الصامت بالسكين",
-        ["Knife Throw Aura"] = "هالة رمي السكين",
-        ["Knife Wall Check"] = "فحص الجدران للسكين",
-        ["KnifeThrown Aura"] = "هالة رمي السكين",
-        ["Less Lag"] = "تقليل التأخير",
-        ["Load "] = "تحميل ",
-        ["Loading settings..."] = "جارٍ تحميل الإعدادات...",
-        ["Local visual-performance controls; server-side objects and round rules are not changed"] = "عناصر تحكم محلية للأداء المرئي؛ لا تتغير عناصر الخادم أو قواعد الجولة",
-        ["Lock Shoot Murder Button"] = "قفل زر إطلاق النار على القاتل",
-        ["Loop"] = "تكرار",
-        ["Loop Interval"] = "فترة التكرار",
-        ["MAIN • INVISIBLE"] = "الرئيسي • الاختفاء",
-        ["MAIN • SELF MODS"] = "الرئيسي • تعديلات الذات",
-        ["MAIN • SERVER"] = "الرئيسي • الخادم",
-        ["MAIN • UNIVERSAL"] = "الرئيسي • عام",
-        ["MISC • AIMLOCK"] = "متفرقات • Aimlock",
-        ["MISC • CUSTOMIZE CURSOR"] = "متفرقات • تخصيص المؤشر",
-        ["MISC • DESYNC"] = "متفرقات • إلغاء التزامن",
-        ["MISC • FPS"] = "متفرقات • FPS",
-        ["MM2 round information"] = "معلومات جولة MM2",
-        ["Max Items"] = "الحد الأقصى للعناصر",
-        ["Mode: "] = "الوضع: ",
-        ["Movement and survival utilities"] = "أدوات الحركة والبقاء",
-        ["Mute Button SFX"] = "كتم أصوات الأزرار",
-        ["NATIVE KNIFE UTILITIES • equipped Knife only"] = "أدوات السكين الأصلية • السكين المجهز فقط",
-        ["NETWORK LATENCY"] = "زمن استجابة الشبكة",
-        ["NOIR HUB"] = "NOIR HUB",
-        ["NOIR SILENT AIM"] = "التصويب الصامت Noir",
-        ["Nearest player or Sheriff-only targeting"] = "استهداف أقرب لاعب أو الشرطي فقط",
-        ["No Shadows"] = "بدون ظلال",
-        ["Noir Client • v4"] = "Noir Client • v4",
-        ["Notifications"] = "الإشعارات",
-        ["Adaptive"] = "تكيفي",
-        ["Adaptive Engine"] = "محرك تكيفي",
-        ["Auto Prediction"] = "التنبؤ التلقائي",
-        ["Classic"] = "كلاسيكي",
-        ["Config"] = "الإعدادات",
-        ["Data Ping"] = "زمن اتصال البيانات",
-        ["Dynamic"] = "ديناميكي",
-        ["Fallback"] = "احتياطي",
-        ["Jitter"] = "تذبذب",
-        ["Last known"] = "آخر قيمة معروفة",
-        ["LOCKED"] = "مقفل",
-        ["Lock Config"] = "قفل الإعدادات",
-        ["ms"] = "مللي ثانية",
-        ["Network"] = "الشبكة",
-        ["Noir Auto"] = "Noir Auto",
-        ["Noir Auto prediction profile"] = "ملف تنبؤ Noir Auto",
-        ["Noir Auto updates gun prediction using ping. Turning it off stops updates and keeps the last values."] = "يحدّث Noir Auto تنبؤ السلاح حسب زمن الاستجابة. إيقافه يوقف التحديثات ويُبقي آخر القيم.",
-        ["NOIR AUTO PREDICTION"] = "تنبؤ Noir التلقائي",
-        ["OFF"] = "إيقاف",
-        ["ON"] = "تشغيل",
-        ["Ping"] = "زمن الاستجابة",
-        ["Ping-adaptive Silent Aim prediction"] = "تنبؤ Silent Aim متكيف مع زمن الاستجابة",
-        ["Print Telemetry"] = "عرض بيانات القياس",
-        ["Profile"] = "الملف الشخصي",
-        ["Raw"] = "خام",
-        ["Source"] = "المصدر",
-        ["Performance"] = "الأداء",
-        ["+Upgrade"] = "+ترقية",
-        ["UPGRADE"] = "ترقية",
-        ["UNLOCKED"] = "مفتوح",
-        ["Upgrade Mode"] = "وضع الترقية",
-        ["Open Main for player tools, World for gun & fling tools, Visuals for ESP."] = "افتح الرئيسي لأدوات اللاعبين، والعالم لأدوات السلاح وFling، والمرئيات لـ ESP.",
-        ["Optimize Coins"] = "تحسين العملات",
-        ["PISTOL PREDICTION"] = "تنبؤ المسدس",
-        ["PLAYERS"] = "اللاعبون",
-        ["Persistence"] = "حفظ الحالة",
-        ["Piercer Bullet"] = "رصاصة خارقة",
-        ["Pm-WallHop"] = "Pm-WallHop",
-        ["Pm-WallHop Script by @Phemtom (Improved)"] = "نص Pm-WallHop بواسطة @Phemtom (محسّن)",
-        ["Prediction"] = "التنبؤ",
-        ["Preset Name"] = "اسم الإعداد المسبق",
-        ["Prioritize Sheriff"] = "إعطاء الأولوية للشرطي",
-        ["QUICK START"] = "بدء سريع",
-        ["R O B L O X   H U B"] = "مركز ROBLOX",
-        ["Reapply / Retry"] = "إعادة التطبيق / المحاولة",
-        ["Refresh Aimlock Player List"] = "تحديث قائمة لاعبي Aimlock",
-        ["Refresh Kill Player List"] = "تحديث قائمة لاعبي القضاء",
-        ["Refresh Roles"] = "تحديث الأدوار",
-        ["Replaces the existing Shift Lock/crosshair image; no second cursor is added"] = "يستبدل صورة Shift Lock/علامة التصويب الحالية؛ لا يضيف مؤشرًا ثانيًا",
-        ["Return To: "] = "العودة إلى: ",
-        ["Role Cache TTL"] = "مدة صلاحية ذاكرة الأدوار",
-        ["Roles are sampled during the 10 second countdown."] = "تُحدّث الأدوار خلال العد التنازلي لعشر ثوانٍ.",
-        ["Round Grab Gun button: drag it to move; its size and position are saved."] = "زر Grab Gun للجولة: اسحبه لتحريكه؛ يُحفظ حجمه وموضعه.",
-        ["Round Invisible button: tap to toggle; drag it to move. Its size and position are saved."] = "زر الاختفاء للجولة: اضغط للتبديل واسحب للتحريك؛ يُحفظ حجمه وموضعه.",
-        ["SFX 🔇"] = "المؤثرات الصوتية 🔇",
-        ["SILENT AIM"] = "التصويب الصامت",
-        ["Save "] = "حفظ ",
-        ["Saved settings"] = "الإعدادات المحفوظة",
-        ["Server FireServer redirect"] = "إعادة توجيه FireServer للخادم",
-        ["Settings are saved automatically to Noir Hub/configs."] = "تُحفظ الإعدادات تلقائيًا في Noir Hub/configs.",
-        ["Show Murderer Chance"] = "إظهار احتمال القاتل",
-        ["Show Round Timer"] = "إظهار مؤقت الجولة",
-        ["Show Shoot Murder Button"] = "إظهار زر إطلاق النار على القاتل",
-        ["Silent Aim • ESP • Prediction"] = "التصويب الصامت • ESP • التنبؤ",
-        ["Start Height"] = "ارتفاع البداية",
-        ["Target Cooldown"] = "فترة تهدئة الهدف",
-        ["Tip: select Auto Murderer for automatic role targeting. Drag the round AIM button to move it."] = "نصيحة: اختر Auto Murderer للاستهداف التلقائي حسب الدور. اسحب زر AIM الدائري لتحريكه.",
-        ["Touch Fling"] = "Touch Fling",
-        ["Universal player controls"] = "عناصر تحكم عامة للاعب",
-        ["Unlimit Inventory"] = "فتح حد المخزون",
-        ["WORLD • GUN"] = "العالم • السلاح",
-        ["WalkSpeed"] = "سرعة المشي",
-        ["Wall Check"] = "فحص الجدران",
-        ["Windows: Xeno, Solara, Madium, Real, SirHurt, Potassium, Volt • Android: Delta, Codex, Arceus X • iOS: Delta • Mac: Opiumware, Macsploit"] = "Windows: Xeno, Solara, Madium, Real, SirHurt, Potassium, Volt • Android: Delta, Codex, Arceus X • iOS: Delta • Mac: Opiumware, Macsploit",
-        ["Your Presets"] = "إعداداتك المسبقة",
-        ["aux0on presets • R15 • full track reset • auto-save"] = "إعدادات aux0on • R15 • إعادة ضبط المسار بالكامل • حفظ تلقائي",
-        ["v4 • gun & knife prediction, player and object ESP, presets"] = "v4 • تنبؤ السلاح والسكين، ESP للاعبين والعناصر، إعدادات مسبقة",
-        ["⏹ Cancel"] = "⏹ إلغاء",
-        ["▶ Start (list)"] = "▶ ابدأ (القائمة)",
-        ["▸ Player"] = "▸ اللاعب",
-        ["🎯 Selected"] = "🎯 محدد",
-        ["👋 Touch Fling"] = "👋 Touch Fling",
-        ["👥 Everyone"] = "👥 الجميع",
-        ["📍 Nearest"] = "📍 الأقرب",
-        ["🔪 Murderer"] = "🔪 القاتل",
-        ["🔫 Sheriff"] = "🔫 الشرطي",
-        ["🛑 Panic"] = "🛑 طوارئ",
-        ["🧩 Reset bind layout"] = "🧩 إعادة ضبط تخطيط الأزرار",
-        ["🧹 Clear WL"] = "🧹 مسح القائمة البيضاء",
-        ["🧹 Clear keys"] = "🧹 مسح المفاتيح",
-        ["🧹 Clear loop"] = "🧹 إيقاف التكرار",
-        ["Enable Speed Glitch UI"] = "تفعيل واجهة Speed Glitch",
-        ["Only Work Sideways"] = "يعمل جانبيًا فقط",
-        ["Side Speed"] = "السرعة الجانبية",
-        ["Toggle Size"] = "حجم زر التبديل",
-        ["Select Emote"] = "اختر حركة",
-        ["Custom Emote ID"] = "معرّف حركة مخصص",
-        ["Everyone"] = "الجميع",
-        ["Murderer Only"] = "القاتل فقط",
-        ["Sheriff Only"] = "الشرطي فقط",
-        ["Hero Only"] = "البطل فقط",
-        ["Dead Only"] = "الموتى فقط",
-        ["Dropped Gun"] = "السلاح المُلقى",
-        ["Throwing Knives"] = "سكاكين الرمي",
-        ["Object ESP"] = "ESP للعناصر",
-        ["BY PLAYER"] = "حسب اللاعب",
-        ["VISUAL • CHAM"] = "المرئيات • CHAM",
-        ["VISUAL • ESP"] = "المرئيات • ESP",
-        ["VISUAL • OUTLINE"] = "المرئيات • الحدود",
-        ["VISUAL • HIGHLIGHT"] = "المرئيات • الإبراز",
-        ["VISUAL • TRACER"] = "المرئيات • خطوط التتبع",
-        ["VISUAL • ESP BOX"] = "المرئيات • صندوق ESP",
-        ["VISUAL • ESP AVATAR"] = "المرئيات • صورة اللاعب",
-        ["VISUAL • ESP FIRE"] = "المرئيات • نار ESP",
-        ["VISUAL • BY OBJECT"] = "المرئيات • حسب العنصر",
-        ["Knives"] = "السكاكين",
-        ["Guns"] = "الأسلحة",
-        ["Search skins by name..."] = "ابحث عن المظاهر بالاسم...",
-        ["Enable"] = "تفعيل",
-        ["Keep"] = "إبقاء",
-        ["Backshots"] = "Backshots",
-        ["TROLL • BACKSHOTS"] = "المقالب • Backshots",
-        ["Stream Mode: ON"] = "وضع البث: تشغيل",
-        ["Stream Mode: OFF"] = "وضع البث: إيقاف",
-        ["Hides button visuals only; buttons remain clickable."] = "يخفي مظهر الأزرار فقط؛ وتبقى قابلة للنقر.",
-        ["Restore buttons: Right Shift or hold three fingers for 1.3 seconds."] = "إظهار الأزرار مجددًا: اضغط Right Shift أو اضغط بثلاثة أصابع لمدة 1.3 ثانية.",
-        ["Language updated."] = "تم تغيير اللغة.",
-    }
-    AR_DICT["Language: Arabic"] = "اللغة: العربية"
-    AR_DICT["type: Basic"] = "النوع: أساسي"
-    AR_DICT["type: Down"] = "النوع: نزول"
-    st.dicts = { en = {}, ru = st.dict, ar = AR_DICT }
-    -- Fix Arabic missing feature names: fill from RU/EN if missing
-    for k,v in pairs(st.dict) do if AR_DICT[k]==nil then AR_DICT[k]=k end end
-    AR_DICT["Silent Aim Mode"] = "وضع التصويب الصامت"
-    AR_DICT["Noir"] = "نوار"
-    AR_DICT["Tering"] = "تيرينغ"
-    AR_DICT["BULLET TRACER"] = "تتبع الرصاص"
-    AR_DICT["Shoot Murder on full bag"] = "إطلاق النار على القاتل عند امتلاء الحقيبة"
-    AR_DICT["Auto Fling Sheriff on full bag"] = "رمي الشريف تلقائيا عند امتلاء الحقيبة"
-    AR_DICT["Flings sheriff on full bag to steal gun"] = "يرمي الشريف عند امتلاء الحقيبة لسرقة السلاح"
-    AR_DICT["Touch Fling"] = AR_DICT["Touch Fling"] or "اللمس السريع"
-    AR_DICT["👋 Touch Fling"] = AR_DICT["👋 Touch Fling"] or "👋 اللمس السريع"
-    AR_DICT["Bind Touch Fling"] = AR_DICT["Bind Touch Fling"] or "ربط اللمس السريع"
+    st.lang = "en"
+    st.dict = {}
+    st.dicts = { en = {}, ru = {}, ar = {} }
     st.renderedToSource = {}
     st.originalTextDirections = setmetatable({}, { __mode = "k" })
     st.originalTextXAlignments = setmetatable({}, { __mode = "k" })
-    if st.lang ~= "en" and st.lang ~= "ru" and st.lang ~= "ar" then st.lang = "en" end
-    NoirTr = function(value)
-        if type(value) ~= "string" then return value end
-        local state = NoirGenv().__NoirLangState
-        if type(state) ~= "table" then return value end
-        state.renderedToSource = state.renderedToSource or {}
-        local source = state.renderedToSource[value] or value
-        local dictionaries = state.dicts or {}
-        local dictionary = dictionaries[state.lang] or {}
-        local rendered = dictionary[source] or source
-        state.renderedToSource[rendered] = source
-        state.renderedToSource[source] = source
-        return rendered
-    end
-
+    NoirTr = function(value) return value end
 end
 function NoirPersistence.WriteNow()
     if type(writefile) ~= "\x66unction" then return end
@@ -946,286 +305,18 @@ local C = {
     accent2 = Color3.fromRGB(160,255,250), text = Color3.fromRGB(220,248,246), dim = Color3.fromRGB(104,156,162),
     off = Color3.fromRGB(13,34,42), btn = Color3.fromRGB(8,30,38),
 }
-
--- ===== Noir Theme Engine: 12 liquid-mirror palettes + live repaint registry =====
-local NOIR_THEMES = nil
-do
-    local function T(id, name, p, dots)
-        local function r(v) return Color3.fromRGB(v[1], v[2], v[3]) end
-        return {
-            id = id, name = name,
-            C = {
-                base = r(p[1]), surface = r(p[2]), panel = r(p[3]), card = r(p[4]), border = r(p[5]),
-                accent = r(p[6]), accent2 = r(p[7]), text = r(p[8]), dim = r(p[9]), off = r(p[10]), btn = r(p[11]),
-            },
-            dots = { Color3.fromRGB(dots[1][1], dots[1][2], dots[1][3]), Color3.fromRGB(dots[2][1], dots[2][2], dots[2][3]),
-                     Color3.fromRGB(dots[3][1], dots[3][2], dots[3][3]), Color3.fromRGB(dots[4][1], dots[4][2], dots[4][3]) },
-        }
-    end
-    -- p = { base, surface, panel, card, border, accent, accent2, text, dim, off, btn }
-    NOIR_THEMES = {
-        T("mirror_bw", "3D B&W Mirror", { {16,16,16},{22,22,22},{14,14,14},{24,24,24},{96,96,96},{235,235,235},{243,243,243},{245,245,245},{178,178,178},{47,47,47},{38,38,38} }, { {235,235,235},{168,168,168},{110,110,110},{40,40,40} }),
-        T("mercury", "Liquid Mercury", { {12,14,17},{17,20,24},{12,14,17},{18,21,26},{76,83,93},{190,204,224},{217,225,237},{240,243,247},{173,176,180},{37,41,46},{30,33,38} }, { {226,232,240},{188,196,210},{142,150,160},{70,76,86} }),
-        T("blood_moon", "Blood Moon", { {20,8,9},{27,11,12},{20,8,9},{28,13,14},{95,22,26},{226,40,48},{238,130,135},{250,238,238},{183,170,170},{49,12,14},{41,11,13} }, { {220,44,44},{255,110,110},{235,225,225},{60,20,22} }),
-        T("carbon_gold", "Smoked Carbon Gold", { {12,10,7},{17,14,10},{12,10,7},{18,15,10},{88,49,15},{224,116,24},{237,174,121},{248,243,236},{179,174,168},{42,25,9},{33,21,9} }, { {255,178,64},{224,116,24},{248,243,236},{60,36,16} }),
-        T("amethyst", "Cyber Amethyst", { {17,10,22},{22,14,29},{17,10,22},{24,15,31},{76,43,107},{178,96,255},{210,163,255},{247,240,252},{180,172,185},{40,22,55},{33,19,45} }, { {185,103,255},{216,168,255},{240,230,250},{58,34,78} }),
-        T("emerald", "Emerald Matrix", { {8,16,12},{11,21,16},{8,16,12},{12,23,17},{23,88,55},{44,214,128},{133,231,181},{238,250,244},{170,181,176},{13,44,28},{12,36,24} }, { {52,220,138},{120,255,190},{230,250,240},{18,58,40} }),
-        T("arctic", "Arctic Sapphire", { {8,14,20},{11,19,26},{8,14,20},{12,21,29},{27,79,104},{56,192,250},{140,218,252},{238,246,252},{170,178,184},{15,39,52},{13,32,43} }, { {72,196,255},{150,226,255},{235,246,255},{24,52,70} }),
-        T("sakura", "Sakura Blossom", { {20,11,15},{26,14,19},{20,11,15},{28,16,21},{103,53,71},{250,124,168},{252,179,205},{252,242,246},{184,174,178},{52,27,36},{43,22,30} }, { {255,140,175},{255,185,210},{252,242,246},{70,32,44} }),
-        T("solar", "Solar Gold 24K", { {18,13,6},{24,17,8},{18,13,6},{26,19,9},{99,78,18},{240,192,36},{246,218,128},{252,248,238},{184,179,169},{49,38,10},{40,31,9} }, { {255,205,60},{255,230,120},{252,248,238},{70,52,14} }),
-        T("crimson", "Crimson Samurai", { {16,9,9},{22,12,12},{16,9,9},{24,13,13},{88,24,24},{212,46,44},{230,134,133},{250,243,240},{182,174,172},{43,14,14},{36,13,12} }, { {228,52,52},{255,178,80},{250,243,238},{62,24,24} }),
-        T("alabaster", "White Alabaster Mirror", { {236,233,228},{228,224,218},{236,233,228},{246,243,238},{195,190,183},{96,88,76},{74,68,59},{32,30,26},{91,88,84},{216,213,207},{222,218,213} }, { {58,56,52},{150,146,138},{255,254,252},{236,233,229} }),
-        T("void", "Void Eclipse", { {16,9,19},{21,13,25},{16,9,19},{23,14,28},{91,35,96},{224,76,228},{237,151,239},{250,240,252},{181,172,184},{45,18,48},{37,16,40} }, { {235,90,235},{255,140,245},{245,235,248},{70,26,70} }),
-        T("neon_osaka", "Noir HUD • Turquoise", { {3,10,15},{7,21,29},{6,18,25},{9,28,36},{24,104,112},{38,240,228},{160,255,250},{220,248,246},{104,156,162},{13,34,42},{8,30,38} }, { {38,240,228},{160,255,250},{220,248,246},{13,83,88} }),
-        T("acid", "Acid Verdant", { {11,15,6},{15,20,8},{11,15,6},{16,22,9},{69,93,21},{172,232,44},{207,242,133},{244,250,236},{175,181,168},{34,45,11},{27,37,10} }, { {172,232,44},{216,255,110},{244,250,236},{44,54,18} }),
-        T("rose_gold", "Rose Gold Mirror", { {244,236,230},{236,226,219},{244,236,230},{252,244,237},{239,212,197},{214,150,120},{159,112,90},{40,32,28},{99,90,85},{240,224,215},{241,227,219} }, { {214,150,120},{166,104,84},{255,254,252},{236,222,212} }),
-    }
-end
-
-local function __NoirFindTheme(id)
-    for _, t in ipairs(NOIR_THEMES) do if t.id == id then return t end end
-    return nil
-end
-
-local __noirThemeReg = {}
-local __noirAliasSlots = { base = true, surface = true, panel = true, card = true, border = true, off = true, btn = true, text = true, dim = true }
-local __noirColorCache = setmetatable({}, { __mode = "k" })
-local function __noirSlotForColor(value)
-    local exact
-    for slot, col in pairs(C) do
-        if col == value then exact = slot break end
-    end
-    if exact then return exact end
-    local ok, vr, vg, vb = pcall(function() return value.R * 255, value.G * 255, value.B * 255 end)
-    if not ok then return nil end
-    local bestSlot, bestDist = nil, 26 * 26 + 1
-    for slot in pairs(__noirAliasSlots) do
-        local col = C[slot]
-        local ok2, cr, cg, cb = pcall(function() return col.R * 255, col.G * 255, col.B * 255 end)
-        if ok2 then
-            local d = (vr - cr) * (vr - cr) + (vg - cg) * (vg - cg) + (vb - cb) * (vb - cb)
-            if d < bestDist then bestSlot, bestDist = slot, d end
-        end
-    end
-    return bestSlot
-end
-local function __noirWatchColors(inst, props)
-    for k, v in pairs(props or {}) do
-        if typeof(v) == "Color3" then
-            local slot = __noirColorCache[v]
-            if slot == nil then
-                slot = __noirSlotForColor(v) or false
-                __noirColorCache[v] = slot
-            end
-            if slot then
-                __noirThemeReg[#__noirThemeReg + 1] = { inst, k, slot }
-            end
-        end
-    end
-end
-
-function __NoirApplyTheme(id, animate)
-    local theme = __NoirFindTheme(id)
-    if not theme then return false end
-    for slot, col in pairs(theme.C) do C[slot] = col end
-    pcall(function()
-        if NoirPersistence and NoirPersistence.data and NoirPersistence.data.colors then
-            if NoirPersistence.data.colors.theme ~= id then
-                NoirPersistence.data.colors.theme = id
-                NoirPersistence.Save()
-            end
-        end
-    end)
-    NoirGenv().__NoirCurrentTheme = id
-    for i = 1, #__noirThemeReg do
-        local e = __noirThemeReg[i]
-        local target = theme.C[e[3]]
-        if target then
-            pcall(function()
-                if animate and TweenService then
-                    TweenService:Create(e[1], TweenInfo.new(.38, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { [e[2]] = target }):Play()
-                else
-                    e[1][e[2]] = target
-                end
-            end)
-        end
-    end
-    return true
-end
-
-do
-    local saved = NoirPersistence and NoirPersistence.data and NoirPersistence.data.colors and NoirPersistence.data.colors.theme
-    if type(saved) == "string" then
-        local theme = __NoirFindTheme(saved)
-        if theme then for slot, col in pairs(theme.C) do C[slot] = col end end
-    end
-end
-
--- ===== Noir overlay bridge: floating buttons (bind circles, quick toggles, Shoot-Murderer) follow the active theme =====
-do
-    local __noirOverlayNames = {
-        ["@odh_bjp_bigstorage"] = true, ["@odh_bjp_bindstorage"] = true,
-        MM2ShootMurdererButton = true, NoirKnifeSheriffBind = true, NoirGrabGunBindButton = true,
-        NoirAimlockOverlay = true, NoirInvisibleBindButton = true, NoirDesyncBindButton = true,
-        NoirRoundTimer = true, NoirEmotesButtons = true, NoirEmotesQuick = true,
-        NoirEmoteButtons = true, NoirEmotesNative = true,
-        NoirSpeedGlitchToggle = true, NoirBackshotsToggle = true, NoirBombJumpToggle = true, NoirJerkToggle = true,
-        NoirMiscAimlock = true, NoirAutoPredictionMonitor = true, NoirSnpBackground = true, NoirSnpCursor = true,
-    }
-    local __noirOverlaySeen = setmetatable({}, { __mode = "k" })
-    local __noirOverlayReg = {}
-    local function __noirLum(c) return 0.299 * c.R + 0.587 * c.G + 0.114 * c.B end
-    local function __noirChroma(c)
-        local mx, mn = math.max(c.R, c.G, c.B), math.min(c.R, c.G, c.B)
-        return mx - mn
-    end
-    local function __noirOverlaySlot(prop, value)
-        if typeof(value) ~= "Color3" then return nil end
-        if __noirChroma(value) > 0.28 then return nil end
-        local L = __noirLum(value)
-        if prop == "Color" then return L > 0.55 and "accent2" or "border" end
-        if prop == "TextColor3" or prop == "PlaceholderColor3" then return L > 0.55 and "text" or "dim" end
-        if prop == "ImageColor3" then if L > 0.72 then return "text" elseif L > 0.4 then return "dim" else return nil end end
-        if prop == "BackgroundColor3" then
-            if L > 0.75 then return "surface" end
-            if L > 0.30 then return "card" end
-            return "btn"
-        end
-        if prop == "ScrollBarImageColor3" then return "accent" end
-        return nil
-    end
-    local __noirPainting = false
-    local function __noirAddWatch(inst, prop, slot)
-        __noirOverlayReg[#__noirOverlayReg + 1] = { inst, prop, slot }
-        pcall(function()
-            inst:GetPropertyChangedSignal(prop):Connect(function()
-                if __noirPainting then return end
-                local target = C[slot]
-                if not target then return end
-                task.defer(function()
-                    if __noirPainting then return end
-                    pcall(function()
-                        if inst[prop] ~= target then inst[prop] = target end
-                    end)
-                end)
-            end)
-        end)
-    end
-    local function __noirOverlayRegister(inst)
-        if __noirOverlaySeen[inst] then return end
-        __noirOverlaySeen[inst] = true
-        pcall(function()
-            if inst:IsA("UIStroke") then
-                local slot = __noirOverlaySlot("Color", inst.Color)
-                if slot then __noirAddWatch(inst, "Color", slot) end
-                local grad = inst:FindFirstChildOfClass("UIGradient")
-                if grad then __noirOverlayReg[#__noirOverlayReg + 1] = { grad, "__gradientStroke", "" } end
-            elseif inst:IsA("GuiObject") then
-                local bs = __noirOverlaySlot("BackgroundColor3", inst.BackgroundColor3)
-                if bs then __noirAddWatch(inst, "BackgroundColor3", bs) end
-                if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-                    local ts = __noirOverlaySlot("TextColor3", inst.TextColor3)
-                    if ts then __noirAddWatch(inst, "TextColor3", ts) end
-                end
-                if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-                    local islot = __noirOverlaySlot("ImageColor3", inst.ImageColor3)
-                    if islot then __noirAddWatch(inst, "ImageColor3", islot) end
-                end
-                if inst:IsA("ScrollingFrame") then
-                    __noirAddWatch(inst, "ScrollBarImageColor3", "accent")
-                end
-            end
-        end)
-    end
-    local function __noirOverlayRoots()
-        local roots, seen = {}, {}
-        local function push(r)
-            if typeof(r) == "Instance" and not seen[r] then seen[r] = true roots[#roots + 1] = r end
-        end
-        pcall(function() push(guiParent) end)
-        pcall(function() push(CoreGui) end)
-        pcall(function()
-            local pg = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
-            push(pg)
-        end)
-        pcall(function()
-            local gh = nil
-            if type(gethui) == "function" then gh = gethui
-            elseif type(get_hidden_gui) == "function" then gh = get_hidden_gui
-            elseif type(gethiddenui) == "function" then gh = gethiddenui end
-            if gh then push(gh()) end
-        end)
-        return roots
-    end
-    local function __noirOverlayScan()
-        for _, root in ipairs(__noirOverlayRoots()) do
-            for name in pairs(__noirOverlayNames) do
-                local g = root:FindFirstChild(name)
-                if g then
-                    for _, d in ipairs(g:GetDescendants()) do __noirOverlayRegister(d) end
-                end
-            end
-        end
-    end
-    function __noirOverlayRepaint()
-        __noirPainting = true
-        local i = 1
-        while i <= #__noirOverlayReg do
-            local e = __noirOverlayReg[i]
-            local inst = e[1]
-            if not (inst and inst.Parent) then
-                table.remove(__noirOverlayReg, i)
-            else
-                pcall(function()
-                    if e[2] == "__gradientStroke" then
-                        local kps = inst.Color.Keypoints
-                        local saturated = false
-                        for _, kp in ipairs(kps) do
-                            if __noirChroma(kp.Value) > 0.15 then saturated = true break end
-                        end
-                        if not saturated then
-                            local nk = {}
-                            for idx, kp in ipairs(kps) do
-                                nk[idx] = ColorSequenceKeypoint.new(kp.Time, __noirLum(kp.Value) > 0.55 and C.accent2 or C.border)
-                            end
-                            inst.Color = ColorSequence.new(nk)
-                        end
-                    else
-                        local target = C[e[3]]
-                        if target then inst[e[2]] = target end
-                    end
-                end)
-                i = i + 1
-            end
-        end
-        __noirPainting = false
-    end
-    local __noirApplyThemeUpstream = __NoirApplyTheme
-    function __NoirApplyTheme(id, animate)
-        local ok = __noirApplyThemeUpstream(id, animate)
-        task.defer(function()
-            pcall(__noirOverlayScan)
-            pcall(__noirOverlayRepaint)
-        end)
-        return ok
-    end
-    task.spawn(function()
-        local genv = NoirGenv()
-        genv.__NoirOverlayBridgeToken = (genv.__NoirOverlayBridgeToken or 0) + 1
-        local token = genv.__NoirOverlayBridgeToken
-        task.wait(1.25)
-        while genv.__NoirOverlayBridgeToken == token do
-            pcall(__noirOverlayScan)
-            pcall(__noirOverlayRepaint)
-            task.wait(1)
-        end
-    end)
-end
 local gui
 function New(class, props)
+    props = props or {}
     local x = Instance.new(class)
-    for k, v in pairs(props or {}) do if k ~= "\x50arent" then x[k] = v end end
-    pcall(__noirWatchColors, x, props)
+    for k, v in pairs(props) do if k ~= "\x50arent" then x[k] = v end end
+    local isTextObject = false
+    pcall(function() isTextObject = x:IsA("TextLabel") or x:IsA("TextButton") or x:IsA("TextBox") end)
+    if isTextObject then
+        pcall(function() x.TextScaled = false end)
+        pcall(function() x.TextTruncate = Enum.TextTruncate.AtEnd end)
+        if props.Font == nil then pcall(function() x.Font = Enum.Font.GothamMedium end) end
+    end
     local langState = NoirGenv().__NoirLangState
     if type(langState) == "\x74able" then
         langState.renderedToSource = langState.renderedToSource or {}
@@ -1314,7 +405,7 @@ local function refreshNoirLanguage()
     local namedScreens = {
         ["@fling"] = true, ["@odh_bjp_bigstorage"] = true, ["@odh_bjp_bindstorage"] = true,
         ["@wallhopstorage"] = true, ["@bindstorage_v6"] = true, ["@bindstorage_v5"] = true,
-        ["@flingstorage_v1"] = true, ["MM2ShootMurderButton"] = true,
+        ["@flingstorage_v1"] = true
     }
     local function belongsToNoirScreen(instance)
         local cursor = instance
@@ -1409,35 +500,28 @@ local function refreshNoirLanguage()
 end
 NoirGenv().__NoirRefreshLanguage = refreshNoirLanguage
 
-function corner(x, r) New("\x55ICorner", { CornerRadius = UDim.new(0, r or 12), Parent = x }) end
-local gradientStrokes = { fast = {} }
-local function noirHudCorners(parent, length, color, transparency, zIndex)
-    local z = zIndex or ((parent.ZIndex or 1) + 1)
-    for _, point in ipairs({ {0,0}, {1,0}, {0,1}, {1,1} }) do
-        local ax, ay = point[1], point[2]
-        New("Frame", { Parent = parent, AnchorPoint = Vector2.new(ax, ay), Position = UDim2.fromScale(ax, ay),
-            Size = UDim2.fromOffset(length, 1.4), BackgroundColor3 = color,
-            BackgroundTransparency = transparency or 0, BorderSizePixel = 0, ZIndex = z })
-        New("Frame", { Parent = parent, AnchorPoint = Vector2.new(ax, ay), Position = UDim2.fromScale(ax, ay),
-            Size = UDim2.fromOffset(1.4, length), BackgroundColor3 = color,
-            BackgroundTransparency = transparency or 0, BorderSizePixel = 0, ZIndex = z })
-    end
+function corner(x, r)
+    if not x then return nil end
+    local c = x:FindFirstChildOfClass("\x55ICorner")
+    if not c then c = New("\x55ICorner", { Name = "NoirCorner", Parent = x }) end
+    c.CornerRadius = UDim.new(0, math.max(0, tonumber(r) or 12))
+    return c
 end
-
+local gradientStrokes = { fast = {} }
 function ringStroke(x, thickness, transparency)
     local ring = New("\x55IStroke", {
         Parent = x,
-        Color = Color3.fromRGB(255, 255, 255),
+        Color = Color3.fromRGB(120, 255, 248),
         Thickness = thickness or 1.6,
         Transparency = transparency or .18,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
     })
     New("\x55IGradient", { Parent = ring, Rotation = 25, Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(120, 118, 112)),
-        ColorSequenceKeypoint.new(0.22, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.48, Color3.fromRGB(150, 146, 138)),
-        ColorSequenceKeypoint.new(0.72, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(110, 108, 104)),
+        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(56, 121, 120)),
+        ColorSequenceKeypoint.new(0.22, Color3.fromRGB(120, 255, 248)),
+        ColorSequenceKeypoint.new(0.48, Color3.fromRGB(72, 154, 152)),
+        ColorSequenceKeypoint.new(0.72, Color3.fromRGB(120, 255, 248)),
+        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(53, 116, 115)),
     }) })
     return ring
 end
@@ -1468,25 +552,46 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 function kitiTitle(parent, value)
-    local l = text(parent, value, 14, UDim2.fromOffset(8, 6))
+    local accent = New("\x46rame", { Parent = parent, Position = UDim2.fromOffset(10, 8), Size = UDim2.fromOffset(3, 14),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+    corner(accent, 1.5)
+    New("\x55IStroke", { Parent = accent, Color = C.accent, Thickness = 3, Transparency = .6, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local l = text(parent, value, 14, UDim2.fromOffset(20, 6))
     l.Font = Enum.Font.GothamBold
-    l.Size = UDim2.new(1, -16, 0, 15)
+    l.Size = UDim2.new(1, -30, 0, 15)
+    l.TextTruncate = Enum.TextTruncate.AtEnd
+    l.TextColor3 = C.text
     l.TextTransparency = 0
     return l
 end
 function kitiDesc(parent, value)
-    local l = text(parent, value, 11, UDim2.fromOffset(8, 27), true)
-    l.Size = UDim2.new(1, -16, 0, 14)
+    local l = text(parent, value, 11, UDim2.fromOffset(20, 27), true)
+    l.Size = UDim2.new(1, -30, 0, 14)
+    l.TextTruncate = Enum.TextTruncate.AtEnd
     return l
 end
 function text(parent, value, size, pos, dim)
     return New("\x54extLabel", { Parent = parent, BackgroundTransparency = 1, Text = NoirTr(value), TextColor3 = dim and C.dim or C.text,
-        TextSize = size, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+        TextSize = size, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd, TextWrapped = false,
+        TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = .82,
         Position = pos or UDim2.new(), Size = UDim2.new(1, 0, 0, size + 8) })
 end
 
+function hudBrackets(parent, len, thick, color, transparency, zindex)
+    local list = {}
+    for _, c in ipairs({ { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } }) do
+        local ax, ay = c[1], c[2]
+        list[#list + 1] = New("Frame", { Parent = parent, AnchorPoint = Vector2.new(ax, ay), Position = UDim2.fromScale(ax, ay), Size = UDim2.fromOffset(len, thick),
+            BackgroundColor3 = color, BackgroundTransparency = transparency or 0, BorderSizePixel = 0, ZIndex = zindex or 10 })
+        list[#list + 1] = New("Frame", { Parent = parent, AnchorPoint = Vector2.new(ax, ay), Position = UDim2.fromScale(ax, ay), Size = UDim2.fromOffset(thick, len),
+            BackgroundColor3 = color, BackgroundTransparency = transparency or 0, BorderSizePixel = 0, ZIndex = zindex or 10 })
+    end
+    return list
+end
 gui = New("\x53creenGui", { Name = "\x4eoirSilentAimUI", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = guiParent })
 __NOIR_GUARD.gui = gui
+NoirFX.gui = gui
 
 -- Stream Mode keeps every panel visible and only hides button visuals.
 -- Buttons remain visible/active/clickable; their original styling is restored on exit.
@@ -1519,7 +624,7 @@ local STREAM_MODE_NAMED_SCREENS = {
     ["@bindstorage_v6"] = true,
     ["@bindstorage_v5"] = true,
     ["@flingstorage_v1"] = true,
-    ["MM2ShootMurdererButton"] = true,
+
 }
 local STREAM_MODE_MARKER_PREFIX = "@fling_"
 
@@ -1855,8 +960,8 @@ end
 rescale()
 if workspace.CurrentCamera then workspace.CurrentCamera:GetPropertyChangedSignal("\x56iewportSize"):Connect(rescale) end
 
-local winShadow = New("\x49mageLabel", { Parent = gui, Image = "\x72bxassetid://112971167999062", ImageColor3 = Color3.fromRGB(0,0,0),
-    ImageTransparency = .97, BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Slice,
+local winShadow = New("\x49mageLabel", { Parent = gui, Image = "\x72bxassetid://112971167999062", ImageColor3 = Color3.fromRGB(3, 10, 14),
+    ImageTransparency = .88, BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Slice,
     SliceCenter = Rect.new(Vector2.new(112,112), Vector2.new(147,147)), SliceScale = .6, ZIndex = 1, Visible = false })
 local win = New("\x46rame", { Parent = gui, Name = "\x57indow", AnchorPoint = Vector2.new(.5, .5),
     Position = NoirPersistence.GetPosition("\x77indow", UDim2.fromScale(.5, .5)), Size = UDim2.fromOffset(1000, 700),
@@ -1865,10 +970,22 @@ winShadow.Position = win.Position
 winShadow.Size = UDim2.new(0, win.Size.X.Offset + 44, 0, win.Size.Y.Offset + 44)
 winShadow.AnchorPoint = win.AnchorPoint
 local winScale = New("\x55IScale", { Parent = win, Scale = .82 })
-corner(win, 10)
-noirHudCorners(win, 18, C.accent2, .04, (win.ZIndex or 2) + 2)
-local winStroke = ringStroke(win, 1.6, .12)
-local winGlow = New("\x55IStroke", { Parent = win, Color = C.accent, Thickness = 4, Transparency = .88, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+corner(win, 14)
+local winStroke = ringStroke(win, 2, 0)
+do
+    local g = winStroke:FindFirstChildOfClass("UIGradient")
+    if g then g.Color = NoirFX.RING; NoirFX.spin(g) end
+end
+local winGlow = New("\x55IStroke", { Parent = win, Color = C.accent, Thickness = 4, Transparency = .62, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+hudBrackets(win, 24, 2, C.accent2, 0, 40)
+do
+    local winTint = New("Frame", { Parent = win, Name = "NoirTint", Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.accent, BorderSizePixel = 0, Active = false, ZIndex = 0 })
+    corner(winTint, 16)
+    New("UIGradient", { Parent = winTint, Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .90), NumberSequenceKeypoint.new(.45, .97), NumberSequenceKeypoint.new(1, 1) }) })
+    pcall(function()
+        TweenService:Create(winGlow, TweenInfo.new(2.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = .80 }):Play()
+    end)
+end
 win.Changed:Connect(function(prop)
     if prop == "Position" then winShadow.Position = win.Position end
     if prop == "Visible" then winShadow.Visible = win.Visible end
@@ -1877,136 +994,217 @@ win.Changed:Connect(function(prop)
     end
 end)
 
-local navButtons, navIcons = {}, {}
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NOIR VECTOR ICON KIT — все иконки рисуются примитивами, идеально по центру
+-- ═══════════════════════════════════════════════════════════════════════════
+local function makeIconParts(box)
+    local parts = {}
+    local function track(o) parts[#parts + 1] = o; return o end
+    local function fill(cx, cy, w, h, r, rot)
+        local f = New("\x46rame", { Parent = box, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(cx, cy),
+            Size = UDim2.fromOffset(w, h), BackgroundColor3 = C.dim, BorderSizePixel = 0, Rotation = rot or 0 })
+        if r and r > 0 then corner(f, r) end
+        return track(f)
+    end
+    local function outline(cx, cy, w, h, r, rot, th)
+        local f = New("\x46rame", { Parent = box, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(cx, cy),
+            Size = UDim2.fromOffset(w, h), BackgroundTransparency = 1, BorderSizePixel = 0, Rotation = rot or 0 })
+        if r and r > 0 then corner(f, r) end
+        local s = New("\x55IStroke", { Parent = f, Color = C.dim, Thickness = th or 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        track(f); track(s)
+        return f, s
+    end
+    local function line(cx, cy, len, th, rot) return fill(cx, cy, len, th, 0, rot) end
+    local function ring(cx, cy, d, th) return outline(cx, cy, d, d, d / 2, 0, th) end
+    local function dot(cx, cy, d) return fill(cx, cy, d, d, d / 2) end
+    return parts, fill, outline, line, ring, dot
+end
+
+local function buildTabIcon(kind, parent)
+    local box = New("\x46rame", { Parent = parent, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1 })
+    local parts, fill, outline, line, ring, dot = makeIconParts(box)
+    if kind == "home" then
+        line(8.5, 7.6, 9.8, 2.1, -43)
+        line(15.5, 7.6, 9.8, 2.1, 43)
+        outline(12, 15.4, 14, 9, 2, 0, 1.7)
+        fill(12, 17.4, 3, 5, 1)
+    elseif kind == "main" then
+        fill(8.4, 8.4, 6.2, 6.2, 2)
+        fill(15.6, 8.4, 6.2, 6.2, 2)
+        fill(8.4, 15.6, 6.2, 6.2, 2)
+        outline(15.6, 15.6, 6.2, 6.2, 2, 0, 1.5)
+    elseif kind == "aim" then
+        ring(12, 12, 14, 1.7)
+        dot(12, 12, 3.2)
+        line(12, 3.4, 3.6, 1.7, 90)
+        line(12, 20.6, 3.6, 1.7, 90)
+        line(3.4, 12, 3.6, 1.7, 0)
+        line(20.6, 12, 3.6, 1.7, 0)
+    elseif kind == "world" then
+        ring(12, 12, 15, 1.7)
+        line(12, 12, 15, 1.3, 0)
+        line(12, 12, 15, 1.3, 90)
+        line(8.2, 12, 11.5, 1.1, 90)
+        line(15.8, 12, 11.5, 1.1, 90)
+    elseif kind == "map" then
+        ring(12, 9, 10, 1.7)
+        dot(12, 9, 3)
+        line(10.4, 16, 6.6, 1.7, 117)
+        line(13.6, 16, 6.6, 1.7, 63)
+    elseif kind == "farm" then
+        line(12, 17, 8, 1.8, 90)
+        fill(8.4, 10.6, 7.2, 4.2, 2.1, -32)
+        fill(15.6, 10.6, 7.2, 4.2, 2.1, 32)
+        dot(12, 20, 2.4)
+    elseif kind == "visual" then
+        outline(12, 12, 17, 11, 5.5, 0, 1.7)
+        dot(12, 12, 4.6)
+        dot(10.8, 10.8, 1.5)
+    elseif kind == "skins" then
+        fill(12, 15.4, 9, 8.6, 2)
+        fill(6.6, 10.8, 4.2, 6.6, 1.6, 32)
+        fill(17.4, 10.8, 4.2, 6.6, 1.6, -32)
+        fill(12, 8.4, 5, 2, 1)
+    elseif kind == "emotes" then
+        ring(12, 12, 15, 1.7)
+        dot(9.2, 10, 2.1)
+        dot(14.8, 10, 2.1)
+        line(9.2, 15.1, 3.2, 1.5, 38)
+        line(12, 16.5, 4, 1.5, 0)
+        line(14.8, 15.1, 3.2, 1.5, -38)
+    elseif kind == "misc" then
+        for ix = 0, 2 do for iy = 0, 2 do dot(7 + ix * 5, 7 + iy * 5, 3.2) end end
+    elseif kind == "troll" then
+        outline(12, 12, 16, 11, 5.5, 0, 1.7)
+        fill(9, 10.4, 3.4, 1.8, .9)
+        fill(15, 10.4, 3.4, 1.8, .9)
+        line(12, 15.4, 5, 1.4, 0)
+    elseif kind == "settings" then
+        ring(12, 12, 12.5, 1.7)
+        dot(12, 12, 4.6)
+        for i = 0, 7 do
+            local a = math.rad(i * 45)
+            line(12 + math.cos(a) * 8.2, 12 + math.sin(a) * 8.2, 3.6, 2.2, i * 45)
+        end
+    elseif kind == "gauge" then
+        ring(12, 14, 13, 1.7)
+        line(12, 14, 6.4, 1.8, -45)
+        dot(12, 14, 2.4)
+    elseif kind == "signal" then
+        fill(7, 16, 2.6, 5, 1.3)
+        fill(12, 14, 2.6, 9, 1.3)
+        fill(17, 11.5, 2.6, 14, 1.3)
+    elseif kind == "users" then
+        dot(9, 9, 3.6)
+        dot(15.4, 9.4, 3.2)
+        fill(9, 16.6, 7.4, 6.2, 3.1)
+        fill(15.6, 16.8, 6.4, 5.4, 2.7)
+    end
+    return parts
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NOIR EMBLEM — фирменный знак (N в неоновой плитке + орбита)
+-- ═══════════════════════════════════════════════════════════════════════════
+local function makeLogoMark(parent, size, position, withRing, z)
+    local holder = New("\x46rame", { Parent = parent, AnchorPoint = Vector2.new(.5, 0),
+        Position = position or UDim2.new(.5, 0, 0, 18), Size = UDim2.fromOffset(size, size),
+        BackgroundTransparency = 1, ZIndex = z or 2 })
+    local glow = New("\x46rame", { Parent = holder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(size + 14, size + 14), BackgroundTransparency = 1, ZIndex = 0 })
+    corner(glow, (size + 14) / 2)
+    New("\x55IStroke", { Parent = glow, Color = C.accent, Thickness = 7, Transparency = .86, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    if withRing then
+        local orbit = New("\x46rame", { Parent = holder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+            Size = UDim2.fromOffset(size + 12, size + 12), BackgroundTransparency = 1, ZIndex = 0 })
+        corner(orbit, (size + 12) / 2)
+        local os = New("\x55IStroke", { Parent = orbit, Color = C.accent2, Thickness = 1.5, Transparency = .2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local og = New("\x55IGradient", { Parent = os, Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(.16, 0), NumberSequenceKeypoint.new(.30, 1),
+            NumberSequenceKeypoint.new(.54, 1), NumberSequenceKeypoint.new(.68, 0), NumberSequenceKeypoint.new(.82, 1),
+            NumberSequenceKeypoint.new(1, 1) }) })
+        NoirFX.spin(og)
+        local od = New("\x46rame", { Parent = orbit, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(1, -2, .16, 0),
+            Size = UDim2.fromOffset(4, 4), BackgroundColor3 = C.accent2, BorderSizePixel = 0, ZIndex = 3 })
+        corner(od, 2)
+    end
+    local tile = New("\x46rame", { Parent = holder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(size, size), BackgroundColor3 = C.accent, ZIndex = 1 })
+    corner(tile, math.floor(size * .28))
+    New("\x55IGradient", { Parent = tile, Rotation = 135, Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 255, 250)),
+        ColorSequenceKeypoint.new(.45, Color3.fromRGB(38, 240, 228)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 110, 122)) }) })
+    New("\x55IStroke", { Parent = tile, Color = C.accent2, Thickness = 1.5, Transparency = .25, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local inset = math.floor(size * .14)
+    local inner = New("\x46rame", { Parent = tile, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+        Size = UDim2.fromOffset(size - inset, size - inset), BackgroundColor3 = Color3.fromRGB(5, 17, 23),
+        BackgroundTransparency = .04, ZIndex = 2 })
+    corner(inner, math.floor(size * .22))
+    New("\x55IStroke", { Parent = inner, Color = Color3.fromRGB(30, 120, 128), Thickness = 1, Transparency = .45, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local u = size - inset
+    local barColor = Color3.fromRGB(140, 255, 250)
+    local function nbar(cx, cy, w, h, rot)
+        local f = New("\x46rame", { Parent = inner, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(cx, 0, cy, 0),
+            Size = UDim2.fromOffset(w, h), BackgroundColor3 = barColor, BorderSizePixel = 0, Rotation = rot or 0, ZIndex = 3 })
+        corner(f, math.min(w, h) / 2)
+        return f
+    end
+    nbar(.31, .50, math.max(2, u * .11), u * .50, 0)
+    nbar(.69, .50, math.max(2, u * .11), u * .50, 0)
+    nbar(.50, .50, math.max(2, u * .105), u * .60, 33)
+    return holder
+end
+
+local navButtons, navIcons, navBrackets = {}, {}, {}
 local sidebar = New("\x46rame", { Parent = win, Size = UDim2.new(0, 78, 1, 0), BackgroundTransparency = 1 })
-local logo = New("\x54extLabel", { Parent = sidebar, AnchorPoint = Vector2.new(.5, 0), Position = UDim2.new(.5, 0, 0, 23), Size = UDim2.fromOffset(60, 60),
-    BackgroundColor3 = C.accent, Text = "\x4e", TextColor3 = Color3.fromRGB(10,9,8), TextSize = 30, Font = Enum.Font.GothamBold })
-corner(logo, 14); local logoStroke = stroke(logo, C.accent2, .4)
-logo.TextStrokeTransparency = 1
+do
+    local sideBg = New("\x46rame", { Parent = sidebar, Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.surface,
+        BackgroundTransparency = .55, BorderSizePixel = 0, ZIndex = 0 })
+    New("\x55IGradient", { Parent = sideBg, Rotation = 90, Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, .35), NumberSequenceKeypoint.new(.55, .62), NumberSequenceKeypoint.new(1, .82) }) })
+    New("\x46rame", { Parent = sidebar, Position = UDim2.new(1, -1, 0, 0), Size = UDim2.new(0, 1, 1, 0),
+        BackgroundColor3 = C.border, BackgroundTransparency = .55, BorderSizePixel = 0, ZIndex = 0 })
+end
+local logoHolder = makeLogoMark(sidebar, 54, UDim2.new(.5, 0, 0, 18), true, 2)
+local wordmark = text(sidebar, "NOIR", 10, UDim2.new(0, 0, 0, 76), false)
+wordmark.Size = UDim2.new(1, 0, 0, 12); wordmark.TextXAlignment = Enum.TextXAlignment.Center
+wordmark.Font = Enum.Font.GothamBold; wordmark.TextColor3 = C.accent2; wordmark.TextTransparency = .15
 do
     local navDefs = {
-        { "\x68ome",   16898613509, Vector2.new(820, 147), "\x48ome" },
-        { "\x61im",    16898613777, Vector2.new(967, 759), "\x54rain" },
-        { "\x77orld",  16898613509, Vector2.new(771, 563), "\x43ombat" },
-        { "\x6disc",   16898613509, Vector2.new(820, 147), "\x4disc" },
-        { "\x73ettings", 16898613509, Vector2.new(820, 147), "\x53ettings" },
-    }    for i, d in ipairs(navDefs) do
-        local b = New("\x54extButton", { Parent = sidebar, Position = UDim2.fromOffset(19, 104 + (i - 1) * 42), Size = UDim2.fromOffset(40, 40),
-            BackgroundColor3 = C.accent, BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Name = d[4] })
+        { "home", "Home" },
+        { "main", "Main" },
+        { "aim", "Aim" },
+        { "world", "World" },
+        { "map", "Map" },
+        { "farm", "Farm" },
+        { "visual", "Visuals" },
+        { "skins", "Skins" },
+        { "emotes", "Emotes" },
+        { "misc", "Misc" },
+        { "troll", "Troll" },
+        { "settings", "Settings" },
+    }
+    for i, d in ipairs(navDefs) do
+        local key, labelText = d[1], d[2]
+        local b = New("\x54extButton", { Parent = sidebar, Position = UDim2.fromOffset(19, 104 + (i - 1) * 42),
+            Size = UDim2.fromOffset(40, 40), BackgroundColor3 = C.accent, BackgroundTransparency = 1,
+            Text = "", AutoButtonColor = false, Name = labelText, ClipsDescendants = false })
         corner(b, 12)
-        local navName = d[1]
-        b.MouseEnter:Connect(function()
-            local st = NoirGenv().__NoirState
-            if st and st.active ~= navName then TweenService:Create(b, TweenInfo.new(.16), { BackgroundTransparency = .8, BackgroundColor3 = C.accent }):Play() end
-        end)
-        b.MouseLeave:Connect(function()
-            local st = NoirGenv().__NoirState
-            if st and st.active ~= navName then TweenService:Create(b, TweenInfo.new(.22), { BackgroundTransparency = 1 }):Play() end
-        end)
-        local ic = New("\x49mageLabel", { Parent = b, Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(24, 24),
-            BackgroundTransparency = 1, Image = "\x72bxassetid://" .. d[2], ImageRectSize = Vector2.new(48, 48), ImageRectOffset = d[3],
-            ImageColor3 = C.dim })
-        local lbl = New("\x54extLabel", { Parent = b, Position = UDim2.fromOffset(50, 0), Size = UDim2.new(1, -60, 1, 0), Visible = false,
-            BackgroundTransparency = 1, Text = NoirTr(d[4]), TextColor3 = C.dim, TextSize = 15, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left })
-        local bar = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(0, 8), Size = UDim2.fromOffset(3, 22), BackgroundColor3 = C.accent, Visible = false, BackgroundTransparency = 1 })
-        corner(bar, 2)
-        local glyphs = nil
-        local rings = nil
-        if d[1] == "\x65motes" then
-             
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(20, 8), UDim2.fromOffset(10, 10), 5)
-            glyphPart(UDim2.fromOffset(21, 18), UDim2.fromOffset(8, 10), 3)
-            glyphPart(UDim2.fromOffset(15, 20), UDim2.fromOffset(20, 4), 2)
-            glyphPart(UDim2.fromOffset(19, 27), UDim2.fromOffset(4, 8), 2)
-            glyphPart(UDim2.fromOffset(27, 27), UDim2.fromOffset(4, 8), 2)
-        elseif d[1] == "\x73kins" then
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(22, 10), UDim2.fromOffset(8, 24), 3)
-            glyphPart(UDim2.fromOffset(20, 8), UDim2.fromOffset(12, 6), 2)
-        elseif d[1] == "\x6dap" then
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(20, 9), UDim2.fromOffset(12, 12), 6)
-            glyphPart(UDim2.fromOffset(23, 20), UDim2.fromOffset(6, 10), 2)
-        elseif d[1] == "\x66arm" then
-            ic.Visible = false
-            glyphs = {}
-            local function glyphPart(position, size, rounded)
-                local part = New("\x46rame", { Parent = b, Position = position, Size = size, BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                if rounded then corner(part, rounded) end
-                glyphs[#glyphs + 1] = part
-            end
-            glyphPart(UDim2.fromOffset(18, 14), UDim2.fromOffset(16, 16), 8)
-            glyphPart(UDim2.fromOffset(22, 18), UDim2.fromOffset(8, 8), 4)
-        elseif d[1] == "\x6disc" then
-             
-            ic.Visible = false
-            glyphs, rings = {}, {}
-            local ring = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(14, 10), Size = UDim2.fromOffset(26, 26), BackgroundTransparency = 1, BorderSizePixel = 0 })
-            corner(ring, 13)
-            local ringStroke = New("\x55IStroke", { Parent = ring, Color = C.dim, Thickness = 1.5, Transparency = .08 })
-            rings[#rings + 1] = ringStroke
-            for index = 0, 2 do
-                local dot = New("\x46rame", { Parent = ring, Position = UDim2.fromOffset(5 + index * 6, 11), Size = UDim2.fromOffset(4, 4), BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                corner(dot, 2); glyphs[#glyphs + 1] = dot
-            end
-        elseif d[1] == "\x73ettings" then
-            ic.Visible = false
-            glyphs, rings = {}, {}
-            local ring = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(14, 6), Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1, BorderSizePixel = 0 })
-            corner(ring, 12)
-            local ringStroke = New("\x55IStroke", { Parent = ring, Color = C.dim, Thickness = 1.5, Transparency = .08 })
-            rings[#rings + 1] = ringStroke
-            local centerDot = New("\x46rame", { Parent = ring, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(.5, 0, .5, 0), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-            corner(centerDot, 4); glyphs[#glyphs + 1] = centerDot
-            local tickPos = { UDim2.fromOffset(10, -2), UDim2.fromOffset(10, 22), UDim2.fromOffset(-2, 10), UDim2.fromOffset(22, 10) }
-            for index = 1, 4 do
-                local tick = New("\x46rame", { Parent = ring, Position = tickPos[index], Size = UDim2.fromOffset(4, 4), BackgroundColor3 = C.dim, BorderSizePixel = 0 })
-                corner(tick, 2); glyphs[#glyphs + 1] = tick
-            end
-        end
-        -- центрируем кастомную иконку внутри круглой кнопки 40x40
-        do
-            local items = {}
-            for _, child in ipairs(b:GetChildren()) do
-                if child:IsA("\x46rame") and child ~= bar then items[#items + 1] = child end
-            end
-            if #items > 0 then
-                local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
-                for _, item in ipairs(items) do
-                    local px, py = item.Position.X.Offset, item.Position.Y.Offset
-                    local sx, sy = item.Size.X.Offset, item.Size.Y.Offset
-                    minX = math.min(minX, px); minY = math.min(minY, py)
-                    maxX = math.max(maxX, px + sx); maxY = math.max(maxY, py + sy)
-                end
-                local dx = math.floor((40 - (maxX - minX)) / 2 - minX + .5)
-                local dy = math.floor((40 - (maxY - minY)) / 2 - minY + .5)
-                for _, item in ipairs(items) do
-                    pcall(function()
-                        item.Position = UDim2.fromOffset(item.Position.X.Offset + dx, item.Position.Y.Offset + dy)
-                    end)
-                end
-            end
-        end
-        navButtons[d[1]] = b; navIcons[d[1]] = { icon = ic, label = lbl, bar = bar, glyphs = glyphs, rings = rings }
+        local bStroke = New("\x55IStroke", { Parent = b, Color = C.border, Thickness = 1, Transparency = .8,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local bar = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(-14, 10), Size = UDim2.fromOffset(3, 20),
+            BackgroundColor3 = C.accent2, BorderSizePixel = 0, Visible = false, BackgroundTransparency = 1 })
+        corner(bar, 1.5)
+        New("\x55IStroke", { Parent = bar, Color = C.accent, Thickness = 3, Transparency = .55,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+        local parts = buildTabIcon(key, b)
+        local lbl = New("\x54extLabel", { Parent = b, Position = UDim2.fromOffset(48, 0), Size = UDim2.fromOffset(120, 40),
+            Visible = false, BackgroundTransparency = 1, Text = NoirTr(labelText), TextColor3 = C.dim, TextSize = 14,
+            Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left })
+        navButtons[key] = b
+        navIcons[key] = { parts = parts, label = lbl, bar = bar, stroke = bStroke }
     end
 end
 local status = New("\x46rame", { Parent = sidebar, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(1, 1), BackgroundTransparency = 1, Visible = false, BackgroundColor3 = C.panel, BackgroundTransparency = .18 })
@@ -2014,11 +1212,14 @@ corner(status, 16); stroke(status, C.border, .6)
 local statusDot = New("\x46rame", { Parent = status, Position = UDim2.fromOffset(16, 21), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.accent })
 corner(statusDot, 4)
 text(status, "\x43onnected", 13, UDim2.fromOffset(30, 15))
-text(status, "\x4eoir Client • v4", 15, UDim2.fromOffset(16, 45))
+text(status, "\x4eoir Hub • v4", 15, UDim2.fromOffset(16, 45))
 
 local header = New("\x46rame", { Parent = win, Position = UDim2.fromOffset(79, 0), Size = UDim2.new(1, -79, 0, 60), BackgroundTransparency = 1 })
-local headerTitle = text(header, "\x4eOIR HUB", 24, UDim2.fromOffset(28, 24)); headerTitle.Visible = false
-local headerSub = text(header, "Noir Hub", 13, UDim2.fromOffset(29, 56), true); headerSub.Visible = false
+local headerTitle = text(header, "NOIR UI", 24, UDim2.fromOffset(28, 24)); headerTitle.Visible = false
+local headerSub = text(header, "Interface template", 13, UDim2.fromOffset(29, 56), true); headerSub.Visible = false
+-- Top-right SECURE LINK badge removed to keep the header uncluttered.
+New("\x46rame", { Parent = header, Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1),
+    BackgroundColor3 = C.border, BackgroundTransparency = .72, BorderSizePixel = 0 })
 local creatorImage = ""
 do
     local customAsset = (type(getcustomasset) == "\x66unction" and getcustomasset) or (type(getsynasset) == "\x66unction" and getsynasset)
@@ -2098,23 +1299,23 @@ else
     loadUserThumbnail(icon, iconLetter)
 end
 function styleCircularButton(b, diameter)
-    b.BackgroundColor3 = C.surface
+    b.BackgroundColor3 = Color3.fromRGB(8, 20, 23)
     b.BackgroundTransparency = .82
     b.BorderSizePixel = 0
     b.AutoButtonColor = false
     b.ClipsDescendants = false
     b.ZIndex = 20
     corner(b, math.floor(diameter / 2))
-    local outer = New("\x55IStroke", { Parent = b, Color = C.accent2, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local outer = New("\x55IStroke", { Parent = b, Color = Color3.fromRGB(120, 255, 248), Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
     local gradient = New("\x55IGradient", { Parent = outer, Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 40)),
-        ColorSequenceKeypoint.new(.22, Color3.fromRGB(250, 250, 252)),
-        ColorSequenceKeypoint.new(.48, Color3.fromRGB(70, 70, 78)),
-        ColorSequenceKeypoint.new(.72, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(45, 45, 52)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(21, 48, 51)),
+        ColorSequenceKeypoint.new(.22, Color3.fromRGB(119, 252, 245)),
+        ColorSequenceKeypoint.new(.48, Color3.fromRGB(39, 85, 86)),
+        ColorSequenceKeypoint.new(.72, Color3.fromRGB(120, 255, 248)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(27, 60, 62)),
     }) })
     table.insert(gradientStrokes.fast, gradient)
-    local inner = New("\x55IStroke", { Parent = b, Color = C.border, Transparency = .5, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    local inner = New("\x55IStroke", { Parent = b, Color = Color3.fromRGB(54, 118, 117), Transparency = .5, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
     local innerGradient = gradient:Clone(); innerGradient.Rotation = 180; innerGradient.Parent = inner
     table.insert(gradientStrokes.fast, innerGradient)
     local sound = Instance.new("\x53ound")
@@ -2128,10 +1329,10 @@ function styleCircularButton(b, diameter)
     end)
     b.MouseButton1Down:Connect(function()
         sound:Play()
-        TweenService:Create(b, TweenInfo.new(.14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = C.surfaceHover, Size = UDim2.fromOffset(diameter + 6, diameter + 6) }):Play()
+        TweenService:Create(b, TweenInfo.new(.14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(17, 40, 42), Size = UDim2.fromOffset(diameter + 6, diameter + 6) }):Play()
     end)
     b.MouseButton1Up:Connect(function()
-        TweenService:Create(b, TweenInfo.new(.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { BackgroundColor3 = C.surface, Size = UDim2.fromOffset(diameter, diameter) }):Play()
+        TweenService:Create(b, TweenInfo.new(.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(8, 20, 23), Size = UDim2.fromOffset(diameter, diameter) }):Play()
     end)
     return b
 end
@@ -2409,42 +1610,138 @@ end
 end
 
 local dashboard = New("\x46rame", { Parent = win, Position = content.Position, Size = content.Size, BackgroundTransparency = 1 })
-local profile = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(400, 168), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(profile, 18); stroke(profile, C.border, .5)
+local profile = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(400, 168), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(profile, 8); stroke(profile, C.border, .35); hudBrackets(profile, 12, 1.35, C.accent, .55, 5)
+New("\x55IGradient", { Parent = profile, Rotation = 20, Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 52, 58)), ColorSequenceKeypoint.new(.6, Color3.fromRGB(8, 26, 34)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, .55), NumberSequenceKeypoint.new(1, .85) }) })
+New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(0, 26), Size = UDim2.fromOffset(3, 116),
+    BackgroundColor3 = C.accent, BackgroundTransparency = .15, BorderSizePixel = 0 })
 local avatar = New("\x49mageLabel", { Parent = profile, Position = UDim2.fromOffset(22, 24), Size = UDim2.fromOffset(120, 120), BackgroundColor3 = C.surface })
-corner(avatar, 20); stroke(avatar, C.border, .45)
+corner(avatar, 22); stroke(avatar, C.accent, .45, 1.4)
+local avatarRing = New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(16, 18), Size = UDim2.fromOffset(132, 132), BackgroundTransparency = 1 })
+corner(avatarRing, 26)
+New("\x55IStroke", { Parent = avatarRing, Color = C.accent2, Thickness = 1, Transparency = .65, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
 local avatarLetter = New("\x54extLabel", { Parent = avatar, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
     Text = string.upper(string.sub(LocalPlayer.Name, 1, 1)), TextColor3 = C.accent, TextSize = 46, Font = Enum.Font.GothamBold })
 loadUserThumbnail(avatar, avatarLetter)
-text(profile, LocalPlayer.DisplayName, 24, UDim2.fromOffset(162, 32))
-text(profile, "\x40" .. LocalPlayer.Name, 15, UDim2.fromOffset(163, 70), true)
-local pill = New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(162, 104), Size = UDim2.fromOffset(158, 30), BackgroundColor3 = C.accent, BackgroundTransparency = .8 })
-corner(pill, 15); stroke(pill, C.accent, .35)
-local pillDot = New("\x46rame", { Parent = pill, Position = UDim2.fromOffset(12, 11), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.accent }); corner(pillDot, 4)
-text(pill, "\x43onnected", 13, UDim2.fromOffset(26, 7))
-local heroCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(446, 0), Size = UDim2.new(1, -446, 0, 168), BackgroundColor3 = C.card, BackgroundTransparency = .84 })
-corner(heroCard, 18); stroke(heroCard, C.border, .45)
-New("\x55IGradient", { Parent = heroCard, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(10,34,40)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5,17,23)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .72), NumberSequenceKeypoint.new(1, .86) }), Rotation = 25 })
-text(heroCard, "\x4eOIR SILENT AIM", 26, UDim2.fromOffset(26, 24))
-text(heroCard, "\x764 • gun & knife prediction, player and object ESP, presets", 14, UDim2.fromOffset(27, 62), true)
-local statText = text(heroCard, "", 14, UDim2.fromOffset(27, 96), true)
-local fpsCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(fpsCard, 18); stroke(fpsCard, C.border, .5)
-text(fpsCard, "\x46PS", 14, UDim2.fromOffset(22, 20), true)
-local fpsText = text(fpsCard, "\x360", 42, UDim2.fromOffset(22, 50)); fpsText.TextColor3 = C.text
-local pingCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(272, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(pingCard, 18); stroke(pingCard, C.border, .5)
-text(pingCard, "\x4eETWORK LATENCY", 14, UDim2.fromOffset(22, 20), true)
-local pingText = text(pingCard, "\x2d- ms", 42, UDim2.fromOffset(22, 50)); pingText.TextColor3 = C.text
-local playerCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(544, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(playerCard, 18); stroke(playerCard, C.border, .5)
-text(playerCard, "\x50LAYERS", 14, UDim2.fromOffset(22, 20), true)
-local playerText = text(playerCard, "\x30", 42, UDim2.fromOffset(22, 50)); playerText.TextColor3 = C.text
-local infoCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 332), Size = UDim2.new(1, 0, 1, -348), BackgroundColor3 = C.panel, BackgroundTransparency = .86 })
-corner(infoCard, 18); stroke(infoCard, C.border, .5)
-text(infoCard, "\x51UICK START", 18, UDim2.fromOffset(24, 22))
-text(infoCard, "\x4fpen Train for farm tools, Combat for pvp tools, Misc\x20for everything else.", 14, UDim2.fromOffset(25, 54), true)
-text(infoCard, "\x53ettings are saved automatically to Noir Hub/configs.", 14, UDim2.fromOffset(25, 78), true)
+local displayName = text(profile, LocalPlayer.DisplayName, 24, UDim2.fromOffset(166, 32))
+displayName.Font = Enum.Font.GothamBold
+displayName.TextColor3 = C.text
+displayName.Size = UDim2.new(1, -180, 0, 30)
+local userTag = text(profile, "\x40" .. LocalPlayer.Name, 14, UDim2.fromOffset(167, 68), true)
+userTag.Size = UDim2.new(1, -180, 0, 18)
+local memberTag = text(profile, "\x4eOIR MEMBER", 9, UDim2.fromOffset(167, 94), false)
+memberTag.Font = Enum.Font.GothamBold; memberTag.TextColor3 = C.accent2; memberTag.TextTransparency = .25
+memberTag.Size = UDim2.new(1, -180, 0, 12)
+local pill = New("\x46rame", { Parent = profile, Position = UDim2.fromOffset(166, 116), Size = UDim2.fromOffset(150, 28), BackgroundColor3 = C.accent, BackgroundTransparency = .86 })
+corner(pill, 14); stroke(pill, C.accent, .35)
+local pillDot = New("\x46rame", { Parent = pill, Position = UDim2.fromOffset(11, 10), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = C.accent, BorderSizePixel = 0 }); corner(pillDot, 4)
+New("\x55IStroke", { Parent = pillDot, Color = C.accent, Thickness = 3, Transparency = .6, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+local pillText = text(pill, "\x43onnected", 12, UDim2.fromOffset(25, 6))
+pillText.TextColor3 = C.accent2; pillText.Font = Enum.Font.GothamBold; pillText.Size = UDim2.new(1, -30, 0, 16)
+local heroCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(446, 0), Size = UDim2.new(1, -446, 0, 168), BackgroundColor3 = C.card, BackgroundTransparency = .78 })
+corner(heroCard, 8); stroke(heroCard, C.border, .35); hudBrackets(heroCard, 12, 1.35, C.accent, .55, 5)
+New("\x55IGradient", { Parent = heroCard, Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 62, 66)), ColorSequenceKeypoint.new(.55, Color3.fromRGB(10, 34, 42)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, .52), NumberSequenceKeypoint.new(1, .82) }), Rotation = 20 })
+for i = 1, 5 do
+    New("\x46rame", { Parent = heroCard, Position = UDim2.new(1, -212 + i * 34, 0, 18), Size = UDim2.fromOffset(1, 132),
+        BackgroundColor3 = C.accent, BackgroundTransparency = .92, BorderSizePixel = 0 })
+end
+makeLogoMark(heroCard, 74, UDim2.new(1, -62, 0, 44), true, 3)
+local heroTitle = text(heroCard, "\x4eOIR HUB", 30, UDim2.fromOffset(26, 26))
+heroTitle.Font = Enum.Font.GothamBlack
+heroTitle.TextColor3 = C.text
+heroTitle.Size = UDim2.new(1, -170, 0, 34)
+New("\x55IStroke", { Parent = heroTitle, Color = C.accent, Thickness = 1.2, Transparency = .55,
+    ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual })
+local heroSub = text(heroCard, "Next-generation interface  •  v4.0", 13, UDim2.fromOffset(27, 64), true)
+heroSub.Size = UDim2.new(1, -170, 0, 18)
+local chipDefs = { { "UNDETECTED", C.accent }, { "AUTO-SAVE", C.accent2 }, { "12 MODULES", C.dim } }
+local chipX = 27
+for _, cd in ipairs(chipDefs) do
+    local chip = New("\x46rame", { Parent = heroCard, Position = UDim2.fromOffset(chipX, 92), Size = UDim2.fromOffset(#cd[1] * 6 + 18, 20),
+        BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
+    corner(chip, 10); stroke(chip, cd[2], .55)
+    local cdot = New("\x46rame", { Parent = chip, Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(6, 6),
+        BackgroundColor3 = cd[2], BorderSizePixel = 0 })
+    corner(cdot, 3)
+    local cl = text(chip, cd[1], 10, UDim2.fromOffset(18, 3))
+    cl.Font = Enum.Font.GothamBold; cl.TextColor3 = cd[2]; cl.Size = UDim2.new(1, -20, 1, 0)
+    cl.TextYAlignment = Enum.TextYAlignment.Center
+    chipX += chip.Size.X.Offset + 8
+end
+local statText = text(heroCard, "", 13, UDim2.fromOffset(27, 124), true)
+statText.Size = UDim2.new(1, -170, 0, 18)
+
+local function statBadge(card, kind)
+    local h = New("\x46rame", { Parent = card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, 16),
+        Size = UDim2.fromOffset(32, 32), BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
+    corner(h, 16); stroke(h, C.accent, .5)
+    local parts = buildTabIcon(kind, h)
+    for _, p in ipairs(parts) do
+        if p:IsA("\x55IStroke") then p.Color = C.accent2 else p.BackgroundColor3 = C.accent2 end
+    end
+end
+local fpsCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(fpsCard, 8); stroke(fpsCard, C.border, .35); hudBrackets(fpsCard, 10, 1.2, C.accent, .6, 5)
+New("\x55IGradient", { Parent = fpsCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
+text(fpsCard, "\x46PS", 13, UDim2.fromOffset(22, 20), true)
+local fpsText = text(fpsCard, "\x360", 42, UDim2.fromOffset(22, 46)); fpsText.TextColor3 = C.text
+fpsText.Font = Enum.Font.GothamBold
+text(fpsCard, "FRAME RATE", 9, UDim2.fromOffset(23, 100), true)
+statBadge(fpsCard, "gauge")
+local pingCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(272, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(pingCard, 8); stroke(pingCard, C.border, .35); hudBrackets(pingCard, 10, 1.2, C.accent, .6, 5)
+New("\x55IGradient", { Parent = pingCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
+text(pingCard, "\x4eETWORK LATENCY", 13, UDim2.fromOffset(22, 20), true)
+local pingText = text(pingCard, "\x2d- ms", 42, UDim2.fromOffset(22, 46)); pingText.TextColor3 = C.text
+pingText.Font = Enum.Font.GothamBold
+text(pingCard, "ROUND TRIP", 9, UDim2.fromOffset(23, 100), true)
+statBadge(pingCard, "signal")
+local playerCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(544, 184), Size = UDim2.fromOffset(262, 132), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(playerCard, 8); stroke(playerCard, C.border, .35); hudBrackets(playerCard, 10, 1.2, C.accent, .6, 5)
+New("\x55IGradient", { Parent = playerCard, Rotation = 15, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(14, 46, 52)), ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 20, 27)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .86) }) })
+text(playerCard, "\x50LAYERS", 13, UDim2.fromOffset(22, 20), true)
+local playerText = text(playerCard, "\x30", 42, UDim2.fromOffset(22, 46)); playerText.TextColor3 = C.text
+playerText.Font = Enum.Font.GothamBold
+text(playerCard, "IN SERVER", 9, UDim2.fromOffset(23, 100), true)
+statBadge(playerCard, "users")
+local infoCard = New("\x46rame", { Parent = dashboard, Position = UDim2.fromOffset(0, 332), Size = UDim2.new(1, 0, 1, -348), BackgroundColor3 = C.panel, BackgroundTransparency = .78 })
+corner(infoCard, 8); stroke(infoCard, C.border, .35); hudBrackets(infoCard, 14, 1.4, C.accent, .56, 5)
+New("\x55IGradient", { Parent = infoCard, Rotation = 25, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 42, 48)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 18, 24)) }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .62), NumberSequenceKeypoint.new(1, .88) }) })
+local wm = text(infoCard, "N", 150, UDim2.new(1, -180, 1, -170), false)
+wm.Font = Enum.Font.GothamBlack; wm.TextColor3 = C.accent; wm.TextTransparency = .94
+wm.Size = UDim2.fromOffset(170, 170); wm.TextXAlignment = Enum.TextXAlignment.Right
+local qsTitle = text(infoCard, "\x51UICK START", 18, UDim2.fromOffset(24, 22))
+qsTitle.Font = Enum.Font.GothamBold
+text(infoCard, "Three steps to a cleaner session.", 12, UDim2.fromOffset(25, 48), true)
+local ready = New("\x46rame", { Parent = infoCard, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -22, 0, 22),
+    Size = UDim2.fromOffset(112, 24), BackgroundColor3 = C.accent, BackgroundTransparency = .9 })
+corner(ready, 12); stroke(ready, C.accent, .5)
+local rd = New("\x46rame", { Parent = ready, Position = UDim2.fromOffset(10, 9), Size = UDim2.fromOffset(6, 6), BackgroundColor3 = C.accent, BorderSizePixel = 0 }); corner(rd, 3)
+local rt = text(ready, "SYSTEM READY", 9, UDim2.fromOffset(22, 4)); rt.Font = Enum.Font.GothamBold; rt.TextColor3 = C.accent2
+rt.Size = UDim2.new(1, -26, 1, 0); rt.TextYAlignment = Enum.TextYAlignment.Center
+local tips = {
+    { "Choose a page", "Pick a module page from the left navigation rail." },
+    { "Tune the controls", "Toggles, sliders and dropdowns save instantly." },
+    { "Stay in the flow", "Your layout and settings persist between sessions." },
+}
+for i, tip in ipairs(tips) do
+    local y = 72 + (i - 1) * 62
+    local num = New("\x46rame", { Parent = infoCard, Position = UDim2.fromOffset(24, y), Size = UDim2.fromOffset(28, 28),
+        BackgroundColor3 = C.accent, BackgroundTransparency = .86 })
+    corner(num, 8); stroke(num, C.accent, .45)
+    local nt = text(num, tostring(i), 13, UDim2.fromOffset(0, 5)); nt.Font = Enum.Font.GothamBold
+    nt.TextColor3 = C.accent2; nt.Size = UDim2.fromScale(1, 1); nt.TextXAlignment = Enum.TextXAlignment.Center
+    local tt = text(infoCard, tip[1], 14, UDim2.fromOffset(64, y - 2)); tt.Font = Enum.Font.GothamBold
+    tt.Size = UDim2.new(1, -90, 0, 18)
+    local td = text(infoCard, tip[2], 12, UDim2.fromOffset(64, y + 17), true)
+    td.Size = UDim2.new(1, -90, 0, 16)
+end
 local frameCounter, lastFps = 0, os.clock()
 RunService.RenderStepped:Connect(function()
     frameCounter += 1
@@ -2462,7 +1759,6 @@ end)
 
 local activePage = "\x68ome"
 local selectPage
-NoirGenv().__NoirState = { active = activePage }
 do
     local pageObjects = { home = dashboard, main = mainContent, aim = content, world = worldContent, map = win:FindFirstChild("\x4dapContent"), farm = win:FindFirstChild("\x46armContent"), visual = visualContent, emotes = emotesContent, misc = miscContent, troll = trollContent, settings = settingsContent }
     pcall(function()
@@ -2494,7 +1790,11 @@ do
         local oldObject = pageObjects[oldPage]
         local newObject = pageObjects[page]
         activePage = page
-        NoirGenv().__NoirState.active = page
+        for pname, frames in pairs(navBrackets) do
+            for _, f in ipairs(frames) do
+                TweenService:Create(f, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundTransparency = pname == page and 0 or 1 }):Play()
+            end
+        end
 
         for _, object in pairs(pageObjects) do
             if object ~= oldObject and object ~= newObject then
@@ -2532,12 +1832,19 @@ do
             TweenService:Create(b, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = C.accent, BackgroundTransparency = active and 0 or 1 }):Play()
             local data = navIcons[name]
             if data then
-                TweenService:Create(data.icon, TweenInfo.new(.2), { ImageColor3 = active and C.btn or C.dim }):Play()
-                if data.glyphs then
-                    for _, glyph in ipairs(data.glyphs) do TweenService:Create(glyph, TweenInfo.new(.2), { BackgroundColor3 = active and C.accent or C.dim }):Play() end
+                local iconColor = active and Color3.fromRGB(6, 20, 24) or C.dim
+                for _, p in ipairs(data.parts) do
+                    if p:IsA("\x55IStroke") then
+                        TweenService:Create(p, TweenInfo.new(.2), { Color = iconColor }):Play()
+                    else
+                        TweenService:Create(p, TweenInfo.new(.2), { BackgroundColor3 = iconColor }):Play()
+                    end
                 end
-                if data.rings then
-                    for _, ring in ipairs(data.rings) do TweenService:Create(ring, TweenInfo.new(.2), { Color = active and C.accent or C.dim }):Play() end
+                if data.stroke then
+                    TweenService:Create(data.stroke, TweenInfo.new(.2), {
+                        Transparency = active and .08 or .8,
+                        Color = active and C.accent2 or C.border,
+                    }):Play()
                 end
                 TweenService:Create(data.label, TweenInfo.new(.2), { TextColor3 = active and C.text or C.dim }):Play()
                 TweenService:Create(data.bar, TweenInfo.new(.2), { BackgroundTransparency = active and 0 or 1 }):Play()
@@ -2546,132 +1853,20 @@ do
     end
 end
 for name, b in pairs(navButtons) do b.MouseButton1Click:Connect(function() if activePage == name then selectPage("\x68ome") else selectPage(name) end end) end
+for name, b in pairs(navButtons) do
+    b.MouseEnter:Connect(function()
+        if activePage ~= name then TweenService:Create(b, TweenInfo.new(.16, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = C.accent, BackgroundTransparency = .86 }):Play() end
+    end)
+    b.MouseLeave:Connect(function()
+        if activePage ~= name then TweenService:Create(b, TweenInfo.new(.16, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play() end
+    end)
+end
 -- Восстанавливаем последнюю вкладку. selectPage живёт в своей области видимости
 -- и сам откатывается на home, если сохранённого имени больше нет в билде.
 local __savedPage = NoirPersistence.data.dropdowns["\x4eoir::LastPage"]
 if type(__savedPage) ~= "\x73tring" or __savedPage == "" then __savedPage = "\x68ome" end
 local __restoreOk = pcall(selectPage, __savedPage)
 if not __restoreOk then pcall(selectPage, "\x68ome") end
-
--- ===== Settings page: Theme Showcase (12 liquid-mirror palettes) + Appearance =====
-do
-    if settingsContent then
-        local header = New("\x46rame", { Parent = settingsContent, Size = UDim2.new(1, 0, 0, 46), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1 })
-        text(header, "\x54heme Showcase", 24, UDim2.fromOffset(6, 0))
-        text(header, "\x53elect from 15 liquid 3D-mirror palettes - instant live repaint, saved automatically.", 13, UDim2.fromOffset(8, 28), true)
-
-        local gridRows = math.ceil(#NOIR_THEMES / 3)
-        local grid = New("\x46rame", { Parent = settingsContent, Size = UDim2.new(1, 0, 0, gridRows * 64 + (gridRows - 1) * 10 + 4),
-            BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 2 })
-        New("\x55IGridLayout", { Parent = grid, CellPadding = UDim2.fromOffset(10, 10),
-            CellSize = UDim2.new(1 / 3, -9, 0, 64), SortOrder = Enum.SortOrder.LayoutOrder })
-
-        local strokesById, checksById = {}, {}
-        local currentId = (NoirPersistence.data.colors and NoirPersistence.data.colors.theme) or "neon_osaka"
-        if not __NoirFindTheme(currentId) then currentId = "neon_osaka" end
-        local function refreshSelection()
-            for tid, s in pairs(strokesById) do
-                local on = tid == currentId
-                s.Color = on and C.accent or C.border
-                s.Transparency = on and .05 or .55
-                s.Thickness = on and 1.8 or 1
-            end
-            for tid, chk in pairs(checksById) do chk.Visible = (tid == currentId) end
-        end
-
-        for i, t in ipairs(NOIR_THEMES) do
-            local card = New("\x54extButton", { Parent = grid, BackgroundColor3 = t.C.card, BackgroundTransparency = .08,
-                Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = i, ClipsDescendants = true })
-            corner(card, 12)
-            New("\x55IGradient", { Parent = card, Rotation = 115, Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, t.C.card),
-                ColorSequenceKeypoint.new(.55, t.C.surface),
-                ColorSequenceKeypoint.new(1, t.C.card:Lerp(t.C.accent, .18)),
-            }) })
-            local s = New("\x55IStroke", { Parent = card, Color = C.border, Transparency = .55, Thickness = 1 })
-            pcall(function() s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border end)
-            strokesById[t.id] = s
-            New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(13, 10), Size = UDim2.new(1, -34, 0, 16),
-                BackgroundTransparency = 1, Text = t.name, TextColor3 = t.C.text, TextSize = 13, Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Left })
-            for di = 1, 4 do
-                local dot = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(13 + (di - 1) * 17, 36),
-                    Size = UDim2.fromOffset(11, 11), BackgroundColor3 = t.dots[di], BorderSizePixel = 0 })
-                corner(dot, 6)
-                New("\x55IStroke", { Parent = dot, Color = Color3.fromRGB(255, 255, 255), Transparency = .85, Thickness = 1 })
-            end
-            local chk = New("\x54extLabel", { Parent = card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 10),
-                Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1, Text = "\226\156\147", TextColor3 = C.accent2,
-                TextSize = 14, Font = Enum.Font.GothamBold, Visible = false })
-            checksById[t.id] = chk
-            card.MouseEnter:Connect(function()
-                TweenService:Create(card, TweenInfo.new(.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .01 }):Play()
-            end)
-            card.MouseLeave:Connect(function()
-                TweenService:Create(card, TweenInfo.new(.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .08 }):Play()
-            end)
-            card.MouseButton1Click:Connect(function()
-                currentId = t.id
-                pcall(__NoirApplyTheme, t.id, true)
-                refreshSelection()
-                local core = NoirGenv().__NoirCore
-                if core and core.host and core.host.Notify then pcall(core.host.Notify, "\x54heme: " .. t.name, 3) end
-            end)
-        end
-        refreshSelection()
-
-        local appearance = New("\x46rame", { Parent = settingsContent, Size = UDim2.new(1, 0, 0, 96), LayoutOrder = 3,
-            BackgroundColor3 = C.panel, BackgroundTransparency = .86, BorderSizePixel = 0, ClipsDescendants = true })
-        corner(appearance, 10); stroke(appearance, C.border, .15)
-        text(appearance, "\x41ppearance", 14, UDim2.fromOffset(8, 6))
-        New("\x46rame", { Parent = appearance, Position = UDim2.fromOffset(0, 27), Size = UDim2.new(1, 0, 0, 1),
-            BackgroundColor3 = C.border, BorderSizePixel = 0 })
-        local rowF = New("\x46rame", { Parent = appearance, Position = UDim2.fromOffset(10, 40), Size = UDim2.new(1, -20, 0, 32),
-            BackgroundTransparency = 1 })
-        local lbl = text(rowF, "\x4denu Transparency", 14, UDim2.fromOffset(0, 0))
-        lbl.TextTransparency = .35
-        lbl.Size = UDim2.new(1, -120, 0, 20)
-        lbl.TextYAlignment = Enum.TextYAlignment.Center
-        local valTxt = New("\x54extLabel", { Parent = rowF, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0),
-            Size = UDim2.fromOffset(52, 18), BackgroundTransparency = 1, Text = "38%", TextColor3 = C.accent2,
-            TextSize = 13, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right })
-        local track = New("\x46rame", { Parent = rowF, Position = UDim2.new(0, 0, 1, -3), Size = UDim2.new(1, 0, 0, 3),
-            BackgroundColor3 = C.off, BorderSizePixel = 0 })
-        corner(track, 2)
-        local fill = New("\x46rame", { Parent = track, Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
-        corner(fill, 2)
-        local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(0, 0, .5, 0),
-            Size = UDim2.fromOffset(13, 13), BackgroundColor3 = C.text })
-        corner(knob, 7); stroke(knob, C.border, .3)
-        local alphaKey = "Noir::WindowAlpha"
-        local curAlpha = tonumber(NoirPersistence.data.sliders[alphaKey]) or .38
-        local function setAlpha(a, persist)
-            curAlpha = math.clamp(tonumber(a) or .38, .05, .85)
-            local t01 = (curAlpha - .05) / .8
-            fill.Size = UDim2.fromScale(t01, 1)
-            knob.Position = UDim2.new(t01, 0, .5, 0)
-            valTxt.Text = tostring(math.floor(curAlpha * 100 + .5)) .. "%"
-            pcall(function() win.BackgroundTransparency = curAlpha end)
-            if persist ~= false then NoirPersistence.data.sliders[alphaKey] = curAlpha; NoirPersistence.Save() end
-        end
-        setAlpha(curAlpha, false)
-        local dragAlpha = false
-        track.InputBegan:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragAlpha = true
-                setAlpha(.05 + .8 * math.clamp((inp.Position.X - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1))
-            end
-        end)
-        UIS.InputChanged:Connect(function(inp)
-            if dragAlpha and (inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseMovement) then
-                setAlpha(.05 + .8 * math.clamp((inp.Position.X - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1))
-            end
-        end)
-        UIS.InputEnded:Connect(function(inp)
-            if dragAlpha and (inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1) then dragAlpha = false end
-        end)
-    end
-end
 
 local sectionCount, mainSectionCount, worldSectionCount, visualSectionCount, emotesSectionCount, miscSectionCount, configSectionCount, trollSectionCount, mapSectionCount, farmSectionCount = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 local sectionPanels, controls = {}, {}
@@ -2724,7 +1919,7 @@ local host = {}
 
 local notificationHolder = New("\x46rame", {
     Parent = gui, Name = "\x4eotificationRail", AnchorPoint = Vector2.new(1, 0),
-    Position = UDim2.new(1, -20, 0, 82), Size = UDim2.new(0, 360, 0, 270),
+    Position = UDim2.new(1, -20, 0, 82), Size = UDim2.new(0, 360, 0, 288),
     BackgroundTransparency = 1, ClipsDescendants = false, ZIndex = 1000,
 })
 local notificationLayout = New("\x55IListLayout", {
@@ -2745,35 +1940,55 @@ function host.Notify(title, duration)
     local life = math.max(1.5, tonumber(duration) or 3)
     local card = New("\x46rame", {
         Parent = notificationHolder, Name = "\x54oast_" .. tostring(notificationSerial),
-        Size = UDim2.new(1, 0, 0, 76), BackgroundColor3 = C.panel,
-        BackgroundTransparency = .04, BorderSizePixel = 0, LayoutOrder = notificationSerial,
-        ZIndex = 1000,
+        Size = UDim2.new(1, 0, 0, 88), BackgroundColor3 = C.panel,
+        BackgroundTransparency = .035, BorderSizePixel = 0, LayoutOrder = notificationSerial,
+        ZIndex = 1000, ClipsDescendants = true,
     })
-    corner(card, 14); stroke(card, C.accent, .18)
-    New("\x46rame", { Parent = card, Position = UDim2.fromOffset(0, 13), Size = UDim2.fromOffset(3, 50),
-        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 1001 })
-    local badge = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(18, 9), Size = UDim2.new(1, -30, 0, 17),
-        BackgroundTransparency = 1, Text = "\x4eOIR  •  NOTIFICATION", TextColor3 = C.accent2,
+    corner(card, 6); stroke(card, C.accent, .16, 1.2)
+    New("\x55IGradient", { Parent = card, Rotation = 12, Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 42, 47)),
+        ColorSequenceKeypoint.new(.55, C.panel),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 15, 21)),
+    }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .42), NumberSequenceKeypoint.new(1, .16) }) })
+    hudBrackets(card, 12, 1.5, C.accent2, .06, 1003)
+    local marker = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(13, 12), Size = UDim2.fromOffset(7, 7),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, Rotation = 45, ZIndex = 1004 })
+    New("\x55IStroke", { Parent = marker, Color = C.accent2, Thickness = 1, Transparency = .15 })
+    local badge = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(28, 7), Size = UDim2.new(1, -42, 0, 17),
+        BackgroundTransparency = 1, Text = "NOIR  /  SYSTEM NOTICE", TextColor3 = C.accent2,
         TextSize = 10, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 1001 })
-    local message = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(18, 29), Size = UDim2.new(1, -30, 0, 30),
+        TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 1004 })
+    local message = New("\x54extLabel", { Parent = card, Position = UDim2.fromOffset(16, 28), Size = UDim2.new(1, -32, 0, 42),
         BackgroundTransparency = 1, Text = tostring(title), TextColor3 = C.text,
-        TextSize = 14, Font = Enum.Font.Gotham, TextWrapped = true,
+        TextSize = 14, Font = Enum.Font.GothamMedium, TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
-        ZIndex = 1001 })
-    local progress = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(18, 69), Size = UDim2.new(1, -30, 0, 2),
-        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 1001 })
+        ZIndex = 1004 })
+    local rail = New("\x46rame", { Parent = card, Position = UDim2.fromOffset(14, 78), Size = UDim2.new(1, -28, 0, 2),
+        BackgroundColor3 = C.off, BorderSizePixel = 0, ZIndex = 1004 })
+    local progress = New("\x46rame", { Parent = rail, Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 1005 })
+    for i = 1, 17 do
+        New("\x46rame", { Parent = rail, AnchorPoint = Vector2.new(.5, .5),
+            Position = UDim2.new(i / 18, 0, .5, 0), Size = UDim2.fromOffset(1, 4),
+            BackgroundColor3 = C.base, BorderSizePixel = 0, ZIndex = 1006 })
+    end
     table.insert(activeNotifications, card); trimNotifications()
-    TweenService:Create(progress, TweenInfo.new(life, Enum.EasingStyle.Linear), { Size = UDim2.new(0, 0, 0, 2) }):Play()
+    local toastScale = New("\x55IScale", { Parent = card, Scale = .94 })
+    TweenService:Create(toastScale, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+    card.BackgroundTransparency = 1
+    TweenService:Create(card, TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        BackgroundTransparency = .035,
+    }):Play()
+    TweenService:Create(progress, TweenInfo.new(life, Enum.EasingStyle.Linear), { Size = UDim2.new(0, 0, 1, 0) }):Play()
     task.delay(life, function()
         for i = #activeNotifications, 1, -1 do
             if activeNotifications[i] == card then table.remove(activeNotifications, i) break end
         end
         if card.Parent then
-            local out = TweenService:Create(card, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, 24, 0, 0), BackgroundTransparency = 1,
-            })
-            out:Play(); out.Completed:Connect(function() if card.Parent then card:Destroy() end end)
+            local fadeOut = TweenService:Create(card, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 })
+            local scaleOut = TweenService:Create(toastScale, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = .94 })
+            fadeOut:Play(); scaleOut:Play()
+            scaleOut.Completed:Connect(function() if card.Parent then card:Destroy() end end)
         end
     end)
 end
@@ -2789,32 +2004,51 @@ function host.CreateTab()
     local tab = {}
     function tab:AddSection(name, description)
         yieldDuringBuild()
-        local __BULLET = string.char(226, 128, 162)
-        local P_TRAIN = "TRAIN " .. __BULLET .. " "
-        local P_COMBAT = "COMBAT " .. __BULLET .. " "
-        local P_MISC = "MISC " .. __BULLET .. " "
+        local isVisual = name == "\x56isuals" or name == "\x4fbject ESP" or string.find(name, "\x56ISUAL", 1, true) == 1
+        local isMain = string.sub(name, 1, 5) == "\x4dAIN "
+        local function hasTag(p) return string.find(name, p, 1, true) ~= nil end
+        local isFling = hasTag("\x46ling") or hasTag("⚡") or hasTag("🤖") or hasTag("📋") or hasTag("⚙") or hasTag("🔘") or hasTag("🔑")
+        local isWorld = string.sub(name, 1, 6) == "\x57ORLD " or name == "\x42omb Jump+" or name == "\x47old Bomb Jump+" or isFling
+        local isEmotes = string.sub(name, 1, 7) == "\x45MOTES " or name == "\x46E Animations" or name == "\x41bout"
+        local isGameEmotes = isEmotes and string.find(name, "\x47AME EMOTES", 1, true) ~= nil
+        local isMisc = string.sub(name, 1, 5) == "\x4dISC " or name == "\x49nventory Unlimiter V5" or name == "\x50m-WallHop"
+        local isTroll = string.sub(name, 1, 6) == "\x54ROLL " or name == "\x42ackshots"
+        local isMap = string.sub(name, 1, 4) == "\x4dAP "
+        local isFarm = string.sub(name, 1, 5) == "\x46ARM "
         local col, page = nil, "\x61im"
-        if string.sub(name, 1, #P_TRAIN) == P_TRAIN then
-            sectionCount += 1; col = cols[(sectionCount - 1) % 2 + 1]; page = "\x61im"
-        elseif string.sub(name, 1, #P_COMBAT) == P_COMBAT then
-            worldSectionCount += 1; col = worldCols[(worldSectionCount - 1) % 2 + 1]; page = "\x77orld"
-        elseif string.sub(name, 1, #P_MISC) == P_MISC then
-            miscSectionCount += 1; col = miscCols[(miscSectionCount - 1) % 2 + 1]; page = "\x6disc"
+        if isVisual then visualSectionCount += 1; col = visualCols[(visualSectionCount - 1) % 2 + 1]; page = "\x76isual"
+        elseif isMain then mainSectionCount += 1; col = mainCols[(mainSectionCount - 1) % 2 + 1]; page = "\x6dain"
+        elseif isWorld then worldSectionCount += 1; col = worldCols[(worldSectionCount - 1) % 2 + 1]; page = "\x77orld"
+        elseif isGameEmotes then col = emotesGameCol or emotesCols[1]; page = "\x65motes"
+        elseif isEmotes then emotesSectionCount += 1; col = emotesCols[(emotesSectionCount - 1) % 2 + 1]; page = "\x65motes"
+        elseif isMisc then miscSectionCount += 1; col = miscCols[(miscSectionCount - 1) % 2 + 1]; page = "\x6disc"
+        elseif isTroll then trollSectionCount += 1; col = trollCols[(trollSectionCount - 1) % 2 + 1]; page = "\x74roll"
+        elseif isMap then mapSectionCount += 1; col = mapCols[(mapSectionCount - 1) % 2 + 1]; page = "\x6dap"
+        elseif isFarm then farmSectionCount += 1; col = farmCols[(farmSectionCount - 1) % 2 + 1]; page = "\x66arm"
         end
         if not col then
             sectionCount += 1
             col = cols[(sectionCount - 1) % 2 + 1]
             page = "\x61im"
+            warn("[Noir] section panel fallback: " .. tostring(name))
         end
         local panel = New("\x46rame", { Parent = col, Size = UDim2.new(1, 0, 0, 90), AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundColor3 = C.panel, BackgroundTransparency = .86, ClipsDescendants = true })
-        corner(panel, 10); stroke(panel, C.border, .15)
-        local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(0, 27), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = C.border, BorderSizePixel = 0 })
+            BackgroundColor3 = C.panel, BackgroundTransparency = .72, ClipsDescendants = true })
+        corner(panel, 3); stroke(panel, C.border, .35)
+        hudBrackets(panel, 10, 1.25, C.accent, .62, 5)
+        hudBrackets(panel, 10, 1.25, C.accent, .62, 5)
+        New("\x55IGradient", { Parent = panel, Rotation = 20, Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(13, 44, 50)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 18, 24)) }),
+            Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .68), NumberSequenceKeypoint.new(1, .9) }) })
+        hudBrackets(panel, 12, 1.5, C.accent, .55, 5)
+        local sepY = (description and description ~= "") and 44 or 30
+        local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(14, sepY), Size = UDim2.new(1, -28, 0, 1),
+            BackgroundColor3 = C.accent, BackgroundTransparency = .62, BorderSizePixel = 0 })
         table.insert(sectionPanels, { panel = panel, page = page, name = string.lower(name .. "\x20" .. (description or "")) })
-        local shownName = name:gsub("^%u+ " .. string.char(226, 128, 162) .. " ", "")
+        local shownName = name:gsub("\x5eMAIN • ", ""):gsub("\x5eWORLD • ", ""):gsub("\x5eVISUAL • ", ""):gsub("\x5eEMOTES • ", ""):gsub("\x5eMISC • ", ""):gsub("\x5eTROLL • ", ""):gsub("\x5eMAP • ", ""):gsub("\x5eFARM • ", "")
         kitiTitle(panel, shownName)
         if description and description ~= "" then kitiDesc(panel, description) end
-        local holder = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(10, description ~= "" and 48 or 38), Size = UDim2.new(1, -20, 0, 0),
+        local holder = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(12, description ~= "" and 52 or 38), Size = UDim2.new(1, -24, 0, 0),
             AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 })
         New("\x55IListLayout", { Parent = holder, Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder })
         New("\x55IPadding", { Parent = holder, PaddingBottom = UDim.new(0, 12) })
@@ -2834,10 +2068,196 @@ function host.CreateTab()
             yieldDuringBuild()
             local r = New("\x46rame", { Parent = holder, Size = UDim2.new(1, 0, 0, h or 20), BackgroundTransparency = 1 })
             local rowLabel = text(r, label, 14, UDim2.fromOffset(0, 0))
-            rowLabel.TextTransparency = .35
+            rowLabel.TextTransparency = .1
             rowLabel.Size = UDim2.new(1, -160, 0, h or 20)
             rowLabel.TextYAlignment = Enum.TextYAlignment.Center
+            rowLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            rowLabel.ClipsDescendants = true
+            local hover = NoirFX.new(0, 20, 1, function(v)
+                local c = math.clamp(v, 0, 1)
+                rowLabel.TextTransparency = .1 - .1 * c
+                rowLabel.Position = UDim2.fromOffset(3 * c, 0)
+            end)
+            r.MouseEnter:Connect(function() hover:Set(1) end)
+            r.MouseLeave:Connect(function() hover:Set(0) end)
             return r
+        end
+        local activeAppearancePopup = nil
+        local activeAppearanceGear = nil
+        local activeAppearanceInputConnection = nil
+        local appearancePalette = {
+            C.accent,
+            Color3.fromRGB(90, 173, 255),
+            Color3.fromRGB(185, 124, 255),
+            Color3.fromRGB(255, 184, 82),
+        }
+        local shapeRadii = { 0, 3, 9 }
+        local sizeFactors = { .90, 1, 1.10 }
+        local function appearanceGlyph(parent)
+            for i = 1, 3 do
+                New("\x46rame", { Parent = parent, Position = UDim2.fromOffset(5, 5 + (i - 1) * 5),
+                    Size = UDim2.fromOffset(13, 1), BackgroundColor3 = C.dim, BorderSizePixel = 0, ZIndex = 31 })
+                New("\x46rame", { Parent = parent, Position = UDim2.fromOffset(7 + (i % 2) * 5, 4 + (i - 1) * 5),
+                    Size = UDim2.fromOffset(3, 3), BackgroundColor3 = C.accent2, BorderSizePixel = 0, ZIndex = 32 })
+            end
+        end
+        local function addAppearanceEditor(rowFrame, label, key, shapeTargets, scaleTarget, applyAccent)
+            NoirPersistence.data.appearance = NoirPersistence.data.appearance or {}
+            local saved = NoirPersistence.data.appearance[key]
+            if typeof(saved) ~= "\x74able" then saved = {}; NoirPersistence.data.appearance[key] = saved end
+            local shapeIndex = math.clamp(math.floor(tonumber(saved.shape) or 2), 1, #shapeRadii)
+            local colorIndex = math.clamp(math.floor(tonumber(saved.color) or 1), 1, #appearancePalette)
+            local sizeIndex = math.clamp(math.floor(tonumber(saved.size) or 2), 1, #sizeFactors)
+            local gear = New("\x54extButton", { Parent = rowFrame, AnchorPoint = Vector2.new(1, 0),
+                Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(24, 20),
+                BackgroundColor3 = C.surface, BackgroundTransparency = .18, Text = "", AutoButtonColor = false,
+                BorderSizePixel = 0, ZIndex = 25 })
+            corner(gear, 4); stroke(gear, C.border, .28, 1)
+            appearanceGlyph(gear)
+            local scaleNode
+            if scaleTarget then
+                scaleNode = scaleTarget:FindFirstChild("NoirControlScale")
+                if not scaleNode then scaleNode = New("\x55IScale", { Name = "NoirControlScale", Parent = scaleTarget, Scale = sizeFactors[sizeIndex] }) end
+            end
+            local function applyShape(index)
+                shapeIndex = math.clamp(index, 1, #shapeRadii)
+                for _, target in ipairs(shapeTargets or {}) do if target and target.Parent then corner(target, shapeRadii[shapeIndex]) end end
+            end
+            local function applySize(index)
+                sizeIndex = math.clamp(index, 1, #sizeFactors)
+                if scaleNode and scaleNode.Parent then scaleNode.Scale = sizeFactors[sizeIndex] end
+            end
+            local function applyColor(index)
+                colorIndex = math.clamp(index, 1, #appearancePalette)
+                if applyAccent then applyAccent(appearancePalette[colorIndex]) end
+            end
+            applyShape(shapeIndex); applySize(sizeIndex); applyColor(colorIndex)
+            local function saveAppearance()
+                NoirPersistence.data.appearance[key] = { shape = shapeIndex, color = colorIndex, size = sizeIndex }
+                NoirPersistence.Save()
+            end
+            local function styleOption(button, selected, color)
+                button.BackgroundColor3 = color or (selected and Color3.fromRGB(17, 67, 71) or C.surface)
+                button.BackgroundTransparency = selected and .08 or .25
+                local border = button:FindFirstChildOfClass("\x55IStroke")
+                if border then
+                    border.Color = selected and C.accent2 or C.border
+                    border.Transparency = selected and .04 or .45
+                end
+            end
+            local function closePopup(p)
+                if not p or not p.Parent then return end
+                if activeAppearanceInputConnection then activeAppearanceInputConnection:Disconnect(); activeAppearanceInputConnection = nil end
+                if activeAppearancePopup == p then
+                    activeAppearancePopup = nil
+                    activeAppearanceGear = nil
+                end
+                local closeTween = TweenService:Create(p, TweenInfo.new(.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 138) })
+                closeTween:Play(); closeTween.Completed:Connect(function() if p.Parent then p:Destroy() end end)
+            end
+            local function openPopup()
+                if activeAppearancePopup then closePopup(activeAppearancePopup) end
+                local h = 138
+                local view = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)) / scale.Scale
+                local w = math.min(226, math.max(180, view.X - 16))
+                local px = gear.AbsolutePosition.X / scale.Scale + gear.AbsoluteSize.X / scale.Scale - w
+                local py = (gear.AbsolutePosition.Y + gear.AbsoluteSize.Y) / scale.Scale + 6
+                if px + w > view.X - 8 then px = view.X - w - 8 end
+                px = math.clamp(px, 8, math.max(8, view.X - w - 8))
+                if py + h > view.Y - 8 then py = gear.AbsolutePosition.Y / scale.Scale - h - 6 end
+                py = math.clamp(py, 8, math.max(8, view.Y - h - 8))
+                local p = New("\x46rame", { Parent = gui, Name = "NoirAppearancePopup", Position = UDim2.fromOffset(px, py),
+                    Size = UDim2.fromOffset(0, h), BackgroundColor3 = C.panel, BackgroundTransparency = .04,
+                    BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 80 })
+                activeAppearancePopup = p
+                activeAppearanceGear = gear
+                corner(p, 7); stroke(p, C.accent, .22, 1.2)
+                New("\x55IGradient", { Parent = p, Rotation = 16, Color = ColorSequence.new(C.surface, C.panel),
+                    Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .12), NumberSequenceKeypoint.new(1, .02) }) })
+                hudBrackets(p, 11, 1.3, C.accent2, .1, 84)
+                New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 7), Size = UDim2.new(1, -46, 0, 16),
+                    BackgroundTransparency = 1, Text = "CONTROL DESIGN  /  " .. tostring(label), TextColor3 = C.accent2,
+                    TextSize = 10, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 85 })
+                local closeBtn = New("\x54extButton", { Parent = p, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -7, 0, 5),
+                    Size = UDim2.fromOffset(22, 20), BackgroundColor3 = C.surface, Text = "×", TextColor3 = C.dim,
+                    TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 86 })
+                corner(closeBtn, 3); stroke(closeBtn, C.border, .5)
+                local formLabel = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 32), Size = UDim2.fromOffset(46, 18),
+                    BackgroundTransparency = 1, Text = "FORM", TextColor3 = C.dim, TextSize = 9, Font = Enum.Font.GothamBold, ZIndex = 85 })
+                local formButtons = {}
+                for i, name in ipairs({ "CUT", "SOFT", "ROUND" }) do
+                    local b = New("\x54extButton", { Parent = p, Position = UDim2.fromOffset(64 + (i - 1) * 51, 30),
+                        Size = UDim2.fromOffset(46, 21), BackgroundColor3 = C.surface, Text = name,
+                        TextColor3 = C.text, TextSize = 9, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 85 })
+                    corner(b, shapeRadii[i]); stroke(b, C.border, .4)
+                    formButtons[i] = b
+                    b.Activated:Connect(function()
+                        applyShape(i); saveAppearance()
+                        for j, option in ipairs(formButtons) do styleOption(option, j == shapeIndex) end
+                    end)
+                end
+                local colorLabel = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 60), Size = UDim2.fromOffset(46, 18),
+                    BackgroundTransparency = 1, Text = "COLOR", TextColor3 = C.dim, TextSize = 9, Font = Enum.Font.GothamBold, ZIndex = 85 })
+                local colorButtons = {}
+                for i, color in ipairs(appearancePalette) do
+                    local b = New("\x54extButton", { Parent = p, Position = UDim2.fromOffset(70 + (i - 1) * 34, 58),
+                        Size = UDim2.fromOffset(22, 18), BackgroundColor3 = color, Text = "", AutoButtonColor = false, ZIndex = 85 })
+                    corner(b, 3); stroke(b, C.border, .35)
+                    colorButtons[i] = b
+                    b.Activated:Connect(function()
+                        applyColor(i); saveAppearance()
+                        for j, option in ipairs(colorButtons) do styleOption(option, j == colorIndex, appearancePalette[j]) end
+                    end)
+                end
+                local sizeLabel = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 87), Size = UDim2.fromOffset(46, 18),
+                    BackgroundTransparency = 1, Text = "SIZE", TextColor3 = C.dim, TextSize = 9, Font = Enum.Font.GothamBold, ZIndex = 85 })
+                local sizeButtons = {}
+                for i, name in ipairs({ "S", "M", "L" }) do
+                    local b = New("\x54extButton", { Parent = p, Position = UDim2.fromOffset(64 + (i - 1) * 51, 85),
+                        Size = UDim2.fromOffset(46, 21), BackgroundColor3 = C.surface, Text = name,
+                        TextColor3 = C.text, TextSize = 10, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 85 })
+                    corner(b, 3); stroke(b, C.border, .4)
+                    sizeButtons[i] = b
+                    b.Activated:Connect(function()
+                        applySize(i); saveAppearance()
+                        for j, option in ipairs(sizeButtons) do styleOption(option, j == sizeIndex) end
+                    end)
+                end
+                local foot = New("\x54extLabel", { Parent = p, Position = UDim2.fromOffset(12, 114), Size = UDim2.new(1, -24, 0, 14),
+                    BackgroundTransparency = 1, Text = "Changes save automatically", TextColor3 = C.dim, TextSize = 9,
+                    Font = Enum.Font.Gotham, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 85 })
+                for i, b in ipairs(formButtons) do styleOption(b, i == shapeIndex) end
+                for i, b in ipairs(colorButtons) do styleOption(b, i == colorIndex, appearancePalette[i]) end
+                for i, b in ipairs(sizeButtons) do styleOption(b, i == sizeIndex) end
+                closeBtn.Activated:Connect(function() closePopup(p) end)
+                activeAppearanceInputConnection = UIS.InputBegan:Connect(function(input)
+                    if not isPrimaryPress(input) or not p.Parent then return end
+                    local point = Vector2.new(input.Position.X, input.Position.Y)
+                    local p0, ps = p.AbsolutePosition, p.AbsoluteSize
+                    local g0, gs = gear.AbsolutePosition, gear.AbsoluteSize
+                    local insidePanel = point.X >= p0.X and point.X <= p0.X + ps.X and point.Y >= p0.Y and point.Y <= p0.Y + ps.Y
+                    local insideGear = point.X >= g0.X and point.X <= g0.X + gs.X and point.Y >= g0.Y and point.Y <= g0.Y + gs.Y
+                    if not insidePanel and not insideGear then closePopup(p) end
+                end)
+                TweenService:Create(p, TweenInfo.new(.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                    { Size = UDim2.fromOffset(w, h) }):Play()
+            end
+            gear.MouseEnter:Connect(function()
+                TweenService:Create(gear, TweenInfo.new(.14), { BackgroundColor3 = Color3.fromRGB(15, 52, 57) }):Play()
+            end)
+            gear.MouseLeave:Connect(function()
+                TweenService:Create(gear, TweenInfo.new(.16), { BackgroundColor3 = C.surface }):Play()
+            end)
+            gear.Activated:Connect(function()
+                if activeAppearancePopup and activeAppearanceGear == gear then
+                    closePopup(activeAppearancePopup)
+                else
+                    openPopup()
+                end
+            end)
+            return gear
         end
         function api:AddToggle(label, callback)
             local key = keyFor(label)
@@ -2848,26 +2268,30 @@ function host.CreateTab()
             end
             local state = savedToggle == true
             local r = row(label, 20)
-            local pill = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 2), Size = UDim2.fromOffset(30, 16),
-                BackgroundColor3 = C.off, Text = "", AutoButtonColor = false })
-            corner(pill, 8); local pillStroke = stroke(pill, C.border, 0)
-            local dot = New("\x46rame", { Parent = pill, AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 2, .5, 0), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = C.text })
-            corner(dot, 6)
+            local pill = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -30, 0, 1), Size = UDim2.fromOffset(34, 18),
+                BackgroundColor3 = C.off, Text = "", AutoButtonColor = false, BorderSizePixel = 0 })
+            local pillStroke = stroke(pill, C.border, 0, 1.2)
+            local pillGlow = New("\x55IStroke", { Parent = pill, Color = C.accent, Thickness = 2.5, Transparency = 1,
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+            local dot = New("\x46rame", { Parent = pill, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(0, 8, .5, 0),
+                Size = UDim2.fromOffset(9, 9), BackgroundColor3 = C.dim, BorderSizePixel = 0, Rotation = 45 })
+            local dotStroke = stroke(dot, C.accent2, .25, 1)
+            local toggleAccent = C.accent
+            local togSpring = NoirFX.new(state and 1 or 0, 24, .62, function(t)
+                local c = math.clamp(t, 0, 1)
+                local size = 9 + 1.5 * math.sin(c * math.pi)
+                dot.Position = UDim2.new(0, 8 + t * 18, .5, 0)
+                dot.Size = UDim2.fromOffset(size, size)
+                pill.BackgroundColor3 = C.off:Lerp(toggleAccent, .22 * c)
+                pillStroke.Color = C.border:Lerp(toggleAccent, c)
+                pillGlow.Color = toggleAccent
+                pillGlow.Transparency = 1 - .62 * c
+                dot.BackgroundColor3 = C.dim:Lerp(toggleAccent, c)
+                dotStroke.Color = toggleAccent:Lerp(C.accent2, .55)
+            end)
             local function set(v, persist, animate)
                 state = v == true
-                if animate == false then
-                    pill.BackgroundColor3 = state and C.accent or C.off
-                    pillStroke.Color = state and C.accent2 or C.border
-                    pillStroke.Transparency = state and .3 or 0
-                    dot.Position = state and UDim2.new(1, -14, .5, 0) or UDim2.new(0, 2, .5, 0)
-                    dot.BackgroundColor3 = C.text
-                    dot.Size = UDim2.fromOffset(12, 12)
-                else
-                    TweenService:Create(pillStroke, TweenInfo.new(.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Color = state and C.accent2 or C.border, Transparency = state and .3 or 0 }):Play()
-                    TweenService:Create(pill, TweenInfo.new(.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = state and C.accent or C.off }):Play()
-                    TweenService:Create(dot, TweenInfo.new(.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = state and UDim2.new(1, -14, .5, 0) or UDim2.new(0, 2, .5, 0), BackgroundColor3 = C.text, Size = UDim2.fromOffset(12, 120, 30) }):Play()
-                    task.delay(.20, function() if dot.Parent then TweenService:Create(dot, TweenInfo.new(.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(12, 12) }):Play() end end)
-                end
+                if animate == false then togSpring:Snap(state and 1 or 0) else togSpring:Set(state and 1 or 0) end
                 callback(state)
                 if persist ~= false then NoirPersistence.data.toggles[key] = state; NoirPersistence.Save() end
             end
@@ -2879,37 +2303,36 @@ function host.CreateTab()
                 set(not state, true)
             end
             pill.Activated:Connect(toggleClick)
+            addAppearanceEditor(r, label, key, { pill, dot }, pill, function(color)
+                toggleAccent = color
+                togSpring:Snap(state and 1 or 0)
+            end)
+            pill.Position = UDim2.new(1, -30, 0, 1)
             set(state, false, false)
             return function(v) set(v == nil and not state or v, true) end
         end
         function api:AddButton(label, callback)
             yieldDuringBuild()
-            local b = New("\x54extButton", { Parent = holder, Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = C.btn,
-                BackgroundTransparency = .68, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamBold, AutoButtonColor = false })
-            corner(b, 9)
-            New("\x55IGradient", { Parent = b, Rotation = 90, Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(196, 196, 196)),
-            }), Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, .82), NumberSequenceKeypoint.new(1, .9),
-            }) })
-            local bRing = ringStroke(b, 1.2, .55)
-            local bScale = New("\x55IScale", { Parent = b, Scale = 1 })
-            b.MouseEnter:Connect(function()
-                TweenService:Create(b, TweenInfo.new(.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .42, BackgroundColor3 = C.btn:Lerp(C.accent, .22) }):Play()
-                TweenService:Create(bRing, TweenInfo.new(.16), { Transparency = .28 }):Play()
-            end)
-            b.MouseLeave:Connect(function()
-                TweenService:Create(b, TweenInfo.new(.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = .68, BackgroundColor3 = C.btn }):Play()
-                TweenService:Create(bRing, TweenInfo.new(.2), { Transparency = .55 }):Play()
-                TweenService:Create(bScale, TweenInfo.new(.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-            end)
-            b.MouseButton1Down:Connect(function()
-                TweenService:Create(bScale, TweenInfo.new(.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = .96 }):Play()
-            end)
-            b.MouseButton1Up:Connect(function()
-                TweenService:Create(bScale, TweenInfo.new(.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-            end)
+            local key = keyFor(label)
+            local actionRow = New("\x46rame", { Parent = holder, Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1 })
+            local b = New("\x54extButton", { Parent = actionRow, Size = UDim2.new(1, -32, 1, 0), BackgroundColor3 = C.btn,
+                BackgroundTransparency = .68, Text = NoirTr(label), TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamMedium,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, AutoButtonColor = false })
+            New("\x55IPadding", { Parent = b, PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 8) })
+            corner(b, 7); local bRing = ringStroke(b, 1.2, .4)
+            hudBrackets(b, 8, 1, C.accent, .62, 5)
+            local bGradient = New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(18, 54, 60)), ColorSequenceKeypoint.new(1, C.btn) }),
+                Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .55), NumberSequenceKeypoint.new(1, .85) }) })
+            local accentBar = New("\x46rame", { Parent = b, Position = UDim2.fromOffset(0, 5), Size = UDim2.fromOffset(3, 18),
+                BackgroundColor3 = C.accent2, BorderSizePixel = 0 })
+            corner(accentBar, 1.5)
+            local chev = New("TextLabel", { Parent = b, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0), Size = UDim2.fromOffset(14, 14),
+                BackgroundTransparency = 1, Text = "›", TextColor3 = C.accent, TextSize = 20, Font = Enum.Font.GothamBold })
+            b.MouseEnter:Connect(function() TweenService:Create(chev, TweenInfo.new(.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = UDim2.new(1, -4, .5, 0) }):Play() end)
+            b.MouseLeave:Connect(function() TweenService:Create(chev, TweenInfo.new(.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = UDim2.new(1, -8, .5, 0) }):Play() end)
+            b.MouseEnter:Connect(function() TweenService:Create(b, TweenInfo.new(.18), { BackgroundTransparency = .58, BackgroundColor3 = Color3.fromRGB(29, 64, 65) }):Play() end)
+            b.MouseLeave:Connect(function() TweenService:Create(b, TweenInfo.new(.18), { BackgroundTransparency = .72, BackgroundColor3 = C.btn }):Play() end)
             local lastClick = 0
             local function fire()
                 local now = os.clock()
@@ -2918,6 +2341,12 @@ function host.CreateTab()
                 callback()
             end
             b.Activated:Connect(fire)
+            addAppearanceEditor(actionRow, label, key, { b }, b, function(color)
+                bRing.Color = color
+                bGradient.Color = ColorSequence.new(color:Lerp(C.surface, .65), color:Lerp(C.btn, .82))
+                accentBar.BackgroundColor3 = color
+                chev.TextColor3 = color
+            end)
             return b
         end
         function api:AddSlider(label, min, max, default, callback)
@@ -2929,30 +2358,70 @@ function host.CreateTab()
             end
             default = tonumber(savedSlider) or default
             local r = row(label, 30)
-            local value = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -56, 0, 0), Size = UDim2.fromOffset(56, 18), BackgroundColor3 = C.surface,
+            local value = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -82, 0, 0), Size = UDim2.fromOffset(48, 18), BackgroundColor3 = C.surface,
                 BackgroundTransparency = 1, Text = tostring(default), TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham,
-                TextXAlignment = Enum.TextXAlignment.Center, ClearTextOnFocus = false })
-            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -4), Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = C.off })
-            corner(track, 1)
+                TextXAlignment = Enum.TextXAlignment.Right, ClearTextOnFocus = false })
+            local track = New("\x46rame", { Parent = r, Position = UDim2.new(0, 0, 1, -8), Size = UDim2.new(1, -34, 0, 4), BackgroundColor3 = C.off, BorderSizePixel = 0 })
             local fill = New("\x46rame", { Parent = track, Size = UDim2.fromScale((default - min) / (max - min), 1), BackgroundColor3 = C.accent, BorderSizePixel = 0 })
-            corner(fill, 1)
-            local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new((default - min) / (max - min), 0, .5, 0), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.text })
-            knob.Size = UDim2.fromOffset(15, 15); corner(knob, 8); stroke(knob, C.border, .3)
+            -- Flat rail end keeps the HUD slider crisp and technical.
+            local fillGradient = New("\x55IGradient", { Parent = fill, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 120, 130)), ColorSequenceKeypoint.new(.55, C.accent),
+                ColorSequenceKeypoint.new(1, C.accent2) }) })
+            for gi = 1, 15 do
+                New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(gi / 16, 0, .5, 0), Size = UDim2.fromOffset(1, 8), BackgroundColor3 = C.base, BorderSizePixel = 0, ZIndex = 3 })
+            end
+            local knob = New("\x46rame", { Parent = track, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new((default - min) / (max - min), 0, .5, 0), Size = UDim2.fromOffset(11, 11), BackgroundColor3 = C.accent, BorderSizePixel = 0, Rotation = 45 })
+            knob.ZIndex = 5; stroke(knob, C.accent2, .12, 1.4)
+            do
+                local function glow(parent)
+                    New("ImageLabel", { Parent = parent, BackgroundTransparency = 1, Image = "rbxassetid://112971167999062", ImageColor3 = C.accent, ImageTransparency = .68,
+                        AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.new(1, 15, 1, 15), ScaleType = Enum.ScaleType.Slice,
+                        SliceCenter = Rect.new(Vector2.new(112, 112), Vector2.new(147, 147)), SliceScale = .6, ZIndex = 2 })
+                end
+                glow(fill); glow(knob)
+            end
             local current = default
+            local halo = New("UIStroke", { Parent = knob, Color = C.accent2, Thickness = 4, Transparency = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+            local alphaSpring = NoirFX.new((default - min) / (max - min), 24, .78, function(a)
+                local c = math.clamp(a, 0, 1)
+                fill.Size = UDim2.fromScale(c, 1)
+                knob.Position = UDim2.new(c, 0, .5, 0)
+            end)
+            local grabSpring = NoirFX.new(0, 26, .8, function(g)
+                local c = math.clamp(g, 0, 1)
+                local size = 11 + 2 * g
+                knob.Size = UDim2.fromOffset(size, size)
+                halo.Transparency = 1 - .7 * c
+                value.TextSize = 14 + 2 * c
+            end)
             local function set(v, persist)
                 current = math.clamp(math.floor((tonumber(v) or current or default) + .5), min, max)
-                fill.Size = UDim2.fromScale((current - min) / (max - min), 1)
-                knob.Position = UDim2.new((current - min) / (max - min), 0, .5, 0)
+                alphaSpring:Set((current - min) / (max - min))
                 value.Text = tostring(current)
                 callback(current)
                 if persist ~= false then NoirPersistence.data.sliders[key] = current; NoirPersistence.Save() end
             end
+            addAppearanceEditor(r, label, key, { track, knob }, track, function(color)
+                fill.BackgroundColor3 = color
+                fillGradient.Color = ColorSequence.new(Color3.fromRGB(12, 120, 130), color:Lerp(C.accent2, .38))
+                for _, root in ipairs({ fill, knob }) do
+                    for _, child in ipairs(root:GetChildren()) do
+                        if child:IsA("ImageLabel") then child.ImageColor3 = color end
+                    end
+                end
+                knob.BackgroundColor3 = color
+                local knobStroke = knob:FindFirstChildOfClass("\x55IStroke")
+                if knobStroke then knobStroke.Color = color:Lerp(C.accent2, .5) end
+                halo.Color = color:Lerp(C.accent2, .4)
+            end)
+            value.Position = UDim2.new(1, -82, 0, 0)
             set(default, false)
+            alphaSpring:Snap((current - min) / (max - min))
             value.FocusLost:Connect(function() set(value.Text) end)
             local drag = false
             track.InputBegan:Connect(function(i)
                 if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-                    drag = true; set(min + (max - min) * math.clamp((i.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1))
+                    drag = true; grabSpring:Set(1); set(min + (max - min) * math.clamp((i.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1))
                 end
             end)
             UIS.InputChanged:Connect(function(i)
@@ -2961,22 +2430,42 @@ function host.CreateTab()
                 end
             end)
             UIS.InputEnded:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+                if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false; grabSpring:Set(0) end
             end)
             return { SetValue = function(_, v, persist) set(v, persist) end, GetValue = function() return current end }
         end
         function api:AddDropdown(label, values, callback)
             local key = keyFor(label)
-            local r = row(label, 18)
+            local r = row(label, 46)
+            local rowText = r:FindFirstChildWhichIsA("TextLabel")
+            if rowText then rowText.Size = UDim2.new(1, -30, 0, 18); rowText.TextYAlignment = Enum.TextYAlignment.Top end
             local idx = table.find(values, NoirPersistence.data.dropdowns[key]) or 1
-            local b = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(150, 18),
-                BackgroundColor3 = C.surface, BackgroundTransparency = 1, Text = tostring(values[1] or "\x4eone") .. "\x20⌄", TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 5 })
+            local b = New("TextButton", { Parent = r, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 24),
+                BackgroundColor3 = C.surface, Text = "", AutoButtonColor = false, ZIndex = 4 })
+            corner(b, 2)
+            local bStroke = stroke(b, C.border, 0)
+            local dropdownAccent = C.accent
+            local dropdownGradient = New("\x55IGradient", { Parent = b, Rotation = 15, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 50, 56)), ColorSequenceKeypoint.new(1, C.surface) }),
+                Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .6), NumberSequenceKeypoint.new(1, .88) }) })
+            local valueLabel = New("TextLabel", { Parent = b, Position = UDim2.fromOffset(9, 0), Size = UDim2.new(1, -32, 1, 0), BackgroundTransparency = 1,
+                Text = tostring(values[idx] or "None"), TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 5 })
+            local arrow = New("TextLabel", { Parent = b, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0), Size = UDim2.fromOffset(12, 12),
+                BackgroundTransparency = 1, Text = "⌄", TextColor3 = C.dim, TextSize = 14, Font = Enum.Font.GothamBold, ZIndex = 5 })
+            local quart = TweenInfo.new(.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+            b.MouseEnter:Connect(function() TweenService:Create(b, quart, { BackgroundColor3 = C.surface:Lerp(dropdownAccent, .12) }):Play() end)
+            b.MouseLeave:Connect(function() TweenService:Create(b, quart, { BackgroundColor3 = C.surface }):Play() end)
             local popup
-            local function close() if popup then popup:Destroy(); popup = nil end end
+            local function close()
+                if popup then popup:Destroy(); popup = nil end
+                TweenService:Create(arrow, quart, { Rotation = 0 }):Play()
+                TweenService:Create(bStroke, quart, { Color = dropdownAccent }):Play()
+            end
             local function set(v, silent)
                 local found = table.find(values, v)
                 if found then idx = found end
-                b.Text = tostring(values[idx] or "\x4eone") .. "\x20⌄"
+                valueLabel.Text = tostring(values[idx] or "None")
                 if values[idx] ~= nil then
                     callback(values[idx])
                     if not silent then
@@ -2987,16 +2476,30 @@ function host.CreateTab()
             end
             local function open()
                 close()
-                popup = New("\x53crollingFrame", { Parent = gui, Position = UDim2.fromOffset(b.AbsolutePosition.X / scale.Scale, (b.AbsolutePosition.Y + b.AbsoluteSize.Y + 4) / scale.Scale),
-                    Size = UDim2.fromOffset(b.AbsoluteSize.X / scale.Scale, math.min(#values * 38, 190)), CanvasSize = UDim2.fromOffset(0, #values * 38),
-                    BackgroundColor3 = C.surface, BorderSizePixel = 0, ScrollBarThickness = 4, ZIndex = 50 })
-                corner(popup, 10); stroke(popup, C.accent, .2)
-                New("\x55IListLayout", { Parent = popup, SortOrder = Enum.SortOrder.LayoutOrder })
-                for _, v in ipairs(values) do
-                    local item = New("\x54extButton", { Parent = popup, Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1, Text = tostring(v),
-                        TextColor3 = C.text, TextSize = 14, Font = Enum.Font.Gotham, ZIndex = 51 })
+                local rowH = 30
+                local fullH = math.min(#values * rowH + 8, 200)
+                local w = b.AbsoluteSize.X / scale.Scale
+                popup = New("ScrollingFrame", { Parent = gui, Position = UDim2.fromOffset(b.AbsolutePosition.X / scale.Scale, (b.AbsolutePosition.Y + b.AbsoluteSize.Y + 4) / scale.Scale),
+                    Size = UDim2.fromOffset(w, 0), CanvasSize = UDim2.fromOffset(0, #values * rowH + 8), BackgroundColor3 = C.surface, BorderSizePixel = 0,
+                    ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent, ClipsDescendants = true, ZIndex = 50 })
+                corner(popup, 2); stroke(popup, C.accent, .35)
+                hudBrackets(popup, 8, 1, C.accent, .45, 52)
+                New("UIPadding", { Parent = popup, PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) })
+                New("UIListLayout", { Parent = popup, SortOrder = Enum.SortOrder.LayoutOrder })
+                for i, v in ipairs(values) do
+                    local selected = i == idx
+                    local item = New("TextButton", { Parent = popup, LayoutOrder = i, Size = UDim2.new(1, 0, 0, rowH), BackgroundColor3 = C.accent,
+                        BackgroundTransparency = selected and .86 or 1, Text = tostring(v), TextColor3 = selected and dropdownAccent:Lerp(C.accent2, .45) or C.text, TextSize = 14,
+                        Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false, ZIndex = 51 })
+                    corner(item, 1)
+                    New("UIPadding", { Parent = item, PaddingLeft = UDim.new(0, 10) })
+                    item.MouseEnter:Connect(function() if not selected then TweenService:Create(item, TweenInfo.new(.12), { BackgroundTransparency = .92 }):Play() end end)
+                    item.MouseLeave:Connect(function() if not selected then TweenService:Create(item, TweenInfo.new(.12), { BackgroundTransparency = 1 }):Play() end end)
                     item.Activated:Connect(function() set(v); close() end)
                 end
+                TweenService:Create(popup, quart, { Size = UDim2.fromOffset(w, fullH) }):Play()
+                TweenService:Create(arrow, quart, { Rotation = 180 }):Play()
+                TweenService:Create(bStroke, quart, { Color = dropdownAccent }):Play()
             end
             local lastOpen = 0
             local function togglePopup()
@@ -3006,6 +2509,16 @@ function host.CreateTab()
                 if popup then close() else open() end
             end
             b.Activated:Connect(togglePopup)
+            addAppearanceEditor(r, label, key, { b }, b, function(color)
+                dropdownAccent = color
+                bStroke.Color = color
+                dropdownGradient.Color = ColorSequence.new(color:Lerp(C.surface, .6), C.surface)
+                arrow.TextColor3 = color
+                if popup then
+                    local popupStroke = popup:FindFirstChildOfClass("\x55IStroke")
+                    if popupStroke then popupStroke.Color = color end
+                end
+            end)
             if NoirPersistence.data.dropdowns[key] ~= nil and values[idx] ~= nil then
                 pcall(callback, values[idx])
             end
@@ -3020,9 +2533,10 @@ function host.CreateTab()
             local key = keyFor(label)
             local r = row(label, 24)
             local savedText = NoirPersistence.data.textboxes[key]
-            local box = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -180, 0, 2), Size = UDim2.fromOffset(180, 20), BackgroundColor3 = C.surface,
+            local box = New("\x54extBox", { Parent = r, Position = UDim2.new(1, -200, 0, 2), Size = UDim2.fromOffset(170, 20), BackgroundColor3 = C.surface,
                 Text = type(savedText) == "\x73tring" and savedText or "", PlaceholderText = NoirTr(label), TextColor3 = C.text, PlaceholderColor3 = C.dim, TextSize = 14, Font = Enum.Font.Gotham, ClearTextOnFocus = false })
-            corner(box, 4); stroke(box, C.border, 0)
+            corner(box, 4); local boxStroke = stroke(box, C.border, 0)
+            addAppearanceEditor(r, label, key, { box }, box, function(color) boxStroke.Color = color end)
             if type(savedText) == "\x73tring" and savedText ~= "" then
                 pcall(callback, savedText)
             end
@@ -3041,11 +2555,14 @@ function host.CreateTab()
                 Instance = r }
         end
         function api:AddParagraph(title, body)
-            local r = row(tostring(title or ""), 68)
+            local r = row(tostring(title or ""), 76)
             if body and tostring(body) ~= "" then
-                local detail = text(r, tostring(body), 12, UDim2.fromOffset(0, 32), true)
+                local detail = text(r, tostring(body), 12, UDim2.fromOffset(0, 30), true)
                 detail.TextWrapped = true
-                detail.Size = UDim2.new(1, 0, 0, 30)
+                detail.TextTruncate = Enum.TextTruncate.AtEnd
+                detail.TextYAlignment = Enum.TextYAlignment.Top
+                detail.ClipsDescendants = true
+                detail.Size = UDim2.new(1, 0, 0, 42)
             end
             return r
         end
@@ -3061,7 +2578,9 @@ function host.CreateTab()
             end
             local swatch = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 2), Size = UDim2.fromOffset(24, 14),
                 BackgroundColor3 = colour, Text = "", TextColor3 = C.text, TextSize = 11, Font = Enum.Font.GothamBold, AutoButtonColor = false })
-            corner(swatch, 4); stroke(swatch, C.border, 0)
+            corner(swatch, 4); local swatchStroke = stroke(swatch, C.border, 0)
+            swatch.Position = UDim2.new(1, -30, 0, 2)
+            addAppearanceEditor(r, label, key, { swatch }, swatch, function(color) swatchStroke.Color = color end)
             local popup, inputChanged, inputEnded, colorDirty = nil, nil, nil, false
             local function storeColor()
                 NoirPersistence.data.colors[colorKey] = { colour.R, colour.G, colour.B }
@@ -3108,7 +2627,7 @@ function host.CreateTab()
                 local preview = New("\x46rame", { Parent = currentCard, Position = UDim2.fromOffset(17, 49), Size = UDim2.fromOffset(186, 204), BackgroundColor3 = colour, BorderSizePixel = 0, ZIndex = 73 })
                 corner(preview, 11); stroke(preview, C.border, .2)
                 local previewHex = New("\x54extLabel", { Parent = preview, AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(.5, 0, 1, -14), Size = UDim2.fromOffset(118, 32),
-                    BackgroundColor3 = Color3.fromRGB(24, 26, 30), BackgroundTransparency = .15, Text = "", TextColor3 = C.text, TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 74 })
+                    BackgroundColor3 = Color3.fromRGB(17, 39, 42), BackgroundTransparency = .15, Text = "", TextColor3 = C.text, TextSize = 12, Font = Enum.Font.GothamBold, ZIndex = 74 })
                 corner(previewHex, 8)
                 New("\x54extLabel", { Parent = currentCard, Position = UDim2.fromOffset(17, 273), Size = UDim2.fromOffset(186, 18), BackgroundTransparency = 1,
                     Text = "\x4cIVE PREVIEW", TextColor3 = C.dim, TextSize = 11, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 73 })
@@ -3225,9 +2744,10 @@ function host.CreateTab()
             local key = keyFor(label)
             local savedKey = NoirPersistence.data.keybinds[key] or default
             local r = row(label, 20)
-            local btn = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 1), Size = UDim2.fromOffset(44, 18),
+            local btn = New("\x54extButton", { Parent = r, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -30, 0, 1), Size = UDim2.fromOffset(44, 18),
                 BackgroundColor3 = C.surface, Text = tostring(savedKey), TextColor3 = C.text, TextSize = 12, Font = Enum.Font.Gotham, AutoButtonColor = false })
-            corner(btn, 4); stroke(btn, C.border, 0)
+            corner(btn, 4); local bindStroke = stroke(btn, C.border, 0)
+            addAppearanceEditor(r, label, key, { btn }, btn, function(color) bindStroke.Color = color end)
             local listening, currentKey, conn = false, savedKey, nil
             if NoirPersistence.data.keybinds[key] ~= nil and currentKey ~= nil then
                 pcall(callback, currentKey)
@@ -3250,157 +2770,198 @@ function host.CreateTab()
             end)
             return { SetValue = function(_, v) currentKey = v; btn.Text = tostring(v) end, GetValue = function() return currentKey end }
         end
-        api.__panel = panel
         return api
     end
     return tab
 end
 
-local config = {
-    enabled = false,
-    targetMode = "\x4durderer",
-    hitPart = "\x48umanoidRootPart",
-    fovSize = 0,
-    showFov = false,
-    aimKey = "\x4eone",
-    toggleKey = "\x4eone",
-    autoFire = false,
-    autoFireKey = "\x4eone",
-    shotMethod = "\x52emote",
-    wallCheck = false,
-    piercerBullet = false,
-    ignoreDead = true,
-    ignoreFriends = false,
-    maxDistance = 0,
-    adaptive = true,
-    fixedLead = 0.075,
-    extraLead = 0.02,
-    targetPart = "\x48umanoidRootPart",
-    alignDirection = true,
-    prioritizePing = true,
-    predictJump = false,
-    predictLag = true,
-    maxSimulationMs = 180,
-    predictionIntervalMs = 72,
-    manualPingMs = 80,
-    offsetX = 0, offsetY = 0, offsetZ = 0,
-    horizontalMultiplier = 100, verticalMultiplier = 100,
-    knifeAim = {
-        adaptive = true,
-        fixedLead = 0.075,
-        extraLead = 0.02,
-        prioritizePing = true,
-        predictJump = false,
-        predictLag = true,
-        maxSimulationMs = 180,
-        predictionIntervalMs = 72,
-        manualPingMs = 80,
-        offsetX = 0, offsetY = 0, offsetZ = 0,
-        horizontalMultiplier = 100, verticalMultiplier = 100,
-    },
-    knifeEnabled = false,
-    knifeWallCheck = false,
-    knifePrioritizeSheriff = false,
-    knifeAutoThrow = false,
-     
-    knifeDualEffect = false,
-    knifeInstantThrow = false,
-    knifeFastThrow = false,
-    knifeAutoKillEveryone = false,
-    knifeAutoKillSheriff = false,
-    knifeKillPlayer = "\x4e/A",
-    knifeSheriffBind = false,
-    knifeSheriffBindShape = "\x43ircle",
-     
-    knifeThrownAura = true,
-    knifeRadius = 15,
-    showShootButton = false,
-    lockShootButton = false,
-     
-    gunDualEffect = false,
-    gunTriggerBot = false,
-    gunTriggerBotWallCheck = true,
-    gunTriggerBotPrediction = true,
-    selectedPlayer = nil,
-}
+-- открытие окна (пружинная анимация)
+local function runLoader(onDone)
+    local camera = Workspace.CurrentCamera
+    local view = camera and camera.ViewportSize or Vector2.new(1280, 720)
+    local parentScale = math.max(.35, scale.Scale)
+    local fit = math.clamp(math.min(view.X / (452 * parentScale), view.Y / (252 * parentScale), 1), .68, 1)
+    local overlay = New("Frame", { Parent = gui, Name = "NoirLoader", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = C.base, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 100, Active = true })
+    local shell = New("Frame", { Parent = overlay, Name = "NoirLoaderShell", AnchorPoint = Vector2.new(.5, .5),
+        Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(430, 214),
+        BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 101 })
+    local shellScale = New("UIScale", { Parent = shell, Scale = fit * .94 })
+    local card = New("Frame", { Parent = shell, Name = "NoirLoaderCard", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = C.panel, BackgroundTransparency = .18, BorderSizePixel = 0, ZIndex = 102, ClipsDescendants = true })
+    corner(card, 10); stroke(card, C.border, .16, 1.2)
+    New("UIGradient", { Parent = card, Rotation = 90, Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 34, 40)),
+        ColorSequenceKeypoint.new(.58, C.panel),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 14, 20)),
+    }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .08), NumberSequenceKeypoint.new(1, .02) }) })
+    hudBrackets(card, 18, 1.6, C.accent2, .03, 108)
+    local topAccent = New("Frame", { Parent = card, Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -40, 0, 2),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 104, ClipsDescendants = true })
+    local scan = New("Frame", { Parent = topAccent, Position = UDim2.new(-.25, 0, 0, 0), Size = UDim2.new(.22, 0, 1, 0),
+        BackgroundColor3 = C.accent2, BackgroundTransparency = .12, BorderSizePixel = 0, ZIndex = 105 })
+    local scanGradient = New("UIGradient", { Parent = scan, Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(.5, .08), NumberSequenceKeypoint.new(1, 1) }) })
+    local scanTween = TweenService:Create(scan, TweenInfo.new(1.5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
+        { Position = UDim2.new(1, 0, 0, 0) })
+    scanTween:Play()
 
- 
-NoirPersistence.data.toggles["\x53ILENT AIM::Use Gun Dual Effect"] = false
-NoirPersistence.data.toggles["\x4bNIFE SILENT AIM::Use Knife Dual Effect"] = false
- 
-do
-    local oldProjectedDual = NoirGenv().__NoirCameraProjectedDual
-    if type(oldProjectedDual) == "\x74able" and type(oldProjectedDual.Stop) == "\x66unction" then pcall(oldProjectedDual.Stop, oldProjectedDual) end
-    NoirGenv().__NoirCameraProjectedDual = nil
-end
-NoirPersistence.Save()
+    local logo = New("Frame", { Parent = card, Position = UDim2.fromOffset(24, 22), Size = UDim2.fromOffset(48, 48),
+        BackgroundColor3 = C.surface, BackgroundTransparency = .12, BorderSizePixel = 0, ZIndex = 104 })
+    corner(logo, 7); stroke(logo, C.accent, .16, 1.3)
+    hudBrackets(logo, 9, 1, C.accent2, .08, 107)
+    local logoText = New("TextLabel", { Parent = logo, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+        Text = "N", TextColor3 = C.accent2, TextSize = 25, Font = Enum.Font.GothamBlack, ZIndex = 106 })
+    local logoGlow = New("UIStroke", { Parent = logoText, Color = C.accent, Thickness = 1, Transparency = .66 })
 
-local murderer, sheriff, hero
-local cachedPing = 0.05
-local redirected = 0
-local hooked = false
-local running = true
-local shootButton, shootGui, shootBusy = nil, nil, false
-local buttonShotActive, buttonShotTarget = false, nil
-local presetName = "\x64efault"
-local PRESET_FOLDER = PRESETS_FOLDER
-local revertControls, revertToggleStates, syncRevertControls = {}, {}, nil
-local noirMirrorControls = {}
-local presetDropdown
-local motionPart, motionPosition, motionTime
-local measuredVelocity = Vector3.zero
-local motionSamples = {}
-local previousEstimatedVelocity = Vector3.zero
-local estimatedAcceleration = Vector3.zero
-local lastAutoTune = 0
-local roundTimerEndsAt, roundPendingStart
-local roundState = "\x77aiting"
-local roundResetToken = 0
-local lastRoundResetAt = os.clock()
-local instantRoleDetection = false
-local autoNotifyRoles = false
-local announcedRoles = {}
-local roleCache = {}
-local playerData = {}
-local aimHeld = true
-local autoFireHeld = false
+    local eyebrow = text(card, "NOIR  //  SYSTEMS", 9, UDim2.fromOffset(84, 19), true)
+    eyebrow.Font = Enum.Font.GothamBold; eyebrow.TextColor3 = C.accent2
+    eyebrow.Size = UDim2.new(1, -190, 0, 14); eyebrow.ZIndex = 105
+    local title = text(card, "NOIR HUB", 24, UDim2.fromOffset(84, 33))
+    title.Font = Enum.Font.GothamBlack; title.TextColor3 = C.text
+    title.Size = UDim2.new(1, -190, 0, 30); title.ZIndex = 105
+    local subtitle = text(card, "HUD INTERFACE  •  V4.0", 10, UDim2.fromOffset(86, 63), true)
+    subtitle.Font = Enum.Font.GothamMedium; subtitle.TextColor3 = C.dim
+    subtitle.Size = UDim2.new(1, -190, 0, 16); subtitle.ZIndex = 105
 
-local cachedPlayers = {}
-local function refreshPlayerCache() cachedPlayers = Players:GetPlayers() end
-refreshPlayerCache()
-local function getPlayers() return cachedPlayers end
-Players.PlayerAdded:Connect(refreshPlayerCache)
-Players.PlayerRemoving:Connect(function(player)
-    refreshPlayerCache()
-    playerData[player.UserId], roleCache[player.UserId], announcedRoles[player.UserId] = nil, nil, nil
-    local changed = murderer == player or sheriff == player or hero == player
-    if murderer == player then murderer = nil end
-    if sheriff == player then sheriff = nil end
-    if hero == player then hero = nil end
-    if changed then
-        local bus = NoirGenv().__NoirV4RoleBus
-        if bus and bus.Emit then bus:Emit() end
+    local statePill = New("Frame", { Parent = card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -23, 0, 35),
+        Size = UDim2.fromOffset(92, 25), BackgroundColor3 = C.accent, BackgroundTransparency = .9,
+        BorderSizePixel = 0, ZIndex = 104 })
+    corner(statePill, 7); stroke(statePill, C.accent, .42, 1)
+    local stateDot = New("Frame", { Parent = statePill, Position = UDim2.fromOffset(10, 9), Size = UDim2.fromOffset(7, 7),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 106 })
+    corner(stateDot, 2)
+    local stateText = text(statePill, "BOOTING", 9, UDim2.fromOffset(24, 4))
+    stateText.Font = Enum.Font.GothamBold; stateText.TextColor3 = C.accent2
+    stateText.Size = UDim2.new(1, -29, 0, 16); stateText.ZIndex = 106
+    local pulseTween = TweenService:Create(stateDot, TweenInfo.new(.72, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { BackgroundTransparency = .58 })
+    pulseTween:Play()
+
+    New("Frame", { Parent = card, Position = UDim2.fromOffset(24, 83), Size = UDim2.new(1, -48, 0, 1),
+        BackgroundColor3 = C.border, BackgroundTransparency = .38, BorderSizePixel = 0, ZIndex = 104 })
+    local section = text(card, "BOOT SEQUENCE", 9, UDim2.fromOffset(24, 94), true)
+    section.Font = Enum.Font.GothamBold; section.TextColor3 = C.dim; section.Size = UDim2.fromOffset(160, 14); section.ZIndex = 105
+    local percent = text(card, "00%", 12, UDim2.new(1, -72, 0, 91), false)
+    percent.Font = Enum.Font.GothamBold; percent.TextColor3 = C.accent2
+    percent.Size = UDim2.fromOffset(48, 18); percent.TextXAlignment = Enum.TextXAlignment.Right; percent.ZIndex = 105
+    local status = text(card, "Preparing interface…", 13, UDim2.fromOffset(24, 111), false)
+    status.Font = Enum.Font.GothamMedium; status.TextColor3 = C.text
+    status.Size = UDim2.new(1, -48, 0, 20); status.ZIndex = 105
+
+    local segmentCount = 24
+    local segmentWidth, segmentGap, segmentStart = 11, 4, 28
+    local segments = {}
+    for i = 1, segmentCount do
+        local segment = New("Frame", { Parent = card,
+            Position = UDim2.fromOffset(segmentStart + (i - 1) * (segmentWidth + segmentGap), 145),
+            Size = UDim2.fromOffset(segmentWidth, 7), BackgroundColor3 = C.off, BorderSizePixel = 0, ZIndex = 105 })
+        corner(segment, 2)
+        New("UIStroke", { Parent = segment, Color = C.border, Thickness = .6, Transparency = .72 })
+        segments[i] = segment
     end
-end)
-
-function notify(msg, time)
-    if type(host.Notify) == "\x66unction" then pcall(host.Notify, "\x4dM2 Silent Aim: " .. tostring(msg), time or 3) end
-end
--- Satellite chunks (Troll / SNPWARE / Emotes) call shared.Notify directly; expose it so they never hit a nil call.
-pcall(function()
-    shared.Notify = function(textValue, duration)
-        if type(host.Notify) == "\x66unction" then pcall(host.Notify, tostring(textValue), tonumber(duration) or 3) end
+    local phaseLabels = {}
+    for i, labelText in ipairs({ "CORE", "CONTROLS", "READY" }) do
+        local phase = text(card, labelText, 8, UDim2.fromOffset(28 + (i - 1) * 126, 160), true)
+        phase.Font = Enum.Font.GothamBold; phase.TextColor3 = C.dim
+        phase.Size = UDim2.fromOffset(98, 14); phase.ZIndex = 105
+        phaseLabels[i] = phase
     end
-    NoirGenv().Notify = shared.Notify
-end)
+    New("Frame", { Parent = card, Position = UDim2.fromOffset(24, 184), Size = UDim2.new(1, -48, 0, 1),
+        BackgroundColor3 = C.border, BackgroundTransparency = .65, BorderSizePixel = 0, ZIndex = 104 })
+    local footer = text(card, "SYNCHRONIZING NOIR COMPONENTS", 8, UDim2.fromOffset(24, 190), true)
+    footer.Font = Enum.Font.GothamBold; footer.TextColor3 = C.dim
+    footer.Size = UDim2.new(1, -48, 0, 12); footer.ZIndex = 105
 
+    overlay.BackgroundTransparency = 1
+    TweenService:Create(overlay, TweenInfo.new(.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { BackgroundTransparency = .42 }):Play()
+    TweenService:Create(shellScale, TweenInfo.new(.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Scale = fit }):Play()
+    TweenService:Create(card, TweenInfo.new(.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        { BackgroundTransparency = .06 }):Play()
+    logo.Rotation = -8
+    TweenService:Create(logo, TweenInfo.new(.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Rotation = 0 }):Play()
+
+    local phaseText = {
+        "Initializing HUD core…",
+        "Building controls and icons…",
+        "Synchronizing interface…",
+    }
+    for i = 1, segmentCount do
+        task.wait(.042)
+        local fraction = i / segmentCount
+        local litCount = math.floor(fraction * segmentCount + .5)
+        for j = 1, segmentCount do
+            if j <= litCount then
+                segments[j].BackgroundColor3 = (j == litCount) and C.accent2 or C.accent
+                segments[j].BackgroundTransparency = 0
+            end
+        end
+        local phaseIndex = math.min(3, math.ceil(fraction * 3))
+        for j, labelObject in ipairs(phaseLabels) do
+            labelObject.TextColor3 = j < phaseIndex and C.accent or (j == phaseIndex and C.accent2 or C.dim)
+        end
+        percent.Text = string.format("%02d%%", math.floor(fraction * 100 + .5))
+        status.Text = phaseText[phaseIndex]
+        if i == segmentCount then
+            stateText.Text = "READY"
+            status.Text = "Interface ready"
+            footer.Text = "NOIR HUD  •  ONLINE"
+        end
+        if i % 3 == 0 then
+            local glow = New("UIStroke", { Parent = card, Color = C.accent, Thickness = 1.5, Transparency = .75 })
+            TweenService:Create(glow, TweenInfo.new(.16), { Transparency = 1 }):Play()
+            task.delay(.18, function() if glow.Parent then glow:Destroy() end end)
+        end
+    end
+    task.wait(.12)
+    pulseTween:Cancel()
+    local fade = TweenService:Create(overlay, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { BackgroundTransparency = 1 })
+    local shrink = TweenService:Create(shellScale, TweenInfo.new(.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+        { Scale = fit * .94 })
+    TweenService:Create(card, TweenInfo.new(.22, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
+    fade:Play(); shrink:Play()
+    fade.Completed:Wait()
+    scanTween:Cancel()
+    overlay:Destroy()
+    onDone()
+end
+refreshCanvas()
+local function openWindow()
+    RunService.RenderStepped:Wait()
+    if not win.Parent then return end
+    local targetPosition = win.Position
+    win.Position = targetPosition + UDim2.fromOffset(0, 10)
+    win.BackgroundTransparency = 1
+    win.Rotation = 0
+    winScale.Scale = .965
+    win.Visible = true
+    TweenService:Create(win, TweenInfo.new(.34, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = .45, Rotation = 0 }):Play()
+    TweenService:Create(winScale, TweenInfo.new(.34, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+    local tint = win:FindFirstChild("NoirTint")
+    if tint then
+        tint.BackgroundTransparency = 1
+        TweenService:Create(tint, TweenInfo.new(.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { BackgroundTransparency = 0 }):Play()
+    end
+end
+task.spawn(function() runLoader(openWindow) end)
+
+-- ==== Noir Core export: мост между новым меню и игровыми функциями ====
 NoirGenv().__NoirCore = {
-    host = host, C = C, New = New, corner = corner, stroke = stroke, text = text,
-    TweenService = TweenService, dashboard = dashboard, win = win, gui = gui,
-    NoirPersistence = NoirPersistence, Players = Players, LocalPlayer = LocalPlayer,
-    ReplicatedStorage = ReplicatedStorage, RunService = RunService, Stats = Stats,
-    CoreGui = CoreGui, UIS = UIS,
+    host = host, gui = gui, win = win, winScale = winScale, C = C,
+    New = New, corner = corner, stroke = stroke, ringStroke = ringStroke,
+    styleCircularButton = styleCircularButton, topButton = topButton,
+    NoirPersistence = NoirPersistence, selectPage = selectPage,
+    TweenService = TweenService, text = text, dashboard = dashboard,
+    Players = Players, LocalPlayer = LocalPlayer, UIS = UIS, RunService = RunService,
+    Stats = Stats, CoreGui = CoreGui, ReplicatedStorage = ReplicatedStorage,
+    HttpService = HttpService, Lighting = Lighting, Workspace = Workspace,
 }
+
+
 end
 __noirW1b()
 end
@@ -5018,7 +4579,7 @@ task.defer(function()
     pcall(function()
         local pers = core2.NoirPersistence
         if pers and pers.data and pers.data.sliders then
-            openAlpha = tonumber(pers.data.sliders["Noir::WindowAlpha"]) or .38
+            openAlpha = tonumber(pers.data.sliders["Noir::WindowAlpha"]) or .08
         end
     end)
     TweenService2:Create(win2, TweenInfo.new(.56, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = targetPosition, BackgroundTransparency = openAlpha, Rotation = 0 }):Play()

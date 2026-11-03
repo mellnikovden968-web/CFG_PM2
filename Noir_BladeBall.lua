@@ -1,10 +1,3 @@
---[[
-    Noir Blade Ball • NovaUI Refined build
-    Игровая логика Blade Ball + НОВОЕ меню из NovaUI_refined (HUD edition).
-    Старое меню полностью удалено; все функции (Auto Parry, Detection, Spam,
-    Triggerbot, Skin Changer, Screen Buttons, Status, модули Visuals/Player/
-    Blatant/Misc и т.д.) подключены к новому интерфейсу.
-]]
 
 
 
@@ -9237,16 +9230,6 @@ end
 
 
 
-
---[[
-    Noir UI — HUD edition: интерфейс хаба Noir отдельным файлом, без игровых функций.
-    Стиль: Noir HUD — бирюзовые рамки, векторные иконки, пружинные анимации и загрузка.
-    У интерактивных элементов есть отдельный редактор формы, акцентного цвета и размера; параметры сохраняются.
-
-    Игровое меню подключается после запуска интерфейса: игровой код берёт
-    NoirGenv().__NoirUI.host и создаёт секции/элементы (AddSection, AddToggle,
-    AddSlider, AddDropdown, AddButton, AddTextBox, AddKeybind, AddColorpicker...).
-]]
 local function __noirW1a()
 if type(NoirGenv) ~= "\x66unction" then
     NoirGenv = function()
@@ -12020,27 +12003,6 @@ function host.CreateTab()
     return tab
 end
 
--- ════════════════════════ маршрутизация секций по страницам ════════════════════════
--- Разделы раскладываются по страницам по префиксу названия:
---   "MAIN • ", "VISUAL • ", "WORLD • ", "MAP • ", "FARM • ", "MISC • ", "TROLL • ", "EMOTES • ", без префикса — страница Page A.
--- (демо-наполнение удалено: вместо него ниже подключено меню Blade Ball)
-
--- живые данные на главной (FPS, пинг, число игроков)
-do
-    local acc, frames = 0, 0
-    RunService.Heartbeat:Connect(function(dt)
-        if not gui.Parent then return end
-        acc += dt; frames += 1
-        if acc >= .5 then
-            fpsText.Text = tostring(math.floor(frames / acc + .5))
-            local ok, ping = pcall(function() return math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
-            pingText.Text = (ok and tostring(ping) or "--") .. " ms"
-            playerText.Text = tostring(#Players:GetPlayers())
-            acc, frames = 0, 0
-        end
-    end)
-end
-
 -- открытие окна (пружинная анимация)
 local function runLoader(onDone)
     local camera = Workspace.CurrentCamera
@@ -12215,11 +12177,16 @@ local function openWindow()
 end
 task.spawn(function() runLoader(openWindow) end)
 
--- ════════════════════════ экспорт API для игрового меню ════════════════════════
-NoirGenv().__NoirUI = {
+-- ==== Noir Core export: мост между новым меню и игровыми функциями ====
+NoirGenv().__NoirCore = {
     host = host, gui = gui, win = win, winScale = winScale, C = C,
-    New = New, corner = corner, stroke = stroke, text = text, ringStroke = ringStroke,
-    NoirPersistence = NoirPersistence,
+    New = New, corner = corner, stroke = stroke, ringStroke = ringStroke,
+    styleCircularButton = styleCircularButton, topButton = topButton,
+    NoirPersistence = NoirPersistence, selectPage = selectPage,
+    TweenService = TweenService, text = text, dashboard = dashboard,
+    Players = Players, LocalPlayer = LocalPlayer, UIS = UIS, RunService = RunService,
+    Stats = Stats, CoreGui = CoreGui, ReplicatedStorage = ReplicatedStorage,
+    HttpService = HttpService, Lighting = Lighting, Workspace = Workspace,
 }
 
 
@@ -12228,66 +12195,16 @@ __noirW1b()
 end
 __noirW1a()
 
-
--- ═══ подключение игрового меню к НОВОМУ интерфейсу (NovaUI refined) ═══
-local __noirUI = NoirGenv().__NoirUI or {}
-local host = __noirUI.host
-local gui = __noirUI.gui
-local win = __noirUI.win
-local winScale = __noirUI.winScale
-local C = __noirUI.C
-local New = __noirUI.New
-local corner = __noirUI.corner
-local stroke = __noirUI.stroke
-
--- круглая плавающая кнопка в стиле Noir HUD (неоновое кольцо + звук нажатия)
-local gradientStrokes = { fast = {} }
-local function styleCircularButton(b, diameter)
-    b.BackgroundColor3 = Color3.fromRGB(8, 20, 23)
-    b.BackgroundTransparency = .82
-    b.BorderSizePixel = 0
-    b.AutoButtonColor = false
-    b.ClipsDescendants = false
-    b.ZIndex = 20
-    corner(b, math.floor(diameter / 2))
-    local outer = New("UIStroke", { Parent = b, Color = Color3.fromRGB(120, 255, 248), Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    local gradient = New("UIGradient", { Parent = outer, Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(21, 48, 51)),
-        ColorSequenceKeypoint.new(.22, Color3.fromRGB(119, 252, 245)),
-        ColorSequenceKeypoint.new(.48, Color3.fromRGB(39, 85, 86)),
-        ColorSequenceKeypoint.new(.72, Color3.fromRGB(120, 255, 248)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(27, 60, 62)),
-    }) })
-    table.insert(gradientStrokes.fast, gradient)
-    local inner = New("UIStroke", { Parent = b, Color = Color3.fromRGB(54, 118, 117), Transparency = .5, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    local innerGradient = gradient:Clone(); innerGradient.Rotation = 180; innerGradient.Parent = inner
-    table.insert(gradientStrokes.fast, innerGradient)
-    local sound = Instance.new("Sound")
-    sound.Name = "NoirButtonSound"; sound.SoundId = "rbxassetid://3868133279"; sound.Volume = .35; sound.Parent = b
-    local baseTextSize = b.TextSize
-    local TweenService = game:GetService("TweenService")
-    b.MouseEnter:Connect(function()
-        TweenService:Create(b, TweenInfo.new(.18), { BackgroundTransparency = .68, TextSize = baseTextSize + 1 }):Play()
-    end)
-    b.MouseLeave:Connect(function()
-        TweenService:Create(b, TweenInfo.new(.22), { BackgroundTransparency = .82, TextSize = baseTextSize }):Play()
-    end)
-    b.MouseButton1Down:Connect(function()
-        sound:Play()
-        TweenService:Create(b, TweenInfo.new(.14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(17, 40, 42), Size = UDim2.fromOffset(diameter + 6, diameter + 6) }):Play()
-    end)
-    b.MouseButton1Up:Connect(function()
-        TweenService:Create(b, TweenInfo.new(.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { BackgroundColor3 = Color3.fromRGB(8, 20, 23), Size = UDim2.fromOffset(diameter, diameter) }):Play()
-    end)
-    return b
-end
-game:GetService("RunService").RenderStepped:Connect(function(dt)
-    local fast = gradientStrokes.fast
-    if #fast == 0 then return end
-    for _, g in ipairs(fast) do
-        if g.Parent then g.Rotation = (g.Rotation + 60 * dt) % 360 end
-    end
-end)
+local __noirCore = NoirGenv().__NoirCore or {}
+local host = __noirCore.host
+local gui = __noirCore.gui
+local win = __noirCore.win
+local winScale = __noirCore.winScale
+local C = __noirCore.C
+local New = __noirCore.New
+local styleCircularButton = __noirCore.styleCircularButton
+local corner = __noirCore.corner
+local stroke = __noirCore.stroke
 
 
 
@@ -12312,7 +12229,7 @@ do
 
     local tab = host.CreateTab()
 
-    local sMain = tab:AddSection("MAIN • AUTO PARRY", "core combat automation")
+    local sMain = tab:AddSection("AUTO PARRY", "core combat automation")
     sMain:AddToggle("Enabled", function(on)
         setProp("__autoparry_enabled", on)
         if not on then setProp("__play_animation", false) end
@@ -12322,7 +12239,7 @@ do
     sMain:AddDropdown("Parry Mode", { "Remote", "Keypress" }, function(v) genv.AutoParryMode = v end)
     sMain:AddSlider("Accuracy", 1, 100, 50, function(v)
         setProp("__accuracy", tonumber(v) or 50)
-        pcall(function() if update_divisor then update_divisor() end end)
+        pcall(function() if Update_Divisor then Update_Divisor() end end)
     end)
     sMain:AddDropdown("Parry Type", CURVE_NAMES, function(v)
         Selected_Parry_Type = v
@@ -12350,14 +12267,14 @@ do
     sMain:AddToggle("Auto Ability", function(on) genv.AutoAbility = on end)
     sMain:AddLabel("High ping 200-390ms: включи Random Accuracy или ставь Accuracy 5-15; движок подстроен под пинг до 400мс.")
 
-    local sDet = tab:AddSection("MAIN • DETECTION", "special ball events")
+    local sDet = tab:AddSection("DETECTION", "special ball events")
     local detKeys = { { "Infinity Detection", "__infinity" }, { "Death Slash Detection", "__deathslash" },
         { "Time Hole Detection", "__timehole" }, { "Slashes Of Fury", "__slashesoffury" }, { "Phantom Detection", "__phantom" } }
     for _, dk in ipairs(detKeys) do
         sDet:AddToggle(dk[1], function(on) pcall(function() System.__config.__detections[dk[2]] = on end) end)
     end
 
-    local sSpam = tab:AddSection("MAIN • SPAM / TRIGGER", "press patterns")
+    local sSpam = tab:AddSection("SPAM / TRIGGER", "press patterns")
     sSpam:AddToggle("Triggerbot", function(on)
         pcall(function() System.triggerbot.enable(on) end)
         System.__triggerbot.__enabled = on
@@ -12376,7 +12293,7 @@ do
     sSpam:AddParagraph("Triggerbot", "Автоматически жмёт блок в тот момент, когда мяч уже нацелен и летит в тебя — реакция срабатывает по триггеру, без постоянного авто-парри. Полезен как «подстраховка» рядом с Auto Parry.")
     sSpam:AddLabel("Manual Spam/Auto Spam: жмут блок серией — выбери режим Remote/Keypress ниже.")
 
-    local sSkin = tab:AddSection("MAIN • SKIN CHANGER", "real sword swap - model + animations + FX")
+    local sSkin = tab:AddSection("SKIN CHANGER", "real sword swap - model + animations + FX")
     genv.swordModel = type(genv.swordModel) == "string" and genv.swordModel or ""
     genv.swordAnimations = type(genv.swordAnimations) == "string" and genv.swordAnimations or ""
     genv.swordFX = type(genv.swordFX) == "string" and genv.swordFX or ""
@@ -12560,7 +12477,7 @@ do
             Notify(on and "Manual Spam enabled" or "Manual Spam disabled")
         end)
 
-    local sBtn = tab:AddSection("MAIN • SCREEN BUTTONS", "floating on-screen quick buttons")
+    local sBtn = tab:AddSection("SCREEN BUTTONS", "floating on-screen quick buttons")
     sBtn:AddToggle("Trigger Button", function(on)
         trigBtn.button.Visible = on
         if on then trigBtn.paint(false) end
@@ -12581,7 +12498,7 @@ do
     end)
     sBtn:AddLabel("Round buttons: tap to toggle, drag to move.")
 
-    local sStat = tab:AddSection("MAIN • STATUS", "live telemetry")
+    local sStat = tab:AddSection("STATUS", "live telemetry")
     local labCapture = sStat:AddLabel("Capture: —")
     local labAP = sStat:AddLabel("Auto Parry: —")
     local labParries = sStat:AddLabel("Active Parries: —")
@@ -12616,8 +12533,33 @@ do
         end
     end)
 
-    -- окно нового интерфейса открывается само (boot-анимация NovaUI);
-    -- старую перекомпоновку сайдбара и анимацию win/winScale убрали вместе со старым меню.
+    do
+        local keep = { Home = true, Main = true, Combat = true, Misc = true }
+        local sidebar
+        for _, ch in ipairs(win:GetChildren()) do
+            if ch:IsA("Frame") and ch.Size == UDim2.new(0, 78, 1, 0) then sidebar = ch break end
+        end
+        if sidebar then
+            local visible = {}
+            for _, b in ipairs(sidebar:GetChildren()) do
+                if b:IsA("TextButton") and b.Name ~= "" then
+                    if keep[b.Name] then
+                        table.insert(visible, b)
+                    else
+                        b.Visible = false
+                    end
+                end
+            end
+            table.sort(visible, function(a, b) return a.Position.Y.Offset < b.Position.Y.Offset end)
+            for i, b in ipairs(visible) do
+                b.Position = UDim2.fromOffset(19, 104 + (i - 1) * 42)
+            end
+        end
+    end
+
+    win.Visible = true
+    winScale.Scale = .68
+    TweenService:Create(winScale, TweenInfo.new(.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 
     genv.NoirS6 = { gui = gui, host = host }
 end
