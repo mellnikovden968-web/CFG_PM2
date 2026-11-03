@@ -2832,50 +2832,158 @@ end
 
 -- открытие окна (пружинная анимация)
 local function runLoader(onDone)
-    local overlay = New("Frame", { Parent = gui, Name = "NoirLoader", AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
-        Size = UDim2.fromOffset(340, 150), BackgroundColor3 = C.base, BackgroundTransparency = .08, BorderSizePixel = 0, ZIndex = 100 })
-    corner(overlay, 4)
-    stroke(overlay, C.border, .1)
-    hudBrackets(overlay, 16, 2, C.accent2, 0, 102)
-    local ringHolder = New("Frame", { Parent = overlay, Position = UDim2.fromOffset(24, 30), Size = UDim2.fromOffset(60, 60),
-        BackgroundColor3 = C.surface, BackgroundTransparency = .22, BorderSizePixel = 0, ZIndex = 101 })
-    corner(ringHolder, 7); stroke(ringHolder, C.accent, .18, 1.5)
-    hudBrackets(ringHolder, 12, 1.4, C.accent2, .04, 103)
-    local ringStrokeObj = New("UIStroke", { Parent = ringHolder, Color = C.accent2, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    local ringGradient = New("UIGradient", { Parent = ringStrokeObj, Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(.22, 0), NumberSequenceKeypoint.new(.23, 1), NumberSequenceKeypoint.new(.5, 1),
-        NumberSequenceKeypoint.new(.51, 0), NumberSequenceKeypoint.new(.72, 0), NumberSequenceKeypoint.new(.73, 1), NumberSequenceKeypoint.new(1, 1) }) })
-    NoirFX.spin(ringGradient)
-    local innerRing = New("Frame", { Parent = ringHolder, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(34, 34),
-        BackgroundColor3 = C.base, BackgroundTransparency = .08, BorderSizePixel = 0, ZIndex = 101 })
-    corner(innerRing, 4)
-    New("UIStroke", { Parent = innerRing, Color = C.accent, Thickness = 1.3, Transparency = .35, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    local loaderMark = New("TextLabel", { Parent = innerRing, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-        Text = "N", TextColor3 = C.accent2, TextSize = 22, Font = Enum.Font.GothamBlack, ZIndex = 102 })
-    local title = text(overlay, "NOIR HUB", 22, UDim2.fromOffset(104, 28)); title.ZIndex = 101; title.Size = UDim2.new(1, -120, 0, 30)
-    local subtitle = text(overlay, "initializing Noir Hub", 13, UDim2.fromOffset(105, 60), true); subtitle.ZIndex = 101; subtitle.Size = UDim2.new(1, -120, 0, 20)
+    local camera = Workspace.CurrentCamera
+    local view = camera and camera.ViewportSize or Vector2.new(1280, 720)
+    local parentScale = math.max(.35, scale.Scale)
+    local fit = math.clamp(math.min(view.X / (452 * parentScale), view.Y / (252 * parentScale), 1), .68, 1)
+    local overlay = New("Frame", { Parent = gui, Name = "NoirLoader", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = C.base, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 100, Active = true })
+    local shell = New("Frame", { Parent = overlay, Name = "NoirLoaderShell", AnchorPoint = Vector2.new(.5, .5),
+        Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(430, 214),
+        BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 101 })
+    local shellScale = New("UIScale", { Parent = shell, Scale = fit * .94 })
+    local card = New("Frame", { Parent = shell, Name = "NoirLoaderCard", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = C.panel, BackgroundTransparency = .18, BorderSizePixel = 0, ZIndex = 102, ClipsDescendants = true })
+    corner(card, 10); stroke(card, C.border, .16, 1.2)
+    New("UIGradient", { Parent = card, Rotation = 90, Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 34, 40)),
+        ColorSequenceKeypoint.new(.58, C.panel),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 14, 20)),
+    }), Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, .08), NumberSequenceKeypoint.new(1, .02) }) })
+    hudBrackets(card, 18, 1.6, C.accent2, .03, 108)
+    local topAccent = New("Frame", { Parent = card, Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -40, 0, 2),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 104, ClipsDescendants = true })
+    local scan = New("Frame", { Parent = topAccent, Position = UDim2.new(-.25, 0, 0, 0), Size = UDim2.new(.22, 0, 1, 0),
+        BackgroundColor3 = C.accent2, BackgroundTransparency = .12, BorderSizePixel = 0, ZIndex = 105 })
+    local scanGradient = New("UIGradient", { Parent = scan, Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(.5, .08), NumberSequenceKeypoint.new(1, 1) }) })
+    local scanTween = TweenService:Create(scan, TweenInfo.new(1.5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
+        { Position = UDim2.new(1, 0, 0, 0) })
+    scanTween:Play()
+
+    local logo = New("Frame", { Parent = card, Position = UDim2.fromOffset(24, 22), Size = UDim2.fromOffset(48, 48),
+        BackgroundColor3 = C.surface, BackgroundTransparency = .12, BorderSizePixel = 0, ZIndex = 104 })
+    corner(logo, 7); stroke(logo, C.accent, .16, 1.3)
+    hudBrackets(logo, 9, 1, C.accent2, .08, 107)
+    local logoText = New("TextLabel", { Parent = logo, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+        Text = "N", TextColor3 = C.accent2, TextSize = 25, Font = Enum.Font.GothamBlack, ZIndex = 106 })
+    local logoGlow = New("UIStroke", { Parent = logoText, Color = C.accent, Thickness = 1, Transparency = .66 })
+
+    local eyebrow = text(card, "NOIR  //  SYSTEMS", 9, UDim2.fromOffset(84, 19), true)
+    eyebrow.Font = Enum.Font.GothamBold; eyebrow.TextColor3 = C.accent2
+    eyebrow.Size = UDim2.new(1, -190, 0, 14); eyebrow.ZIndex = 105
+    local title = text(card, "NOIR HUB", 24, UDim2.fromOffset(84, 33))
+    title.Font = Enum.Font.GothamBlack; title.TextColor3 = C.text
+    title.Size = UDim2.new(1, -190, 0, 30); title.ZIndex = 105
+    local subtitle = text(card, "HUD INTERFACE  •  V4.0", 10, UDim2.fromOffset(86, 63), true)
+    subtitle.Font = Enum.Font.GothamMedium; subtitle.TextColor3 = C.dim
+    subtitle.Size = UDim2.new(1, -190, 0, 16); subtitle.ZIndex = 105
+
+    local statePill = New("Frame", { Parent = card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -23, 0, 35),
+        Size = UDim2.fromOffset(92, 25), BackgroundColor3 = C.accent, BackgroundTransparency = .9,
+        BorderSizePixel = 0, ZIndex = 104 })
+    corner(statePill, 7); stroke(statePill, C.accent, .42, 1)
+    local stateDot = New("Frame", { Parent = statePill, Position = UDim2.fromOffset(10, 9), Size = UDim2.fromOffset(7, 7),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 106 })
+    corner(stateDot, 2)
+    local stateText = text(statePill, "BOOTING", 9, UDim2.fromOffset(24, 4))
+    stateText.Font = Enum.Font.GothamBold; stateText.TextColor3 = C.accent2
+    stateText.Size = UDim2.new(1, -29, 0, 16); stateText.ZIndex = 106
+    local pulseTween = TweenService:Create(stateDot, TweenInfo.new(.72, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { BackgroundTransparency = .58 })
+    pulseTween:Play()
+
+    New("Frame", { Parent = card, Position = UDim2.fromOffset(24, 83), Size = UDim2.new(1, -48, 0, 1),
+        BackgroundColor3 = C.border, BackgroundTransparency = .38, BorderSizePixel = 0, ZIndex = 104 })
+    local section = text(card, "BOOT SEQUENCE", 9, UDim2.fromOffset(24, 94), true)
+    section.Font = Enum.Font.GothamBold; section.TextColor3 = C.dim; section.Size = UDim2.fromOffset(160, 14); section.ZIndex = 105
+    local percent = text(card, "00%", 12, UDim2.new(1, -72, 0, 91), false)
+    percent.Font = Enum.Font.GothamBold; percent.TextColor3 = C.accent2
+    percent.Size = UDim2.fromOffset(48, 18); percent.TextXAlignment = Enum.TextXAlignment.Right; percent.ZIndex = 105
+    local status = text(card, "Preparing interface…", 13, UDim2.fromOffset(24, 111), false)
+    status.Font = Enum.Font.GothamMedium; status.TextColor3 = C.text
+    status.Size = UDim2.new(1, -48, 0, 20); status.ZIndex = 105
+
+    local segmentCount = 24
+    local segmentWidth, segmentGap, segmentStart = 11, 4, 28
     local segments = {}
-    for i = 1, 24 do
-        segments[i] = New("Frame", { Parent = overlay, Position = UDim2.fromOffset(24 + (i - 1) * 12, 114), Size = UDim2.fromOffset(9, 10),
-            BackgroundColor3 = C.off, BorderSizePixel = 0, ZIndex = 101 })
+    for i = 1, segmentCount do
+        local segment = New("Frame", { Parent = card,
+            Position = UDim2.fromOffset(segmentStart + (i - 1) * (segmentWidth + segmentGap), 145),
+            Size = UDim2.fromOffset(segmentWidth, 7), BackgroundColor3 = C.off, BorderSizePixel = 0, ZIndex = 105 })
+        corner(segment, 2)
+        New("UIStroke", { Parent = segment, Color = C.border, Thickness = .6, Transparency = .72 })
+        segments[i] = segment
     end
-    local percent = text(overlay, "0%", 13, UDim2.new(1, -74, 0, 94), true)
-    percent.ZIndex = 101; percent.Size = UDim2.fromOffset(50, 16); percent.TextXAlignment = Enum.TextXAlignment.Right
-    for i = 1, 24 do
-        task.wait(.045)
-        segments[i].BackgroundColor3 = C.accent2
-        TweenService:Create(segments[i], TweenInfo.new(.3), { BackgroundColor3 = C.accent }):Play()
-        percent.Text = math.floor(i / 24 * 100) .. "%"
+    local phaseLabels = {}
+    for i, labelText in ipairs({ "CORE", "CONTROLS", "READY" }) do
+        local phase = text(card, labelText, 8, UDim2.fromOffset(28 + (i - 1) * 126, 160), true)
+        phase.Font = Enum.Font.GothamBold; phase.TextColor3 = C.dim
+        phase.Size = UDim2.fromOffset(98, 14); phase.ZIndex = 105
+        phaseLabels[i] = phase
     end
-    task.wait(.2)
-    local closeScale = New("UIScale", { Parent = overlay, Scale = 1 })
-    TweenService:Create(closeScale, TweenInfo.new(.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In), { Scale = .85 }):Play()
-    TweenService:Create(overlay, TweenInfo.new(.22), { BackgroundTransparency = 1 }):Play()
-    task.wait(.22)
+    New("Frame", { Parent = card, Position = UDim2.fromOffset(24, 184), Size = UDim2.new(1, -48, 0, 1),
+        BackgroundColor3 = C.border, BackgroundTransparency = .65, BorderSizePixel = 0, ZIndex = 104 })
+    local footer = text(card, "SYNCHRONIZING NOIR COMPONENTS", 8, UDim2.fromOffset(24, 190), true)
+    footer.Font = Enum.Font.GothamBold; footer.TextColor3 = C.dim
+    footer.Size = UDim2.new(1, -48, 0, 12); footer.ZIndex = 105
+
+    overlay.BackgroundTransparency = 1
+    TweenService:Create(overlay, TweenInfo.new(.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { BackgroundTransparency = .42 }):Play()
+    TweenService:Create(shellScale, TweenInfo.new(.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Scale = fit }):Play()
+    TweenService:Create(card, TweenInfo.new(.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        { BackgroundTransparency = .06 }):Play()
+    logo.Rotation = -8
+    TweenService:Create(logo, TweenInfo.new(.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Rotation = 0 }):Play()
+
+    local phaseText = {
+        "Initializing HUD core…",
+        "Building controls and icons…",
+        "Synchronizing interface…",
+    }
+    for i = 1, segmentCount do
+        task.wait(.042)
+        local fraction = i / segmentCount
+        local litCount = math.floor(fraction * segmentCount + .5)
+        for j = 1, segmentCount do
+            if j <= litCount then
+                segments[j].BackgroundColor3 = (j == litCount) and C.accent2 or C.accent
+                segments[j].BackgroundTransparency = 0
+            end
+        end
+        local phaseIndex = math.min(3, math.ceil(fraction * 3))
+        for j, labelObject in ipairs(phaseLabels) do
+            labelObject.TextColor3 = j < phaseIndex and C.accent or (j == phaseIndex and C.accent2 or C.dim)
+        end
+        percent.Text = string.format("%02d%%", math.floor(fraction * 100 + .5))
+        status.Text = phaseText[phaseIndex]
+        if i == segmentCount then
+            stateText.Text = "READY"
+            status.Text = "Interface ready"
+            footer.Text = "NOIR HUD  •  ONLINE"
+        end
+        if i % 3 == 0 then
+            local glow = New("UIStroke", { Parent = card, Color = C.accent, Thickness = 1.5, Transparency = .75 })
+            TweenService:Create(glow, TweenInfo.new(.16), { Transparency = 1 }):Play()
+            task.delay(.18, function() if glow.Parent then glow:Destroy() end end)
+        end
+    end
+    task.wait(.12)
+    pulseTween:Cancel()
+    local fade = TweenService:Create(overlay, TweenInfo.new(.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { BackgroundTransparency = 1 })
+    local shrink = TweenService:Create(shellScale, TweenInfo.new(.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+        { Scale = fit * .94 })
+    TweenService:Create(card, TweenInfo.new(.22, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
+    fade:Play(); shrink:Play()
+    fade.Completed:Wait()
+    scanTween:Cancel()
     overlay:Destroy()
     onDone()
 end
-
 refreshCanvas()
 local function openWindow()
     RunService.RenderStepped:Wait()
