@@ -1590,6 +1590,230 @@ settingsContent = content:Clone(); settingsContent.Name = "\x53ettingsContent"; 
 settingsContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
 New("\x55IListLayout", { Parent = settingsContent, Padding = UDim.new(0, 10) })
 New("\x55IPadding", { Parent = settingsContent, PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 16) })
+do
+    -- SETTINGS • CONFIGS: именованные профили (сохранение / загрузка / удаление)
+    local page = settingsContent
+    if page then
+        local cfgCard = New("\x46rame", { Parent = page, Size = UDim2.new(1, -32, 0, 90), AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = C.panel, BackgroundTransparency = .86, ClipsDescendants = true })
+        corner(cfgCard, 10); stroke(cfgCard, C.border, .15)
+        local tickbar = New("\x46rame", { Parent = cfgCard, Position = UDim2.fromOffset(0, 16), Size = UDim2.fromOffset(3, 20),
+            BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+        corner(tickbar, 2)
+        local cfgTitle = text(cfgCard, "\x53ETTINGS \x2022 CONFIGS", 16, UDim2.fromOffset(14, 10))
+        cfgTitle.Font = Enum.Font.GothamBold
+        cfgTitle.TextColor3 = C.text
+        local cfgDesc = text(cfgCard, "\x53ave your toggles, sliders and window layout into named profiles", 12, UDim2.fromOffset(15, 30), true)
+        cfgDesc.TextColor3 = C.dim
+        local cfgHolder = New("\x46rame", { Parent = cfgCard, Position = UDim2.fromOffset(10, 50), Size = UDim2.new(1, -20, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 })
+        New("\x55IListLayout", { Parent = cfgHolder, Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder })
+        New("\x55IPadding", { Parent = cfgHolder, PaddingBottom = UDim.new(0, 12) })
+        local nameBox = New("\x54extBox", { Parent = cfgHolder, Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.base,
+            BackgroundTransparency = .3, Text = "", PlaceholderText = "\x43onfig name (e.g. main)", TextColor3 = C.text,
+            PlaceholderColor3 = C.dim, TextSize = 14, Font = Enum.Font.Gotham, ClearTextOnFocus = false,
+            TextXAlignment = Enum.TextXAlignment.Left })
+        corner(nameBox, 10); stroke(nameBox, C.border, .5)
+        New("\x55IPadding", { Parent = nameBox, PaddingLeft = UDim.new(0, 10) })
+        local cfgBtnRow = New("\x46rame", { Parent = cfgHolder, Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1 })
+        New("\x55IListLayout", { Parent = cfgBtnRow, Padding = UDim.new(0, 8), FillDirection = Enum.FillDirection.Horizontal })
+        local function cfgButton(caption)
+            local b = New("\x54extButton", { Parent = cfgBtnRow, Size = UDim2.new(0, 92, 1, 0), BackgroundColor3 = C.btn,
+                Text = caption, TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamBold, AutoButtonColor = false })
+            corner(b, 10); stroke(b, C.border, .5)
+            return b
+        end
+        local saveBtn = cfgButton("\x53ave")
+        local loadBtn = cfgButton("\x4coad")
+        local delBtn = cfgButton("\x44elete")
+        local cfgStatus = text(cfgHolder, "", 12, UDim2.fromOffset(0, 0), true)
+        cfgStatus.TextWrapped = true
+        cfgStatus.Size = UDim2.new(1, 0, 0, 30)
+        cfgStatus.TextColor3 = C.accent2
+        local function safeName()
+            local n = tostring(nameBox.Text or "")
+            n = string.gsub(n, "[^%w%-_ ]", "")
+            n = string.gsub(n, "^%s+", "")
+            n = string.gsub(n, "%s+$", "")
+            if n == "" then n = "config" end
+            return n
+        end
+        local function cfgPath(n) return CONFIGS_FOLDER .. "\x2f" .. n .. "\x2ejson" end
+        local function savedNames()
+            local names = {}
+            if type(listfiles) == "\x66unction" then
+                local ok, files = pcall(listfiles, CONFIGS_FOLDER)
+                if ok and type(files) == "\x74able" then
+                    for _, f in ipairs(files) do
+                        local base = string.match(tostring(f), "([^\x2f\x5c]+)$") or tostring(f)
+                        base = string.gsub(base, "%.json$", "")
+                        if base ~= "autosave" then names[#names + 1] = base end
+                    end
+                end
+            end
+            table.sort(names)
+            return names
+        end
+        local function refreshCfgList()
+            local names = savedNames()
+            if #names == 0 then
+                cfgStatus.Text = "\x53aved configs: none yet"
+            else
+                cfgStatus.Text = "\x53aved configs: " .. table.concat(names, ", ")
+            end
+        end
+        local function cfgAction(kind)
+            local n = safeName()
+            if type(writefile) ~= "\x66unction" then
+                cfgStatus.Text = "\x43onfigs are not supported by this executor."
+                return
+            end
+            if kind == "save" then
+                local ok = pcall(function()
+                    ensureStorageFolders()
+                    writefile(cfgPath(n), HttpService:JSONEncode(NoirPersistence.data))
+                end)
+                cfgStatus.Text = ok and ("\x43onfig saved: " .. n) or ("\x43ould not save config: " .. n)
+            elseif kind == "load" then
+                local ok, data = pcall(function() return HttpService:JSONDecode(readfile(cfgPath(n))) end)
+                if ok and typeof(data) == "\x74able" then
+                    NoirPersistence.data = data
+                    for _, bucket in ipairs({"\x74oggles", "\x73liders", "\x64ropdowns", "\x74extboxes", "\x6be\x79binds", "\x70ositions", "\x63olors", "appearance"}) do
+                        if typeof(NoirPersistence.data[bucket]) ~= "\x74able" then NoirPersistence.data[bucket] = {} end
+                    end
+                    NoirPersistence.Save(true)
+                    cfgStatus.Text = "\x43onfig loaded: " .. n .. " \x2d\x20applies on the next hub start."
+                else
+                    cfgStatus.Text = "\x43onfig not found: " .. n
+                end
+            elseif kind == "delete" then
+                if type(delfile) ~= "\x66unction" then
+                    cfgStatus.Text = "\x54his executor cannot delete files."
+                    return
+                end
+                local ok = pcall(function() delfile(cfgPath(n)) end)
+                cfgStatus.Text = ok and ("\x43onfig deleted: " .. n) or ("\x43onfig not found: " .. n)
+            end
+            refreshCfgList()
+        end
+        saveBtn.Activated:Connect(function() cfgAction("save") end)
+        loadBtn.Activated:Connect(function() cfgAction("load") end)
+        delBtn.Activated:Connect(function() cfgAction("delete") end)
+        refreshCfgList()
+    end
+end
+do
+    -- SETTINGS • CONFIGS: именованные профили (сохранение / загрузка / удаление)
+    local page = settingsContent
+    if page then
+        local cfgCard = New("\x46rame", { Parent = page, Size = UDim2.new(1, -32, 0, 90), AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = C.panel, BackgroundTransparency = .86, ClipsDescendants = true })
+        corner(cfgCard, 10); stroke(cfgCard, C.border, .15)
+        local tickbar = New("\x46rame", { Parent = cfgCard, Position = UDim2.fromOffset(0, 16), Size = UDim2.fromOffset(3, 20),
+            BackgroundColor3 = C.accent, BorderSizePixel = 0 })
+        corner(tickbar, 2)
+        local cfgTitle = text(cfgCard, "\x53ETTINGS \x2022 CONFIGS", 16, UDim2.fromOffset(14, 10))
+        cfgTitle.Font = Enum.Font.GothamBold
+        cfgTitle.TextColor3 = C.text
+        local cfgDesc = text(cfgCard, "\x53ave your toggles, sliders and window layout into named profiles", 12, UDim2.fromOffset(15, 30), true)
+        cfgDesc.TextColor3 = C.dim
+        local cfgHolder = New("\x46rame", { Parent = cfgCard, Position = UDim2.fromOffset(10, 50), Size = UDim2.new(1, -20, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 })
+        New("\x55IListLayout", { Parent = cfgHolder, Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder })
+        New("\x55IPadding", { Parent = cfgHolder, PaddingBottom = UDim.new(0, 12) })
+        local nameBox = New("\x54extBox", { Parent = cfgHolder, Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.base,
+            BackgroundTransparency = .3, Text = "", PlaceholderText = "\x43onfig name (e.g. main)", TextColor3 = C.text,
+            PlaceholderColor3 = C.dim, TextSize = 14, Font = Enum.Font.Gotham, ClearTextOnFocus = false,
+            TextXAlignment = Enum.TextXAlignment.Left })
+        corner(nameBox, 10); stroke(nameBox, C.border, .5)
+        New("\x55IPadding", { Parent = nameBox, PaddingLeft = UDim.new(0, 10) })
+        local cfgBtnRow = New("\x46rame", { Parent = cfgHolder, Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1 })
+        New("\x55IListLayout", { Parent = cfgBtnRow, Padding = UDim.new(0, 8), FillDirection = Enum.FillDirection.Horizontal })
+        local function cfgButton(caption)
+            local b = New("\x54extButton", { Parent = cfgBtnRow, Size = UDim2.new(0, 92, 1, 0), BackgroundColor3 = C.btn,
+                Text = caption, TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamBold, AutoButtonColor = false })
+            corner(b, 10); stroke(b, C.border, .5)
+            return b
+        end
+        local saveBtn = cfgButton("\x53ave")
+        local loadBtn = cfgButton("\x4coad")
+        local delBtn = cfgButton("\x44elete")
+        local cfgStatus = text(cfgHolder, "", 12, UDim2.fromOffset(0, 0), true)
+        cfgStatus.TextWrapped = true
+        cfgStatus.Size = UDim2.new(1, 0, 0, 30)
+        cfgStatus.TextColor3 = C.accent2
+        local function safeName()
+            local n = tostring(nameBox.Text or "")
+            n = string.gsub(n, "[^%w%-_ ]", "")
+            n = string.gsub(n, "^%s+", "")
+            n = string.gsub(n, "%s+$", "")
+            if n == "" then n = "config" end
+            return n
+        end
+        local function cfgPath(n) return CONFIGS_FOLDER .. "\x2f" .. n .. "\x2ejson" end
+        local function savedNames()
+            local names = {}
+            if type(listfiles) == "\x66unction" then
+                local ok, files = pcall(listfiles, CONFIGS_FOLDER)
+                if ok and type(files) == "\x74able" then
+                    for _, f in ipairs(files) do
+                        local base = string.match(tostring(f), "([^\x2f\x5c]+)$") or tostring(f)
+                        base = string.gsub(base, "%.json$", "")
+                        if base ~= "autosave" then names[#names + 1] = base end
+                    end
+                end
+            end
+            table.sort(names)
+            return names
+        end
+        local function refreshCfgList()
+            local names = savedNames()
+            if #names == 0 then
+                cfgStatus.Text = "\x53aved configs: none yet"
+            else
+                cfgStatus.Text = "\x53aved configs: " .. table.concat(names, ", ")
+            end
+        end
+        local function cfgAction(kind)
+            local n = safeName()
+            if type(writefile) ~= "\x66unction" then
+                cfgStatus.Text = "\x43onfigs are not supported by this executor."
+                return
+            end
+            if kind == "save" then
+                local ok = pcall(function()
+                    ensureStorageFolders()
+                    writefile(cfgPath(n), HttpService:JSONEncode(NoirPersistence.data))
+                end)
+                cfgStatus.Text = ok and ("\x43onfig saved: " .. n) or ("\x43ould not save config: " .. n)
+            elseif kind == "load" then
+                local ok, data = pcall(function() return HttpService:JSONDecode(readfile(cfgPath(n))) end)
+                if ok and typeof(data) == "\x74able" then
+                    NoirPersistence.data = data
+                    for _, bucket in ipairs({"\x74oggles", "\x73liders", "\x64ropdowns", "\x74extboxes", "\x6be\x79binds", "\x70ositions", "\x63olors", "appearance"}) do
+                        if typeof(NoirPersistence.data[bucket]) ~= "\x74able" then NoirPersistence.data[bucket] = {} end
+                    end
+                    NoirPersistence.Save(true)
+                    cfgStatus.Text = "\x43onfig loaded: " .. n .. " \x2d\x20applies on the next hub start."
+                else
+                    cfgStatus.Text = "\x43onfig not found: " .. n
+                end
+            elseif kind == "delete" then
+                if type(delfile) ~= "\x66unction" then
+                    cfgStatus.Text = "\x54his executor cannot delete files."
+                    return
+                end
+                local ok = pcall(function() delfile(cfgPath(n)) end)
+                cfgStatus.Text = ok and ("\x43onfig deleted: " .. n) or ("\x43onfig not found: " .. n)
+            end
+            refreshCfgList()
+        end
+        saveBtn.Activated:Connect(function() cfgAction("save") end)
+        loadBtn.Activated:Connect(function() cfgAction("load") end)
+        delBtn.Activated:Connect(function() cfgAction("delete") end)
+        refreshCfgList()
+    end
+end
 trollCols = makeDualScrollColumns(trollContent)
 do
     local mapPage = content:Clone()
