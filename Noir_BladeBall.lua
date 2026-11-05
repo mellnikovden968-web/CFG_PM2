@@ -10413,8 +10413,10 @@ do
     local navDefs = {
         { "home", "Home" },
         { "aim", "Parry" },
-        { "visual", "Visuals" },
         { "main", "Main" },
+        { "visual", "Visuals" },
+        { "world", "World" },
+        { "misc", "Misc" },
         { "settings", "Settings" },
     }
     for i, d in ipairs(navDefs) do
@@ -11462,6 +11464,7 @@ function host.CreateTab()
         -- Blade Ball: фиксированная раскладка — Parry-страница для боевой
         -- автоматизации, Visuals для скинов/статуса/кнопок, Main для модуля.
         local isBBParry = name == "AUTO PARRY" or name == "DETECTION" or name == "SPAM / TRIGGER"
+            or string.sub(name, 1, 6) == "\x50ARRY "
         local isBBVisual = name == "SKIN CHANGER" or name == "STATUS" or name == "SCREEN BUTTONS"
         local isVisual = isBBVisual or name == "\x56isuals" or name == "\x4fbject ESP" or string.find(name, "\x56ISUAL", 1, true) == 1
         local isMain = string.sub(name, 1, 5) == "\x4dAIN "
@@ -11505,7 +11508,7 @@ function host.CreateTab()
         local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(14, sepY), Size = UDim2.new(1, -28, 0, 1),
             BackgroundColor3 = C.accent, BackgroundTransparency = .62, BorderSizePixel = 0 })
         table.insert(sectionPanels, { panel = panel, page = page, name = string.lower(name .. "\x20" .. (description or "")) })
-        local shownName = name:gsub("\x5eMAIN • ", ""):gsub("\x5eWORLD • ", ""):gsub("\x5eVISUAL • ", ""):gsub("\x5eEMOTES • ", ""):gsub("\x5eMISC • ", ""):gsub("\x5eTROLL • ", ""):gsub("\x5eMAP • ", ""):gsub("\x5eFARM • ", "")
+        local shownName = name:gsub("\x5eMAIN • ", ""):gsub("\x5eWORLD • ", ""):gsub("\x5eVISUAL • ", ""):gsub("\x5eEMOTES • ", ""):gsub("\x5eMISC • ", ""):gsub("\x5eTROLL • ", ""):gsub("\x5eMAP • ", ""):gsub("\x5eFARM • ", ""):gsub("\x5ePARRY • ", "")
         kitiTitle(panel, shownName)
         if description and description ~= "" then kitiDesc(panel, description) end
         local holder = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(12, description ~= "" and 52 or 38), Size = UDim2.new(1, -24, 0, 0),
@@ -12859,11 +12862,15 @@ local function __noirFeatures()
         return m
     end
 
-    local function makeTab()
+    local function makeTab(defaultRoute)
         local T = {}
         function T:create_module(cfg)
             cfg = cfg or {}
-            local title = "MAIN \226\128\162 " .. string.upper(tostring(cfg.title or "MODULE"))
+            -- NOIR: маршрут секции по вкладкам (PARRY/MAIN/VISUAL/WORLD/MISC),
+            -- чтобы функции распределялись по страницам, а не сваливались в одной
+            local route = tostring(cfg.route or defaultRoute or "MAIN")
+            if route ~= "PARRY" and route ~= "MAIN" and route ~= "VISUAL" and route ~= "WORLD" and route ~= "MISC" then route = "MAIN" end
+            local title = route .. " \226\128\162 " .. string.upper(tostring(cfg.title or "MODULE"))
             local ok, sec = pcall(function() return host.CreateTab():AddSection(title, cfg.description or "") end)
             if not ok then sec = host.CreateTab():AddSection("MAIN \226\128\162 MODULE", cfg.description or "") end
             return makeModule(sec, cfg.title, cfg.callback)
@@ -12871,13 +12878,13 @@ local function __noirFeatures()
         return T
     end
 
-    local VisualsTab = makeTab()
-    local PlayerTab = makeTab()
-    local BlatantTab = makeTab()
-    local MiscTab = makeTab()
-    local UnlockTab = makeTab()
-    local WorldTab = makeTab()
-    local DetectionTab = makeTab()
+    local VisualsTab = makeTab("VISUAL")
+    local PlayerTab = makeTab("MAIN")
+    local BlatantTab = makeTab("MAIN")
+    local MiscTab = makeTab("MISC")
+    local UnlockTab = makeTab("MISC")
+    local WorldTab = makeTab("WORLD")
+    local DetectionTab = makeTab("PARRY")
     local GuiTab = makeTab()
 
 
@@ -13853,6 +13860,7 @@ if (1<-1) then local _j=1+1 end
 end
 
 local AutoPlay = PlayerTab:create_module({
+    route = "PARRY",
     title = "Auto Play",
     flag = "AutoPlay",
     description = "Automatically Plays Game",
@@ -14400,6 +14408,7 @@ end
 
 
 local sound_controller_module = VisualsTab:create_module({
+    route = "MISC",
     title = 'Sound Controller',
     flag = "sound_controller",
     description = "Control background music and sounds",
@@ -14512,6 +14521,7 @@ end
 
 
 local ping_spoofer_module = VisualsTab:create_module({
+    route = "MISC",
     title = "Ping Spoofer",
     flag = "ping_spoofer",
     description = "Locks your Ping Display to a Fake Number",
@@ -14550,6 +14560,7 @@ ping_spoofer_module:create_textbox({
 if ((1/1)==0) then for _i=1,0 do end end
 
 local fov_module = PlayerTab:create_module({
+    route = "VISUAL",
     title = "FOV",
     description = "Changes Camera POV",
     flag = "FOVModule",
@@ -14607,6 +14618,7 @@ local followDropdown
 
 
 local player_cosmetics_module = PlayerTab:create_module({
+    route = "VISUAL",
     title = "Player Cosmetics",
     flag = "Player_Cosmetics",
     description = "Apply Headless and Korblox",
@@ -15512,6 +15524,7 @@ if (type({})~="table") then local _t=table.concat({},"") end
 
 
 local custom_announcer_module = VisualsTab:create_module({
+    route = "MISC",
     title = "Custom Announcer",
     flag = "Custom_Announcer",
     description = "Customize the Game Announcements",
@@ -15772,6 +15785,7 @@ local hitSoundIds = {
 }
 
 local hit_sounds_module = PlayerTab:create_module({
+    route = "MISC",
     title = "Hit Sounds",
     flag = "Hit_Sounds",
     description = "Toggles hit sounds",
@@ -16371,6 +16385,7 @@ getgenv()._ZX_SetupNameSpoof = function()
         end
     end)
     local nameSpoofMod = PlayerTab:create_module({
+        route = "MISC",
         title = "Name Spoof",
         description = "Spoof your display name with verified badge",
         flag = "ZX_NameSpoof",
