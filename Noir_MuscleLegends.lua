@@ -37,7 +37,7 @@ local HttpService       = game:GetService("\x48ttpService")
 local Lighting          = game:GetService("\x4cighting")
 local LocalPlayer       = Players.LocalPlayer
 local NoirFX = (function()
-    local fx, springs, spinners = { gui = nil }, {}, {}
+    local fx, springs, spinners, spinAccum = { gui = nil }, {}, {}, 0
     fx.RING = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromRGB(3, 10, 14)), ColorSequenceKeypoint.new(.25, Color3.fromRGB(120, 255, 248)),
         ColorSequenceKeypoint.new(.5, Color3.fromRGB(3, 10, 14)), ColorSequenceKeypoint.new(.75, Color3.fromRGB(53, 116, 115)),
@@ -55,7 +55,13 @@ local NoirFX = (function()
     conn = RunService.RenderStepped:Connect(function(dt)
         if fx.gui and not fx.gui.Parent then conn:Disconnect() return end
         dt = math.min(dt, 1 / 20)
-        for _, g in ipairs(spinners) do g.Rotation = (g.Rotation + 60 * dt) % 360 end
+        -- OPTIM: спиннеры обновляются на 30 FPS вместо каждого кадра — визуально идентично, нагрузка вдвое ниже
+        spinAccum += dt
+        if spinAccum >= 1 / 30 then
+            local rot = 60 * spinAccum
+            spinAccum = 0
+            for _, g in ipairs(spinners) do g.Rotation = (g.Rotation + rot) % 360 end
+        end
         local list = {}
         for sp in pairs(springs) do list[#list + 1] = sp end
         for _, sp in ipairs(list) do
@@ -539,13 +545,17 @@ RunService.RenderStepped:Connect(function(dt)
     local fast = gradientStrokes.fast
     if #fast == 0 then return end
     gradientAccum += dt
-    if gradientAccum < 0.12 then return end
+    -- OPTIM: шаг 0.15с вместо 0.12с + пропуск невидимых кнопок (меньше перерисовок GPU)
+    if gradientAccum < 0.15 then return end
     local step = gradientAccum * 30
     gradientAccum = 0
     for i = #fast, 1, -1 do
         local g = fast[i]
         if g.Parent then
-            g.Rotation = (g.Rotation + step) % 360
+            local host = g.Parent.Parent
+            if host and host.Visible ~= false then
+                g.Rotation = (g.Rotation + step) % 360
+            end
         else
             table.remove(fast, i)
         end
