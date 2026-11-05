@@ -10402,16 +10402,9 @@ wordmark.Font = Enum.Font.GothamBold; wordmark.TextColor3 = C.accent2; wordmark.
 do
     local navDefs = {
         { "home", "Home" },
-        { "main", "Main" },
-        { "aim", "Aim" },
-        { "world", "World" },
-        { "map", "Map" },
-        { "farm", "Farm" },
+        { "aim", "Parry" },
         { "visual", "Visuals" },
-        { "skins", "Skins" },
-        { "emotes", "Emotes" },
-        { "misc", "Misc" },
-        { "troll", "Troll" },
+        { "main", "Main" },
         { "settings", "Settings" },
     }
     for i, d in ipairs(navDefs) do
@@ -11456,7 +11449,11 @@ function host.CreateTab()
     local tab = {}
     function tab:AddSection(name, description)
         yieldDuringBuild()
-        local isVisual = name == "\x56isuals" or name == "\x4fbject ESP" or string.find(name, "\x56ISUAL", 1, true) == 1
+        -- Blade Ball: фиксированная раскладка — Parry-страница для боевой
+        -- автоматизации, Visuals для скинов/статуса/кнопок, Main для модуля.
+        local isBBParry = name == "AUTO PARRY" or name == "DETECTION" or name == "SPAM / TRIGGER"
+        local isBBVisual = name == "SKIN CHANGER" or name == "STATUS" or name == "SCREEN BUTTONS"
+        local isVisual = isBBVisual or name == "\x56isuals" or name == "\x4fbject ESP" or string.find(name, "\x56ISUAL", 1, true) == 1
         local isMain = string.sub(name, 1, 5) == "\x4dAIN "
         local function hasTag(p) return string.find(name, p, 1, true) ~= nil end
         local isFling = hasTag("\x46ling") or hasTag("⚡") or hasTag("🤖") or hasTag("📋") or hasTag("⚙") or hasTag("🔘") or hasTag("🔑")
@@ -11468,7 +11465,8 @@ function host.CreateTab()
         local isMap = string.sub(name, 1, 4) == "\x4dAP "
         local isFarm = string.sub(name, 1, 5) == "\x46ARM "
         local col, page = nil, "\x61im"
-        if isVisual then visualSectionCount += 1; col = visualCols[(visualSectionCount - 1) % 2 + 1]; page = "\x76isual"
+        if isBBParry then sectionCount += 1; col = cols[(sectionCount - 1) % 2 + 1]; page = "\x61im"
+        elseif isVisual then visualSectionCount += 1; col = visualCols[(visualSectionCount - 1) % 2 + 1]; page = "\x76isual"
         elseif isMain then mainSectionCount += 1; col = mainCols[(mainSectionCount - 1) % 2 + 1]; page = "\x6dain"
         elseif isWorld then worldSectionCount += 1; col = worldCols[(worldSectionCount - 1) % 2 + 1]; page = "\x77orld"
         elseif isGameEmotes then col = emotesGameCol or emotesCols[1]; page = "\x65motes"

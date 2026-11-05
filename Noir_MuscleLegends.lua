@@ -1174,16 +1174,9 @@ wordmark.Font = Enum.Font.GothamBold; wordmark.TextColor3 = C.accent2; wordmark.
 do
     local navDefs = {
         { "home", "Home" },
-        { "main", "Main" },
-        { "aim", "Aim" },
-        { "world", "World" },
-        { "map", "Map" },
-        { "farm", "Farm" },
-        { "visual", "Visuals" },
-        { "skins", "Skins" },
-        { "emotes", "Emotes" },
+        { "main", "Training" },
+        { "aim", "Combat" },
         { "misc", "Misc" },
-        { "troll", "Troll" },
         { "settings", "Settings" },
     }
     for i, d in ipairs(navDefs) do
@@ -2228,6 +2221,10 @@ function host.CreateTab()
     local tab = {}
     function tab:AddSection(name, description)
         yieldDuringBuild()
+        -- Muscle Legends: фиксированная раскладка — TRAIN → Training (Main),
+        -- COMBAT → Combat (Aim), MISC → Misc. Без fallback-свалки на одной странице.
+        local isTrain = string.sub(name, 1, 6) == "TRAIN "
+        local isCombat = string.sub(name, 1, 7) == "COMBAT "
         local isVisual = name == "\x56isuals" or name == "\x4fbject ESP" or string.find(name, "\x56ISUAL", 1, true) == 1
         local isMain = string.sub(name, 1, 5) == "\x4dAIN "
         local function hasTag(p) return string.find(name, p, 1, true) ~= nil end
@@ -2240,7 +2237,9 @@ function host.CreateTab()
         local isMap = string.sub(name, 1, 4) == "\x4dAP "
         local isFarm = string.sub(name, 1, 5) == "\x46ARM "
         local col, page = nil, "\x61im"
-        if isVisual then visualSectionCount += 1; col = visualCols[(visualSectionCount - 1) % 2 + 1]; page = "\x76isual"
+        if isTrain then mainSectionCount += 1; col = mainCols[(mainSectionCount - 1) % 2 + 1]; page = "\x6dain"
+        elseif isCombat then sectionCount += 1; col = cols[(sectionCount - 1) % 2 + 1]; page = "\x61im"
+        elseif isVisual then visualSectionCount += 1; col = visualCols[(visualSectionCount - 1) % 2 + 1]; page = "\x76isual"
         elseif isMain then mainSectionCount += 1; col = mainCols[(mainSectionCount - 1) % 2 + 1]; page = "\x6dain"
         elseif isWorld then worldSectionCount += 1; col = worldCols[(worldSectionCount - 1) % 2 + 1]; page = "\x77orld"
         elseif isGameEmotes then col = emotesGameCol or emotesCols[1]; page = "\x65motes"
@@ -2269,7 +2268,7 @@ function host.CreateTab()
         local tick = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(14, sepY), Size = UDim2.new(1, -28, 0, 1),
             BackgroundColor3 = C.accent, BackgroundTransparency = .62, BorderSizePixel = 0 })
         table.insert(sectionPanels, { panel = panel, page = page, name = string.lower(name .. "\x20" .. (description or "")) })
-        local shownName = name:gsub("\x5eMAIN • ", ""):gsub("\x5eWORLD • ", ""):gsub("\x5eVISUAL • ", ""):gsub("\x5eEMOTES • ", ""):gsub("\x5eMISC • ", ""):gsub("\x5eTROLL • ", ""):gsub("\x5eMAP • ", ""):gsub("\x5eFARM • ", "")
+        local shownName = name:gsub("\x5eMAIN • ", ""):gsub("\x5eTRAIN • ", ""):gsub("\x5eCOMBAT • ", ""):gsub("\x5eWORLD • ", ""):gsub("\x5eVISUAL • ", ""):gsub("\x5eEMOTES • ", ""):gsub("\x5eMISC • ", ""):gsub("\x5eTROLL • ", ""):gsub("\x5eMAP • ", ""):gsub("\x5eFARM • ", "")
         kitiTitle(panel, shownName)
         if description and description ~= "" then kitiDesc(panel, description) end
         local holder = New("\x46rame", { Parent = panel, Position = UDim2.fromOffset(12, description ~= "" and 52 or 38), Size = UDim2.new(1, -24, 0, 0),
