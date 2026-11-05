@@ -653,7 +653,7 @@ System.detection = {
     __ball_properties = {__aerodynamic_time=tick(),__last_warping=tick(),__lerp_radians=0,__curving=tick()}  
 }  
   
-function System.detection.is_curved(selectedBall)  
+function System.detection.is_curved(selectedBall, pingSeconds)
     local sharedProps=System.detection.__ball_properties
     local ball=selectedBall or System.ball.get(); if not ball then return false end
     System.detection.states = System.detection.states or setmetatable({}, {__mode = "k"})
@@ -673,7 +673,7 @@ function System.detection.is_curved(selectedBall)
     if offset.Magnitude < 0.001 then return false end
     local direction=offset.Unit  
     local dot=direction:Dot(ball_dir)  
-    local ping=Stats.Network.ServerStatsItem["Data Ping"]:GetValue()/1000  
+    local ping=pingSeconds or Stats.Network.ServerStatsItem["Data Ping"]:GetValue()/1000
     local distance=(pos-ball.Position).Magnitude; local reach_time=distance/speed-ping  
     local dot_threshold=math.clamp(0.55-(ping*0.75),-1,0.45)  
     local speed_threshold=math.min(speed/100,45)  
@@ -1005,6 +1005,8 @@ function System.auto_spam.stop()
 end  
   
 System.autoparry = {states = setmetatable({}, {__mode = "k"})}
+-- NOIR perf: пинг читаем раз в 0.2с (кэш), а не на каждый мяч каждый кадр
+local autoparryPingMs, autoparryPingAt = 0, 0
 function System.autoparry.state(ball)
     local state = System.autoparry.states[ball]
     local target = ball:GetAttribute("target")
@@ -1028,29 +1030,37 @@ function System.autoparry.start()
             System.autoparry.character = LocalPlayer.Character
             System.autoparry.states = setmetatable({}, {__mode = "k"})
         end
-        local balls=System.ball.get_all()  
-        local training_ball=nil  
-        if Workspace:FindFirstChild("TrainingBalls") then  
-            for _,Instance in pairs(Workspace.TrainingBalls:GetChildren()) do  
-                if Instance:GetAttribute("realBall") then training_ball=Instance; break end  
-            end  
-        end  
-        for _,ball in pairs(balls) do  
-            if System.__triggerbot.__enabled then return end  
-            if getgenv().BallVelocityAbove800 then return end  
-            if not ball then continue end  
+        if os.clock() - autoparryPingAt > 0.2 then
+            autoparryPingAt = os.clock()
+            local okP, pP = pcall(function() return Stats.Network.ServerStatsItem['Data Ping']:GetValue() end)
+            if okP and pP then autoparryPingMs = pP end
+        end
+        local genvFlags = getgenv()
+        if System.__triggerbot.__enabled then return end
+        if genvFlags.BallVelocityAbove800 then return end
+        local ballsFolder=Workspace:FindFirstChild('Balls')
+        local balls=ballsFolder and ballsFolder:GetChildren() or {}
+        local training_ball=nil
+        if Workspace:FindFirstChild("TrainingBalls") then
+            for _,Instance in pairs(Workspace.TrainingBalls:GetChildren()) do
+                if Instance:GetAttribute("realBall") then training_ball=Instance; break end
+            end
+        end
+        for _,ball in pairs(balls) do
+            if not ball or not ball:GetAttribute('realBall') then continue end
+            ball.CanCollide=false
             local zoomies=ball:FindFirstChild('zoomies'); if not zoomies then continue end  
             local state = System.autoparry.state(ball)
-            if os.clock() < state.readyAt then continue end  
-            local ball_target=ball:GetAttribute('target')  
-            local velocity=zoomies.VectorVelocity  
-            local distance=(LocalPlayer.Character.PrimaryPart.Position-ball.Position).Magnitude  
-            local ping=Stats.Network.ServerStatsItem['Data Ping']:GetValue()/10  
-            local ping_threshold=math.clamp(ping/10,5,40); local speed=velocity.Magnitude  
+            if os.clock() < state.readyAt then continue end
+            local ball_target=state.target
+            local velocity=zoomies.VectorVelocity
+            local distance=(LocalPlayer.Character.PrimaryPart.Position-ball.Position).Magnitude
+            local ping=autoparryPingMs/10
+            local ping_threshold=math.clamp(ping,5,40); local speed=velocity.Magnitude
             local capped_speed_diff=math.min(math.max(speed-9.5,0),650)  
             local speed_divisor=(2.4+capped_speed_diff*0.002)*System.__properties.__divisor_multiplier  
             local parry_accuracy=ping_threshold+math.max(speed/speed_divisor,9.5)  
-            local curved=System.detection.is_curved(ball)  
+            local curved=System.detection.is_curved(ball, autoparryPingMs/1000)
             if ball:FindFirstChild('AeroDynamicSlashVFX') then  
                 ball.AeroDynamicSlashVFX:Destroy(); System.__properties.__tornado_time=tick()  
             end  
@@ -1066,7 +1076,7 @@ function System.autoparry.start()
             if System.__config.__detections.__timehole and System.__properties.__timehole_active then continue end  
             if System.__config.__detections.__slashesoffury and System.__properties.__slashesoffury_active then continue end  
             if ball_target==LocalPlayer.Name and distance <= parry_accuracy then  
-                if getgenv().AutoAbility then  
+                if genvFlags.AutoAbility then
                     local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
                     local hotbar = playerGui and playerGui:FindFirstChild("Hotbar")
                     local ability = hotbar and hotbar:FindFirstChild("Ability")
@@ -1097,7 +1107,7 @@ function System.autoparry.start()
             end  
             if ball_target==LocalPlayer.Name and distance <= parry_accuracy then
                 local sent
-                if getgenv().AutoParryMode=="Keypress" then sent = System.parry.keypress()
+                if genvFlags.AutoParryMode=="Keypress" then sent = System.parry.keypress()
                 else sent = System.parry.execute_action() end
                 if sent then state.readyAt = os.clock() + 1 end
             end
@@ -1110,15 +1120,15 @@ function System.autoparry.start()
                     local ball_target=training_ball:GetAttribute('target')  
                     local velocity=zoomies.VectorVelocity  
                     local distance=LocalPlayer:DistanceFromCharacter(training_ball.Position)  
-                    local speed=velocity.Magnitude  
-                    local ping=Stats.Network.ServerStatsItem['Data Ping']:GetValue()/10  
-                    local ping_threshold=math.clamp(ping/10,5,40)  
+                    local speed=velocity.Magnitude
+                    local ping=autoparryPingMs/10
+                    local ping_threshold=math.clamp(ping,5,40)
                     local capped_speed_diff=math.min(math.max(speed-9.5,0),650)  
                     local speed_divisor=(2.4+capped_speed_diff*0.002)*System.__properties.__divisor_multiplier  
                     local parry_accuracy=ping_threshold+math.max(speed/speed_divisor,9.5)  
                     if ball_target==LocalPlayer.Name and distance <= parry_accuracy then  
                         local sent
-                        if getgenv().AutoParryMode=="Keypress" then sent = System.parry.keypress()
+                        if genvFlags.AutoParryMode=="Keypress" then sent = System.parry.keypress()
                         else sent = System.parry.execute_action() end
                         if sent then state.readyAt = os.clock() + 1 end
                     end  
